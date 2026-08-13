@@ -16,11 +16,18 @@ export function useCharacters() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const skipSave = useRef(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const charactersRef = useRef<Character[]>([]);
+
+  useEffect(() => {
+    charactersRef.current = characters;
+  }, [characters]);
 
   const reload = useCallback(async () => {
     try {
       const data = await fetchAppData();
-      setCharacters(normalizeCharacterList(data.characters));
+      const list = normalizeCharacterList(data.characters);
+      charactersRef.current = list;
+      setCharacters(list);
       setSyncError(null);
       skipSave.current = true;
     } catch (e) {
@@ -42,7 +49,7 @@ export function useCharacters() {
     }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      putCharacters(characters)
+      putCharacters(charactersRef.current)
         .then(() => setSyncError(null))
         .catch((e) =>
           setSyncError(e instanceof Error ? e.message : "保存失败")
@@ -53,18 +60,39 @@ export function useCharacters() {
     };
   }, [characters, loaded]);
 
-  const addCharacter = useCallback((partial?: Partial<Character>) => {
-    const now = new Date().toISOString();
-    const newChar: Character = {
-      id: createId(),
-      ...defaultCharacter(),
-      ...partial,
-      createdAt: now,
-      updatedAt: now,
-    };
-    setCharacters((prev) => [...prev, newChar]);
-    return newChar.id;
+  const flush = useCallback(async (list: Character[]) => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    skipSave.current = true;
+    charactersRef.current = list;
+    setCharacters(list);
+    try {
+      await putCharacters(list);
+      setSyncError(null);
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : "保存失败");
+      throw e;
+    }
   }, []);
+
+  const addCharacter = useCallback(
+    async (partial?: Partial<Character>) => {
+      const now = new Date().toISOString();
+      const newChar: Character = {
+        id: createId(),
+        ...defaultCharacter(),
+        ...partial,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const next = [...charactersRef.current, newChar];
+      await flush(next);
+      return newChar.id;
+    },
+    [flush]
+  );
 
   const updateCharacter = useCallback(
     (id: string, updates: Partial<Character>) => {
@@ -79,9 +107,13 @@ export function useCharacters() {
     []
   );
 
-  const deleteCharacter = useCallback((id: string) => {
-    setCharacters((prev) => prev.filter((c) => c.id !== id));
-  }, []);
+  const deleteCharacter = useCallback(
+    async (id: string) => {
+      const next = charactersRef.current.filter((c) => c.id !== id);
+      await flush(next);
+    },
+    [flush]
+  );
 
   const getCharacter = useCallback(
     (id: string) => characters.find((c) => c.id === id),
@@ -184,9 +216,12 @@ export function useCharacters() {
     );
   }, []);
 
-  const replaceAll = useCallback((list: Character[]) => {
-    setCharacters(normalizeCharacterList(list));
-  }, []);
+  const replaceAll = useCallback(
+    async (list: Character[]) => {
+      await flush(normalizeCharacterList(list));
+    },
+    [flush]
+  );
 
   return {
     characters,
