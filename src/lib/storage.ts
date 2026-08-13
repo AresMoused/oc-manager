@@ -13,6 +13,8 @@ export function normalizeCharacter(c: Character): Character {
   return {
     ...c,
     world: c.world ?? "",
+    residence: (c as { residence?: string }).residence ?? "",
+    faction: (c as { faction?: string }).faction ?? "",
     gallery: Array.isArray(c.gallery) ? c.gallery : [],
     prompts: Array.isArray((c as { prompts?: unknown }).prompts)
       ? ((c as { prompts: Character["prompts"] }).prompts)

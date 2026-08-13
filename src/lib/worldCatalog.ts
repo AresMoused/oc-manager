@@ -1,12 +1,20 @@
 /** Per-world option catalogs for basic info fields */
 
-export type OptionField = "genders" | "races" | "affiliations" | "birthplaces";
+export type OptionField =
+  | "genders"
+  | "races"
+  | "affiliations"
+  | "birthplaces"
+  | "residences"
+  | "factions";
 
 export interface WorldCatalogEntry {
   genders: string[];
   races: string[];
   affiliations: string[];
   birthplaces: string[];
+  residences: string[];
+  factions: string[];
 }
 
 export type WorldCatalog = Record<string, WorldCatalogEntry>;
@@ -18,6 +26,8 @@ const EMPTY: WorldCatalogEntry = {
   races: [],
   affiliations: [],
   birthplaces: [],
+  residences: [],
+  factions: [],
 };
 
 export function loadWorldCatalog(): WorldCatalog {
@@ -47,6 +57,8 @@ export function getDefaultCatalog(): WorldCatalog {
       races: ["精灵", "半精灵", "人类", "矮人", "兽人"],
       affiliations: ["中立善良", "混乱善良", "守序中立", "中立", "混乱中立"],
       birthplaces: ["溪木镇", "银叶城", "迷雾森林", "边境哨站"],
+      residences: ["溪木镇", "银叶城", "流浪"],
+      factions: ["巡游斥候", "自由佣兵", "无"],
     },
   };
 }
@@ -65,8 +77,10 @@ export function addOption(
   value: string
 ): WorldCatalog {
   const key = world.trim() || "__default__";
-  const entry = catalog[key] ? { ...catalog[key] } : { ...EMPTY };
-  const list = entry[field];
+  const entry = catalog[key]
+    ? { ...EMPTY, ...catalog[key] }
+    : { ...EMPTY };
+  const list = entry[field] || [];
   const v = value.trim();
   if (!v || list.includes(v)) {
     return ensureWorld(catalog, key === "__default__" ? "" : key);
