@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 export default function Navbar(props: { worldColor?: string } = {}) {
   const { worldColor } = props;
   const path = usePathname();
-  const accent = worldColor || "#9333ea";
 
   const linkClass = (href: string) =>
     `px-3 py-1.5 rounded-md text-sm transition ${
@@ -44,6 +43,9 @@ export default function Navbar(props: { worldColor?: string } = {}) {
           <nav className="flex items-center gap-1">
             <Link href="/" className={linkClass("/")}>
               Worlds
+            </Link>
+            <Link href="/generator" className={linkClass("/generator")}>
+              角色生成器
             </Link>
           </nav>
         </div>
