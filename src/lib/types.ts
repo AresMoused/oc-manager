@@ -1,6 +1,6 @@
 export interface TimelineEvent {
   id: string;
-  date: string; // YYYY-MM-DD or free text
+  date: string;
   title: string;
   description: string;
   importance?: "normal" | "major" | "critical";
@@ -10,8 +10,22 @@ export interface Relationship {
   id: string;
   targetId: string;
   type: "friend" | "family" | "ally" | "enemy" | "rival" | "lover" | "mentor" | "other";
-  strength: number; // 1-5
+  strength: number;
   note: string;
+}
+
+/** Custom preference block (user-defined title + content) */
+export interface PreferenceItem {
+  id: string;
+  title: string;
+  content: string;
+}
+
+/** Gallery image (prefer Discord CDN / any URL) */
+export interface GalleryImage {
+  id: string;
+  url: string;
+  caption?: string;
 }
 
 export interface Character {
@@ -28,34 +42,33 @@ export interface Character {
   talent: string;
   personality: string;
   birthplace: string;
-  avatar: string; // base64 or url
+  avatar: string;
+  /** World / Setting / Universe this character belongs to */
+  world: string;
 
-  // Trait analysis (0-100, higher = left side of bipolar)
   traits: {
-    optimistic: number; // vs pessimistic
-    open: number; // vs conservative
-    emotional: number; // vs rational
-    decisive: number; // vs hesitant
-    talkative: number; // vs taciturn
-    adventurous: number; // vs cautious
-    gentle: number; // vs critical
+    optimistic: number;
+    open: number;
+    emotional: number;
+    decisive: number;
+    talkative: number;
+    adventurous: number;
+    gentle: number;
   };
 
-  // Emotional assessment 0-5 (higher = left label)
   emotions: {
-    extrovert: number; // vs introvert
-    positive: number; // vs negative
-    brave: number; // vs timid
-    passionate: number; // vs indifferent
-    diligent: number; // vs lazy
-    generous: number; // vs stingy
-    honest: number; // vs dishonest
-    tolerant: number; // vs harsh
-    strong: number; // vs fragile
-    cheerful: number; // vs melancholy
+    extrovert: number;
+    positive: number;
+    brave: number;
+    passionate: number;
+    diligent: number;
+    generous: number;
+    honest: number;
+    tolerant: number;
+    strong: number;
+    cheerful: number;
   };
 
-  // Combat style radar 0-100
   combat: {
     experience: number;
     collaboration: number;
@@ -64,7 +77,6 @@ export interface Character {
     adaptability: number;
   };
 
-  // Happiness index 0-5
   happiness: {
     family: number;
     emotion: number;
@@ -77,14 +89,9 @@ export interface Character {
     autonomy: number;
   };
 
-  // Personal preferences (text blocks)
-  preferences: {
-    listeningWind: string;
-    gazingStars: string;
-    recordingSights: string;
-  };
+  /** Dynamic preference list (user can add/remove) */
+  preferences: PreferenceItem[];
 
-  // Outward performance 0-5
   outward: {
     ordinary: number;
     optimistic: number;
@@ -94,14 +101,11 @@ export interface Character {
     steady: number;
   };
 
-  // Story experience
   story: string;
-
-  // Timeline
   timeline: TimelineEvent[];
-
-  // Relationships
   relationships: Relationship[];
+  /** Image gallery (URLs, e.g. Discord CDN) */
+  gallery: GalleryImage[];
 
   createdAt: string;
   updatedAt: string;
@@ -120,6 +124,7 @@ export const defaultCharacter = (): Omit<Character, "id" | "createdAt" | "update
   personality: "",
   birthplace: "",
   avatar: "",
+  world: "",
   traits: {
     optimistic: 50,
     open: 50,
@@ -159,11 +164,7 @@ export const defaultCharacter = (): Omit<Character, "id" | "createdAt" | "update
     psychology: 3,
     autonomy: 3,
   },
-  preferences: {
-    listeningWind: "",
-    gazingStars: "",
-    recordingSights: "",
-  },
+  preferences: [],
   outward: {
     ordinary: 3,
     optimistic: 3,
@@ -175,4 +176,30 @@ export const defaultCharacter = (): Omit<Character, "id" | "createdAt" | "update
   story: "",
   timeline: [],
   relationships: [],
+  gallery: [],
 });
+
+/** Migrate old hardcoded preferences object → new array format */
+export function migratePreferences(raw: unknown): PreferenceItem[] {
+  if (Array.isArray(raw)) return raw as PreferenceItem[];
+  if (raw && typeof raw === "object") {
+    const old = raw as Record<string, string>;
+    const items: PreferenceItem[] = [];
+    const map: [string, string][] = [
+      ["listeningWind", "聆听风语 · Listening to the Wind"],
+      ["gazingStars", "仰望星空 · Gazing at the Stars"],
+      ["recordingSights", "记录见闻 · Recording Sights"],
+    ];
+    for (const [key, title] of map) {
+      if (old[key]) {
+        items.push({
+          id: key,
+          title,
+          content: old[key],
+        });
+      }
+    }
+    return items;
+  }
+  return [];
+}
