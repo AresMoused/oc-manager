@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, ReactNode } from "react";
 import { Character, PreferenceItem } from "@/lib/types";
 import SectionHeader from "./SectionHeader";
 import TraitSlider from "./TraitSlider";
@@ -20,6 +21,34 @@ interface Props {
   onAddOption?: (world: string, field: OptionField, value: string) => void;
 }
 
+const SCALE_KEY = "oc-sheet-scale";
+const HEIGHT_KEY = "oc-sheet-panel-height";
+
+/** Equal-height panel shell */
+function Panel({
+  title,
+  children,
+  height,
+  actions,
+}: {
+  title: string;
+  children: ReactNode;
+  height: number;
+  actions?: ReactNode;
+}) {
+  return (
+    <div
+      className="flex flex-col min-h-0 rounded-md overflow-hidden"
+      style={{ height }}
+    >
+      <SectionHeader title={title}>{actions}</SectionHeader>
+      <div className="flex-1 min-h-0 overflow-y-auto bg-[#111] border border-neutral-800 border-t-0 rounded-b-md">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function CharacterSheet({
   character: c,
   onChange,
@@ -29,12 +58,38 @@ export default function CharacterSheet({
   onCreateWorld,
   onAddOption,
 }: Props) {
+  const [scale, setScale] = useState(100);
+  const [panelHeight, setPanelHeight] = useState(340);
+  const [prefsReady, setPrefsReady] = useState(false);
+
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem(SCALE_KEY);
+      const h = localStorage.getItem(HEIGHT_KEY);
+      if (s) setScale(Math.min(150, Math.max(70, Number(s) || 100)));
+      if (h) setPanelHeight(Math.min(560, Math.max(220, Number(h) || 340)));
+    } catch {
+      /* ignore */
+    }
+    setPrefsReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!prefsReady) return;
+    try {
+      localStorage.setItem(SCALE_KEY, String(scale));
+      localStorage.setItem(HEIGHT_KEY, String(panelHeight));
+    } catch {
+      /* ignore */
+    }
+  }, [scale, panelHeight, prefsReady]);
+
   const update = <K extends keyof Character>(key: K, value: Character[K]) => {
     onChange({ [key]: value });
   };
 
   const updateNested = <
-    T extends "traits" | "emotions" | "combat" | "happiness" | "outward"
+    T extends "traits" | "emotions" | "combat" | "happiness" | "preferences" | "outward"
   >(
     section: T,
     key: keyof Character[T],
@@ -48,359 +103,445 @@ export default function CharacterSheet({
     });
   };
 
+  const h1 = panelHeight;
+  const h2 = panelHeight;
+  const h3 = panelHeight;
+
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        <div className="lg:col-span-3">
-          <SectionHeader title="头像 / Avatar" />
-          <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 flex justify-center">
-            <AvatarUpload
-              src={c.avatar}
-              name={c.name}
-              onChange={editable ? (b64) => update("avatar", b64) : undefined}
-              size={180}
-            />
-          </div>
-        </div>
-
-        <div className="lg:col-span-4">
-          <SectionHeader title="基础信息 / Basic Info" />
-          <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2 text-sm">
-            <div className="flex gap-2 items-center pb-1 mb-1 border-b border-neutral-800">
-              <span className="w-14 text-neutral-500 shrink-0">世界:</span>
-              <WorldSelect
-                value={c.world || ""}
-                worlds={worlds}
-                onChange={(w) => update("world", w)}
-                onCreateWorld={onCreateWorld}
-                editable={editable}
-              />
-            </div>
-
-            <div className="flex gap-2 items-center">
-              <span className="w-14 text-neutral-500 shrink-0">姓名:</span>
-              {editable ? (
-                <input
-                  className="flex-1 bg-transparent border-b border-neutral-700 focus:border-purple-500 outline-none px-1 py-0.5 text-neutral-200"
-                  value={c.name}
-                  onChange={(e) => update("name", e.target.value)}
-                />
-              ) : (
-                <span className="text-neutral-200">{c.name}</span>
-              )}
-            </div>
-
-            <OptionSelect
-              label="性别"
-              value={c.gender}
-              options={optionsFor(c.world || "", "genders")}
-              onChange={(v) => update("gender", v)}
-              onCreateOption={(v) => onAddOption?.(c.world || "", "genders", v)}
-              editable={editable}
-            />
-            <OptionSelect
-              label="种族"
-              value={c.race}
-              options={optionsFor(c.world || "", "races")}
-              onChange={(v) => update("race", v)}
-              onCreateOption={(v) => onAddOption?.(c.world || "", "races", v)}
-              editable={editable}
-            />
-
-            {(
-              [
-                ["年龄", "age", String(c.age)],
-                ["身高", "height", c.height],
-                ["体重", "weight", c.weight],
-              ] as const
-            ).map(([label, key, val]) => (
-              <div key={key} className="flex gap-2 items-center">
-                <span className="w-14 text-neutral-500 shrink-0">{label}:</span>
-                {editable ? (
-                  <input
-                    className="flex-1 bg-transparent border-b border-neutral-700 focus:border-purple-500 outline-none px-1 py-0.5 text-neutral-200"
-                    value={val}
-                    onChange={(e) =>
-                      update(key as keyof Character, e.target.value as never)
-                    }
-                  />
-                ) : (
-                  <span className="text-neutral-200">{val}</span>
-                )}
-              </div>
-            ))}
-
-            <OptionSelect
-              label="阵营"
-              value={c.affiliation}
-              options={optionsFor(c.world || "", "affiliations")}
-              onChange={(v) => update("affiliation", v)}
-              onCreateOption={(v) =>
-                onAddOption?.(c.world || "", "affiliations", v)
-              }
-              editable={editable}
-            />
-
-            {(
-              [
-                ["身份", "identity", c.identity],
-                ["天赋", "talent", c.talent],
-                ["性格", "personality", c.personality],
-              ] as const
-            ).map(([label, key, val]) => (
-              <div key={key} className="flex gap-2 items-center">
-                <span className="w-14 text-neutral-500 shrink-0">{label}:</span>
-                {editable ? (
-                  <input
-                    className="flex-1 bg-transparent border-b border-neutral-700 focus:border-purple-500 outline-none px-1 py-0.5 text-neutral-200"
-                    value={val}
-                    onChange={(e) =>
-                      update(key as keyof Character, e.target.value as never)
-                    }
-                  />
-                ) : (
-                  <span className="text-neutral-200">{val}</span>
-                )}
-              </div>
-            ))}
-
-            <OptionSelect
-              label="出生地"
-              value={c.birthplace}
-              options={optionsFor(c.world || "", "birthplaces")}
-              onChange={(v) => update("birthplace", v)}
-              onCreateOption={(v) =>
-                onAddOption?.(c.world || "", "birthplaces", v)
-              }
-              editable={editable}
-            />
-          </div>
-        </div>
-
-        <div className="lg:col-span-5">
-          <SectionHeader title="特质分析 / Trait Analysis" />
-          <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2.5">
-            <TraitSlider leftLabel="乐观" rightLabel="悲观" value={c.traits.optimistic} onChange={editable ? (v) => updateNested("traits", "optimistic", v) : undefined} />
-            <TraitSlider leftLabel="开放" rightLabel="保守" value={c.traits.open} onChange={editable ? (v) => updateNested("traits", "open", v) : undefined} />
-            <TraitSlider leftLabel="感性" rightLabel="理性" value={c.traits.emotional} onChange={editable ? (v) => updateNested("traits", "emotional", v) : undefined} />
-            <TraitSlider leftLabel="果断" rightLabel="犹豫" value={c.traits.decisive} onChange={editable ? (v) => updateNested("traits", "decisive", v) : undefined} />
-            <TraitSlider leftLabel="健谈" rightLabel="寡言" value={c.traits.talkative} onChange={editable ? (v) => updateNested("traits", "talkative", v) : undefined} />
-            <TraitSlider leftLabel="冒险" rightLabel="谨慎" value={c.traits.adventurous} onChange={editable ? (v) => updateNested("traits", "adventurous", v) : undefined} />
-            <TraitSlider leftLabel="随和" rightLabel="挑剔" value={c.traits.gentle} onChange={editable ? (v) => updateNested("traits", "gentle", v) : undefined} />
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        <div className="lg:col-span-4">
-          <SectionHeader title="情绪评估 / Emotional Assessment" />
-          <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2 text-xs">
-            {(
-              [
-                ["外向", "内向", "extrovert"],
-                ["积极", "消极", "positive"],
-                ["勇敢", "胆小", "brave"],
-                ["热情", "冷漠", "passionate"],
-                ["勤奋", "懒惰", "diligent"],
-                ["慷慨", "吝啬", "generous"],
-                ["诚实", "虚伪", "honest"],
-                ["宽容", "苛刻", "tolerant"],
-                ["坚强", "脆弱", "strong"],
-                ["开朗", "忧郁", "cheerful"],
-              ] as const
-            ).map(([left, right, key]) => (
-              <div key={key} className="flex items-center gap-2">
-                <span className="w-8 text-right text-neutral-400">{left}</span>
-                <DotRating value={c.emotions[key]} onChange={editable ? (v) => updateNested("emotions", key, v) : undefined} />
-                <span className="w-8 text-neutral-400">{right}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="lg:col-span-4">
-          <SectionHeader title="战斗风格 / Combat Style" />
-          <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-2 flex justify-center">
-            <RadarChart
-              data={c.combat}
-              size={220}
-              onChange={
-                editable
-                  ? (key, value) => updateNested("combat", key, value)
-                  : undefined
-              }
-            />
-          </div>
-          {editable && (
-            <div className="bg-[#111] border border-neutral-800 border-t-0 p-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-              {(
-                [
-                  ["经验", "experience"],
-                  ["协作", "collaboration"],
-                  ["冲突", "conflict"],
-                  ["智取", "intelligence"],
-                  ["应变", "adaptability"],
-                ] as const
-              ).map(([label, key]) => (
-                <div key={key} className="flex items-center gap-1.5">
-                  <span className="w-8 text-neutral-400 shrink-0">{label}</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={c.combat[key]}
-                    onChange={(e) =>
-                      updateNested("combat", key, Number(e.target.value))
-                    }
-                    className="combat-slider flex-1"
-                  />
-                  <span className="w-7 text-right tabular-nums text-purple-300 font-medium">
-                    {c.combat[key]}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="lg:col-span-4">
-          <SectionHeader title="幸福指数 / Happiness Index" />
-          <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2 text-xs">
-            {(
-              [
-                ["家庭", "family"],
-                ["情感", "emotion"],
-                ["健康", "health"],
-                ["经济", "economy"],
-                ["人际", "interpersonal"],
-                ["地位", "status"],
-                ["成长", "growth"],
-                ["心理", "psychology"],
-                ["自主", "autonomy"],
-              ] as const
-            ).map(([label, key]) => (
-              <div key={key} className="flex items-center gap-3">
-                <span className="w-8 text-neutral-400">{label}</span>
-                <DotRating value={c.happiness[key]} onChange={editable ? (v) => updateNested("happiness", key, v) : undefined} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        <div className="lg:col-span-4">
-          <SectionHeader
-            title="个人喜好 / Preferences"
-            onAdd={
-              editable
-                ? () => {
-                    const item: PreferenceItem = {
-                      id: crypto.randomUUID(),
-                      title: "新喜好",
-                      content: "",
-                    };
-                    onChange({ preferences: [...c.preferences, item] });
-                  }
-                : undefined
-            }
+    <div className="space-y-3">
+      {/* Layout controls */}
+      <div className="flex flex-wrap items-center gap-4 px-1 py-2 text-xs text-neutral-400 border border-neutral-800 rounded-lg bg-[#0d0d0d]">
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 w-14">缩放</span>
+          <input
+            type="range"
+            min={70}
+            max={140}
+            step={5}
+            value={scale}
+            onChange={(e) => setScale(Number(e.target.value))}
+            className="w-28 accent-purple-500"
           />
-          <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-3 text-xs">
-            {c.preferences.length === 0 && (
-              <p className="text-neutral-500 text-center py-4">
-                点击 + 添加自定义喜好条目
-              </p>
-            )}
-            {c.preferences.map((pref, idx) => (
-              <div key={pref.id} className="relative group">
-                {editable ? (
-                  <>
-                    <input
-                      className="w-full bg-transparent text-purple-400 mb-1 font-medium outline-none border-b border-transparent focus:border-purple-600"
-                      value={pref.title}
-                      placeholder="标题"
-                      onChange={(e) => {
-                        const next = [...c.preferences];
-                        next[idx] = { ...pref, title: e.target.value };
-                        onChange({ preferences: next });
-                      }}
+          <span className="tabular-nums w-10 text-neutral-300">{scale}%</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 w-14">分区高度</span>
+          <input
+            type="range"
+            min={220}
+            max={520}
+            step={10}
+            value={panelHeight}
+            onChange={(e) => setPanelHeight(Number(e.target.value))}
+            className="w-28 accent-purple-500"
+          />
+          <span className="tabular-nums w-12 text-neutral-300">{panelHeight}px</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setScale(100);
+            setPanelHeight(340);
+          }}
+          className="ml-auto px-2 py-1 rounded border border-neutral-700 hover:bg-neutral-800 text-neutral-400 hover:text-white transition"
+        >
+          重置
+        </button>
+      </div>
+
+      <div
+        style={{
+          transform: `scale(${scale / 100})`,
+          transformOrigin: "top left",
+          width: `${10000 / scale}%`,
+        }}
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+            <div className="lg:col-span-3">
+              <Panel title="头像 / Avatar" height={h1}>
+                <div className="p-3 flex justify-center items-center h-full">
+                  <AvatarUpload
+                    src={c.avatar}
+                    name={c.name}
+                    onChange={editable ? (b64) => update("avatar", b64) : undefined}
+                    size={Math.min(180, panelHeight - 80)}
+                  />
+                </div>
+              </Panel>
+            </div>
+
+            <div className="lg:col-span-4">
+              <Panel title="基础信息 / Basic Info" height={h1}>
+                <div className="p-3 space-y-2 text-sm">
+                  <div className="flex gap-2 items-center pb-1 mb-1 border-b border-neutral-800">
+                    <span className="w-14 text-neutral-500 shrink-0">世界:</span>
+                    <WorldSelect
+                      value={c.world || ""}
+                      worlds={worlds}
+                      onChange={(w) => update("world", w)}
+                      onCreateWorld={onCreateWorld}
+                      editable={editable}
                     />
-                    <textarea
-                      className="w-full bg-[#0a0a0a] border border-neutral-700 rounded p-2 text-neutral-300 min-h-[60px] outline-none focus:border-purple-500"
-                      value={pref.content}
-                      placeholder="内容..."
-                      onChange={(e) => {
-                        const next = [...c.preferences];
-                        next[idx] = { ...pref, content: e.target.value };
-                        onChange({ preferences: next });
-                      }}
-                    />
+                  </div>
+
+                  <div className="flex gap-2 items-center">
+                    <span className="w-14 text-neutral-500 shrink-0">姓名:</span>
+                    {editable ? (
+                      <input
+                        className="flex-1 bg-transparent border-b border-neutral-700 focus:border-purple-500 outline-none px-1 py-0.5 text-neutral-200"
+                        value={c.name}
+                        onChange={(e) => update("name", e.target.value)}
+                      />
+                    ) : (
+                      <span className="text-neutral-200">{c.name}</span>
+                    )}
+                  </div>
+
+                  <OptionSelect
+                    label="性别"
+                    value={c.gender}
+                    options={optionsFor(c.world || "", "genders")}
+                    onChange={(v) => update("gender", v)}
+                    onCreateOption={(v) => onAddOption?.(c.world || "", "genders", v)}
+                    editable={editable}
+                  />
+                  <OptionSelect
+                    label="种族"
+                    value={c.race}
+                    options={optionsFor(c.world || "", "races")}
+                    onChange={(v) => update("race", v)}
+                    onCreateOption={(v) => onAddOption?.(c.world || "", "races", v)}
+                    editable={editable}
+                  />
+
+                  {(
+                    [
+                      ["年龄", "age", String(c.age)],
+                      ["身高", "height", c.height],
+                      ["体重", "weight", c.weight],
+                    ] as const
+                  ).map(([label, key, val]) => (
+                    <div key={key} className="flex gap-2 items-center">
+                      <span className="w-14 text-neutral-500 shrink-0">{label}:</span>
+                      {editable ? (
+                        <input
+                          className="flex-1 bg-transparent border-b border-neutral-700 focus:border-purple-500 outline-none px-1 py-0.5 text-neutral-200"
+                          value={val}
+                          onChange={(e) =>
+                            update(key as keyof Character, e.target.value as never)
+                          }
+                        />
+                      ) : (
+                        <span className="text-neutral-200">{val}</span>
+                      )}
+                    </div>
+                  ))}
+
+                  <OptionSelect
+                    label="阵营"
+                    value={c.affiliation}
+                    options={optionsFor(c.world || "", "affiliations")}
+                    onChange={(v) => update("affiliation", v)}
+                    onCreateOption={(v) =>
+                      onAddOption?.(c.world || "", "affiliations", v)
+                    }
+                    editable={editable}
+                  />
+
+                  {(
+                    [
+                      ["身份", "identity", c.identity],
+                      ["天赋", "talent", c.talent],
+                      ["性格", "personality", c.personality],
+                    ] as const
+                  ).map(([label, key, val]) => (
+                    <div key={key} className="flex gap-2 items-center">
+                      <span className="w-14 text-neutral-500 shrink-0">{label}:</span>
+                      {editable ? (
+                        <input
+                          className="flex-1 bg-transparent border-b border-neutral-700 focus:border-purple-500 outline-none px-1 py-0.5 text-neutral-200"
+                          value={val}
+                          onChange={(e) =>
+                            update(key as keyof Character, e.target.value as never)
+                          }
+                        />
+                      ) : (
+                        <span className="text-neutral-200">{val}</span>
+                      )}
+                    </div>
+                  ))}
+
+                  <OptionSelect
+                    label="出生地"
+                    value={c.birthplace}
+                    options={optionsFor(c.world || "", "birthplaces")}
+                    onChange={(v) => update("birthplace", v)}
+                    onCreateOption={(v) =>
+                      onAddOption?.(c.world || "", "birthplaces", v)
+                    }
+                    editable={editable}
+                  />
+                </div>
+              </Panel>
+            </div>
+
+            <div className="lg:col-span-5">
+              <Panel title="特质分析 / Trait Analysis" height={h1}>
+                <div className="p-3 space-y-2.5">
+                  <TraitSlider leftLabel="乐观" rightLabel="悲观" value={c.traits.optimistic} onChange={editable ? (v) => updateNested("traits", "optimistic", v) : undefined} />
+                  <TraitSlider leftLabel="开放" rightLabel="保守" value={c.traits.open} onChange={editable ? (v) => updateNested("traits", "open", v) : undefined} />
+                  <TraitSlider leftLabel="感性" rightLabel="理性" value={c.traits.emotional} onChange={editable ? (v) => updateNested("traits", "emotional", v) : undefined} />
+                  <TraitSlider leftLabel="果断" rightLabel="犹豫" value={c.traits.decisive} onChange={editable ? (v) => updateNested("traits", "decisive", v) : undefined} />
+                  <TraitSlider leftLabel="健谈" rightLabel="寡言" value={c.traits.talkative} onChange={editable ? (v) => updateNested("traits", "talkative", v) : undefined} />
+                  <TraitSlider leftLabel="冒险" rightLabel="谨慎" value={c.traits.adventurous} onChange={editable ? (v) => updateNested("traits", "adventurous", v) : undefined} />
+                  <TraitSlider leftLabel="随和" rightLabel="挑剔" value={c.traits.gentle} onChange={editable ? (v) => updateNested("traits", "gentle", v) : undefined} />
+                </div>
+              </Panel>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+            <div className="lg:col-span-4">
+              <Panel title="情绪评估 / Emotional Assessment" height={h2}>
+                <div className="p-3 space-y-2 text-xs">
+                  {(
+                    [
+                      ["外向", "内向", "extrovert"],
+                      ["积极", "消极", "positive"],
+                      ["勇敢", "胆小", "brave"],
+                      ["热情", "冷漠", "passionate"],
+                      ["勤奋", "懒惰", "diligent"],
+                      ["慷慨", "吝啬", "generous"],
+                      ["诚实", "虚伪", "honest"],
+                      ["宽容", "苛刻", "tolerant"],
+                      ["坚强", "脆弱", "strong"],
+                      ["开朗", "忧郁", "cheerful"],
+                    ] as const
+                  ).map(([left, right, key]) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="w-8 text-right text-neutral-400">{left}</span>
+                      <DotRating value={c.emotions[key]} onChange={editable ? (v) => updateNested("emotions", key, v) : undefined} />
+                      <span className="w-8 text-neutral-500">{right}</span>
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            </div>
+
+            <div className="lg:col-span-4">
+              <Panel title="战斗风格 / Combat Style" height={h2}>
+                <div className="p-2 flex flex-col items-center gap-2 h-full">
+                  <RadarChart
+                    data={{
+                      experience: c.combat.experience,
+                      collaboration: c.combat.collaboration,
+                      conflict: c.combat.conflict,
+                      intelligence: c.combat.intelligence,
+                      adaptability: c.combat.adaptability,
+                    }}
+                    size={Math.min(200, panelHeight - 120)}
+                    onChange={
+                      editable
+                        ? (key, v) => updateNested("combat", key, v)
+                        : undefined
+                    }
+                  />
+                  <div className="w-full grid grid-cols-2 gap-x-3 gap-y-2 text-xs px-1">
+                    {(
+                      [
+                        ["经验", "experience"],
+                        ["协作", "collaboration"],
+                        ["冲突", "conflict"],
+                        ["智取", "intelligence"],
+                        ["应变", "adaptability"],
+                      ] as const
+                    ).map(([label, key]) => (
+                      <div key={key} className="flex items-center gap-1.5">
+                        <span className="w-7 text-neutral-500 shrink-0">{label}</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={c.combat[key]}
+                          disabled={!editable}
+                          onChange={(e) =>
+                            updateNested("combat", key, Number(e.target.value))
+                          }
+                          className="flex-1 accent-purple-500 h-1"
+                        />
+                        <span className="w-6 text-right tabular-nums text-neutral-400">
+                          {c.combat[key]}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </Panel>
+            </div>
+
+            <div className="lg:col-span-4">
+              <Panel title="幸福指数 / Happiness Index" height={h2}>
+                <div className="p-3 space-y-2.5 text-xs">
+                  {(
+                    [
+                      ["家庭", "family"],
+                      ["情感", "emotion"],
+                      ["健康", "health"],
+                      ["经济", "economy"],
+                      ["人际", "interpersonal"],
+                      ["地位", "status"],
+                      ["成长", "growth"],
+                      ["心理", "psychology"],
+                      ["自主", "autonomy"],
+                    ] as const
+                  ).map(([label, key]) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="w-8 text-neutral-400">{label}</span>
+                      <DotRating value={c.happiness[key]} onChange={editable ? (v) => updateNested("happiness", key, v) : undefined} />
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+            <div className="lg:col-span-4">
+              <Panel
+                title="个人喜好 / Preferences"
+                height={h3}
+                actions={
+                  editable ? (
                     <button
                       type="button"
                       onClick={() => {
-                        onChange({
-                          preferences: c.preferences.filter((p) => p.id !== pref.id),
-                        });
+                        const item: PreferenceItem = {
+                          id: crypto.randomUUID(),
+                          title: "新喜好",
+                          content: "",
+                        };
+                        update("preferences", [...(c.preferences || []), item]);
                       }}
-                      className="absolute top-0 right-0 text-neutral-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 text-xs px-1"
+                      className="text-neutral-400 hover:text-white text-sm px-1"
                     >
-                      ×
+                      +
                     </button>
-                  </>
-                ) : (
-                  <>
-                    <div className="text-purple-400 mb-1 font-medium">{pref.title}</div>
-                    <p className="text-neutral-400 leading-relaxed">{pref.content || "—"}</p>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
+                  ) : undefined
+                }
+              >
+                <div className="p-3 space-y-3">
+                  {(c.preferences || []).map((pref) => (
+                    <div
+                      key={pref.id}
+                      className="relative group text-sm border-b border-neutral-800 pb-2 last:border-0"
+                    >
+                      {editable ? (
+                        <>
+                          <input
+                            className="w-full bg-transparent text-purple-400 font-medium outline-none mb-1"
+                            value={pref.title}
+                            onChange={(e) =>
+                              update(
+                                "preferences",
+                                (c.preferences || []).map((p) =>
+                                  p.id === pref.id
+                                    ? { ...p, title: e.target.value }
+                                    : p
+                                )
+                              )
+                            }
+                          />
+                          <textarea
+                            className="w-full bg-transparent text-neutral-400 text-xs outline-none resize-none min-h-[48px]"
+                            value={pref.content}
+                            onChange={(e) =>
+                              update(
+                                "preferences",
+                                (c.preferences || []).map((p) =>
+                                  p.id === pref.id
+                                    ? { ...p, content: e.target.value }
+                                    : p
+                                )
+                              )
+                            }
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              update(
+                                "preferences",
+                                (c.preferences || []).filter((p) => p.id !== pref.id)
+                              )
+                            }
+                            className="absolute top-0 right-0 text-neutral-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 text-xs px-1"
+                          >
+                            ×
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-purple-400 mb-1 font-medium">
+                            {pref.title}
+                          </div>
+                          <p className="text-neutral-400 leading-relaxed">
+                            {pref.content || "—"}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            </div>
 
-        <div className="lg:col-span-3">
-          <SectionHeader title="对外表现 / Outward" />
-          <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2.5 text-xs">
-            {(
-              [
-                ["平凡", "ordinary"],
-                ["乐天", "optimistic"],
-                ["平静", "calm"],
-                ["高效", "efficient"],
-                ["友善", "friendly"],
-                ["稳重", "steady"],
-              ] as const
-            ).map(([label, key]) => (
-              <div key={key} className="flex items-center gap-2">
-                <span className="w-8 text-neutral-400">{label}</span>
-                <DotRating
-                  value={c.outward[key]}
-                  onChange={
-                    editable
-                      ? (v) => updateNested("outward", key, v)
-                      : undefined
-                  }
-                />
-              </div>
-            ))}
-          </div>
-        </div>
+            <div className="lg:col-span-3">
+              <Panel title="对外表现 / Outward" height={h3}>
+                <div className="p-3 space-y-2.5 text-xs">
+                  {(
+                    [
+                      ["平凡", "ordinary"],
+                      ["乐天", "optimistic"],
+                      ["平静", "calm"],
+                      ["高效", "efficient"],
+                      ["友善", "friendly"],
+                      ["稳重", "steady"],
+                    ] as const
+                  ).map(([label, key]) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="w-8 text-neutral-400">{label}</span>
+                      <DotRating
+                        value={c.outward[key]}
+                        onChange={
+                          editable
+                            ? (v) => updateNested("outward", key, v)
+                            : undefined
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            </div>
 
-        <div className="lg:col-span-5">
-          <SectionHeader title="故事经历 / Story Experience" />
-          <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3">
-            {editable ? (
-              <textarea
-                className="w-full bg-[#0a0a0a] border border-neutral-700 rounded p-3 text-sm text-neutral-300 min-h-[220px] outline-none focus:border-purple-500 leading-relaxed"
-                value={c.story}
-                onChange={(e) => update("story", e.target.value)}
-                placeholder="Write the character's backstory here..."
-              />
-            ) : (
-              <div className="text-sm text-neutral-300 leading-relaxed whitespace-pre-wrap min-h-[220px]">
-                {c.story || "No story yet."}
-              </div>
-            )}
+            <div className="lg:col-span-5">
+              <Panel title="故事经历 / Story Experience" height={h3}>
+                <div className="p-3 h-full">
+                  {editable ? (
+                    <textarea
+                      className="w-full h-full min-h-[160px] bg-[#0a0a0a] border border-neutral-700 rounded p-3 text-sm text-neutral-300 outline-none focus:border-purple-500 leading-relaxed resize-none"
+                      value={c.story}
+                      onChange={(e) => update("story", e.target.value)}
+                      placeholder="Write the character's backstory here..."
+                    />
+                  ) : (
+                    <div className="text-sm text-neutral-300 leading-relaxed whitespace-pre-wrap">
+                      {c.story || "No story yet."}
+                    </div>
+                  )}
+                </div>
+              </Panel>
+            </div>
           </div>
         </div>
       </div>
