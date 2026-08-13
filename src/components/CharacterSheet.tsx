@@ -9,6 +9,7 @@ import AvatarUpload from "./AvatarUpload";
 import OptionSelect from "./OptionSelect";
 import WorldSelect from "./WorldSelect";
 import { OptionField } from "@/lib/worldCatalog";
+import ResizableRow from "./ResizableRow";
 
 interface Props {
   character: Character;
@@ -50,8 +51,9 @@ export default function CharacterSheet({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        <div className="lg:col-span-3">
+      {/* Top row: Avatar + Basic + Traits */}
+      <ResizableRow storageKey="sheet-row-top">
+        <div className="h-full">
           <SectionHeader title="头像 / Avatar" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 flex justify-center">
             <AvatarUpload
@@ -63,7 +65,7 @@ export default function CharacterSheet({
           </div>
         </div>
 
-        <div className="lg:col-span-4">
+        <div className="h-full">
           <SectionHeader title="基础信息 / Basic Info" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2 text-sm">
             <div className="flex gap-2 items-center pb-1 mb-1 border-b border-neutral-800">
@@ -177,7 +179,7 @@ export default function CharacterSheet({
           </div>
         </div>
 
-        <div className="lg:col-span-5">
+        <div className="h-full">
           <SectionHeader title="特质分析 / Trait Analysis" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2.5">
             <TraitSlider leftLabel="乐观" rightLabel="悲观" value={c.traits.optimistic} onChange={editable ? (v) => updateNested("traits", "optimistic", v) : undefined} />
@@ -189,10 +191,11 @@ export default function CharacterSheet({
             <TraitSlider leftLabel="随和" rightLabel="挑剔" value={c.traits.gentle} onChange={editable ? (v) => updateNested("traits", "gentle", v) : undefined} />
           </div>
         </div>
-      </div>
+      </ResizableRow>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        <div className="lg:col-span-4">
+      {/* Middle row: Emotions + Combat + Happiness */}
+      <ResizableRow storageKey="sheet-row-mid">
+        <div className="h-full">
           <SectionHeader title="情绪评估 / Emotional Assessment" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2 text-xs">
             {(
@@ -218,7 +221,7 @@ export default function CharacterSheet({
           </div>
         </div>
 
-        <div className="lg:col-span-4">
+        <div className="h-full">
           <SectionHeader title="战斗风格 / Combat Style" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-2 flex justify-center">
             <RadarChart
@@ -263,7 +266,7 @@ export default function CharacterSheet({
           )}
         </div>
 
-        <div className="lg:col-span-4">
+        <div className="h-full">
           <SectionHeader title="幸福指数 / Happiness Index" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2 text-xs">
             {(
@@ -286,10 +289,11 @@ export default function CharacterSheet({
             ))}
           </div>
         </div>
-      </div>
+      </ResizableRow>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        <div className="lg:col-span-4">
+      {/* Bottom row: Preferences + Outward + Story */}
+      <ResizableRow storageKey="sheet-row-bot">
+        <div className="h-full">
           <SectionHeader
             title="个人喜好 / Preferences"
             onAdd={
@@ -358,7 +362,7 @@ export default function CharacterSheet({
           </div>
         </div>
 
-        <div className="lg:col-span-3">
+        <div className="h-full">
           <SectionHeader title="对外表现 / Outward" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2.5 text-xs">
             {(
@@ -386,7 +390,7 @@ export default function CharacterSheet({
           </div>
         </div>
 
-        <div className="lg:col-span-5">
+        <div className="h-full">
           <SectionHeader title="故事经历 / Story Experience" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3">
             {editable ? (
@@ -403,7 +407,7 @@ export default function CharacterSheet({
             )}
           </div>
         </div>
-      </div>
+      </ResizableRow>
     </div>
   );
 }
