@@ -1,4 +1,4 @@
-import { Character, defaultCharacter } from "./types";
+import { Character, defaultCharacter, migratePreferences } from "./types";
 
 const STORAGE_KEY = "oc-manager-characters-v1";
 
@@ -7,7 +7,14 @@ export function loadCharacters(): Character[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return getSampleCharacters();
-    return JSON.parse(raw) as Character[];
+    const parsed = JSON.parse(raw) as Character[];
+    // Migrate old data shapes
+    return parsed.map((c) => ({
+      ...c,
+      world: c.world ?? "",
+      gallery: Array.isArray(c.gallery) ? c.gallery : [],
+      preferences: migratePreferences(c.preferences),
+    }));
   } catch {
     return getSampleCharacters();
   }
@@ -61,6 +68,7 @@ export function getSampleCharacters(): Character[] {
       personality: "外冷内热，责任心强",
       birthplace: "绿叶边境·溪木镇",
       avatar: "",
+      world: "绿叶边境",
       traits: {
         optimistic: 50,
         open: 73,
@@ -100,14 +108,24 @@ export function getSampleCharacters(): Character[] {
         psychology: 3,
         autonomy: 4,
       },
-      preferences: {
-        listeningWind:
-          "她最爱在高处闭着眼，感受风穿过发梢与耳畔。",
-        gazingStars:
-          "清澈的异界夜空下，她能一动不动地躺上整夜，星辰是她孤独旅途中永恒且沉默的同伴。",
-        recordingSights:
-          "用炭笔素描陌生的植物、奇特的生物，这是她与世界的对话方式。",
-      },
+      preferences: [
+        {
+          id: "p1",
+          title: "聆听风语 · Listening to the Wind",
+          content: "她最爱在高处闭着眼，感受风穿过发梢与耳畔。",
+        },
+        {
+          id: "p2",
+          title: "仰望星空 · Gazing at the Stars",
+          content: "清澈的异界夜空下，她能一动不动地躺上整夜，星辰是她孤独旅途中永恒且沉默的同伴。",
+        },
+        {
+          id: "p3",
+          title: "记录见闻 · Recording Sights",
+          content: "用炭笔素描陌生的植物、奇特的生物，这是她与世界的对话方式。",
+        },
+      ],
+      gallery: [],
       outward: {
         ordinary: 3,
         optimistic: 4,
