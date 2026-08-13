@@ -7,6 +7,7 @@ import CharacterSheet from "@/components/CharacterSheet";
 import Timeline from "@/components/Timeline";
 import RelationshipsPanel from "@/components/RelationshipsPanel";
 import Gallery from "@/components/Gallery";
+import PromptBank from "@/components/PromptBank";
 import WorldSelect from "@/components/WorldSelect";
 import { useCharacters } from "@/hooks/useCharacters";
 import { useWorldCatalog } from "@/hooks/useWorldCatalog";
@@ -33,12 +34,7 @@ export default function CharacterPage({
     deleteRelationship,
   } = useCharacters();
 
-  const {
-    worlds,
-    createWorld,
-    addFieldOption,
-    optionsFor,
-  } = useWorldCatalog();
+  const { worlds, createWorld, addFieldOption, optionsFor } = useWorldCatalog();
   const { getWorldByName } = useWorlds();
 
   const [tab, setTab] = useState<
@@ -114,9 +110,7 @@ export default function CharacterPage({
             <button
               onClick={() => {
                 if (
-                  confirm(
-                    `Delete ${character.name}? This cannot be undone.`
-                  )
+                  confirm(`Delete ${character.name}? This cannot be undone.`)
                 ) {
                   deleteCharacter(id);
                   window.location.href = backHref;
@@ -161,11 +155,18 @@ export default function CharacterPage({
           />
         )}
         {tab === "gallery" && (
-          <Gallery
-            images={character.gallery || []}
-            onChange={(gallery) => updateCharacter(id, { gallery })}
-            editable
-          />
+          <>
+            <PromptBank
+              prompts={character.prompts || []}
+              onChange={(prompts) => updateCharacter(id, { prompts })}
+              editable
+            />
+            <Gallery
+              images={character.gallery || []}
+              onChange={(gallery) => updateCharacter(id, { gallery })}
+              editable
+            />
+          </>
         )}
         {tab === "timeline" && (
           <Timeline
