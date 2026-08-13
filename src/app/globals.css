@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #e5e5e5;
+  --card: #111111;
+  --card-hover: #1a1a1a;
+  --purple: #7c3aed;
+  --purple-dark: #5b21b6;
+  --purple-header: #6b21a8;
+  --accent: #a855f7;
+  --muted: #737373;
+  --border: #262626;
+  --green: #22c55e;
+  --pink: #ec4899;
+  --blue: #3b82f6;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-purple: var(--purple);
+  --color-purple-dark: var(--purple-dark);
+  --color-accent: var(--accent);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Slider track */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: linear-gradient(to right, #22c55e 0%, #22c55e var(--value, 50%), #ec4899 var(--value, 50%), #ec4899 100%);
+  border-radius: 3px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #7c3aed;
+  box-shadow: 0 0 4px rgba(124, 58, 237, 0.5);
+}
+
+/* Dot rating */
+.dot-rating {
+  display: flex;
+  gap: 4px;
+}
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #333;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.dot.active {
+  background: #a855f7;
+  box-shadow: 0 0 6px rgba(168, 85, 247, 0.6);
+}
+.dot:hover {
+  transform: scale(1.15);
+}
