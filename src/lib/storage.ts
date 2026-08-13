@@ -8,7 +8,6 @@ export function loadCharacters(): Character[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return getSampleCharacters();
     const parsed = JSON.parse(raw) as Character[];
-    // Migrate old data shapes
     return parsed.map((c) => ({
       ...c,
       world: c.world ?? "",
@@ -25,11 +24,10 @@ export function saveCharacters(chars: Character[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(chars));
   } catch (err) {
-    // QuotaExceededError – try stripping large base64 avatars and retry once
     console.warn("localStorage quota exceeded, attempting cleanup…", err);
     const cleaned = chars.map((c) => {
       if (c.avatar && c.avatar.startsWith("data:") && c.avatar.length > 80_000) {
-        return { ...c, avatar: "" }; // drop oversized base64
+        return { ...c, avatar: "" };
       }
       return c;
     });
@@ -160,12 +158,54 @@ export function getSampleCharacters(): Character[] {
   ];
 }
 
+/** Flat array export (legacy) */
 export function exportCharacters(chars: Character[]): string {
   return JSON.stringify(chars, null, 2);
 }
 
+/**
+ * Hierarchical export grouped by world folders.
+ */
+export function exportByWorld(chars: Character[]): string {
+  const worlds: Record<string, { characters: Character[] }> = {};
+  const unassigned: Character[] = [];
+  for (const c of chars) {
+    const w = c.world?.trim();
+    if (!w) {
+      unassigned.push(c);
+      continue;
+    }
+    if (!worlds[w]) worlds[w] = { characters: [] };
+    worlds[w].characters.push(c);
+  }
+  return JSON.stringify(
+    {
+      version: 2,
+      format: "oc-manager-world-folders",
+      exportedAt: new Date().toISOString(),
+      worlds,
+      unassigned,
+    },
+    null,
+    2
+  );
+}
+
 export function importCharacters(json: string): Character[] {
   const data = JSON.parse(json);
+  if (data && typeof data === "object" && data.format === "oc-manager-world-folders") {
+    const list: Character[] = [];
+    const worlds = data.worlds || {};
+    for (const [worldName, folder] of Object.entries(worlds) as [string, { characters?: Character[] }][]) {
+      for (const c of folder.characters || []) {
+        list.push({ ...c, world: c.world || worldName });
+      }
+    }
+    for (const c of data.unassigned || []) {
+      list.push(c);
+    }
+    return list;
+  }
   if (!Array.isArray(data)) throw new Error("Invalid format");
   return data as Character[];
 }
