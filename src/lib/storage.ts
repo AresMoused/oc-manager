@@ -15,6 +15,9 @@ function normalizeCharacter(c: Character): Character {
     ...c,
     world: c.world ?? "",
     gallery: Array.isArray(c.gallery) ? c.gallery : [],
+    prompts: Array.isArray((c as { prompts?: unknown }).prompts)
+      ? ((c as { prompts: Character["prompts"] }).prompts)
+      : [],
     preferences: migratePreferences(c.preferences),
     traits: migrateTraits(c.traits),
     emotions: migrateEmotions(c.emotions),
@@ -141,6 +144,7 @@ export function getSampleCharacters(): Character[] {
         },
       ],
       gallery: [],
+      prompts: [],
       outward: {
         ordinary: 3,
         optimistic: 4,
@@ -175,12 +179,10 @@ export function getSampleCharacters(): Character[] {
   ];
 }
 
-/** Flat array export (legacy) */
 export function exportCharacters(chars: Character[]): string {
   return JSON.stringify(chars, null, 2);
 }
 
-/** Hierarchical export grouped by world folders. */
 export function exportByWorld(chars: Character[]): string {
   const worlds: Record<string, { characters: Character[] }> = {};
   const unassigned: Character[] = [];
