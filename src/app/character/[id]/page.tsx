@@ -10,6 +10,8 @@ import Gallery from "@/components/Gallery";
 import WorldSelect from "@/components/WorldSelect";
 import { useCharacters } from "@/hooks/useCharacters";
 import { useWorldCatalog } from "@/hooks/useWorldCatalog";
+import { useWorlds } from "@/hooks/useWorlds";
+import Footer from "@/components/Footer";
 
 export default function CharacterPage({
   params,
@@ -37,10 +39,12 @@ export default function CharacterPage({
     addFieldOption,
     optionsFor,
   } = useWorldCatalog();
+  const { getWorldByName } = useWorlds();
 
   const [tab, setTab] = useState<
-    "sheet" | "timeline" | "relations" | "gallery"
+    "sheet" | "gallery" | "timeline" | "relations"
   >("sheet");
+
   const character = getCharacter(id);
 
   if (!loaded) {
@@ -58,26 +62,42 @@ export default function CharacterPage({
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
           <p className="text-neutral-400">Character not found</p>
           <Link href="/" className="text-purple-400 hover:underline">
-            ← Back to list
+            ← Back to Worlds
           </Link>
         </div>
       </div>
     );
   }
 
+  const worldMeta = getWorldByName(character.world || "");
+  const backHref = worldMeta ? `/world/${worldMeta.id}` : "/";
+  const backLabel = worldMeta ? `← ${worldMeta.name}` : "← Worlds";
+
+  const tabs = [
+    { key: "sheet" as const, label: "Character Sheet" },
+    { key: "gallery" as const, label: "Gallery" },
+    { key: "timeline" as const, label: "Timeline" },
+    { key: "relations" as const, label: "Relationships" },
+  ];
+
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar />
+      <Navbar worldColor={worldMeta?.color} />
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-3 flex-wrap">
             <Link
-              href="/"
+              href={backHref}
               className="text-neutral-400 hover:text-white transition text-sm"
             >
-              ← Back
+              {backLabel}
             </Link>
+            {worldMeta && (
+              <span
+                className="w-2.5 h-2.5 rounded-full"
+                style={{ backgroundColor: worldMeta.color }}
+              />
+            )}
             <h1 className="text-xl font-bold text-white">{character.name}</h1>
             <span className="text-xs text-neutral-500 px-2 py-0.5 rounded bg-neutral-800">
               {character.race}
@@ -99,46 +119,41 @@ export default function CharacterPage({
                   )
                 ) {
                   deleteCharacter(id);
-                  window.location.href = "/";
+                  window.location.href = backHref;
                 }
               }}
-              className="px-3 py-1.5 text-sm text-rose-400 border border-rose-900/50 rounded-lg hover:bg-rose-950/30 transition"
+              className="px-3 py-1.5 text-sm text-rose-400 border border-rose-900/50 rounded-lg hover:bg-rose-950/30"
             >
               Delete
             </button>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 mb-4 border-b border-neutral-800 overflow-x-auto">
-          {(
-            [
-              ["sheet", "Character Sheet"],
-              ["gallery", "Gallery"],
-              ["timeline", "Timeline"],
-              ["relations", "Relationships"],
-            ] as const
-          ).map(([key, label]) => (
+        <div className="flex gap-1 border-b border-neutral-800 mb-6 overflow-x-auto">
+          {tabs.map((t) => (
             <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`px-4 py-2 text-sm transition border-b-2 -mb-px whitespace-nowrap ${
-                tab === key
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2 text-sm whitespace-nowrap transition border-b-2 -mb-px ${
+                tab === t.key
                   ? "border-purple-500 text-purple-300"
-                  : "border-transparent text-neutral-400 hover:text-white"
+                  : "border-transparent text-neutral-500 hover:text-neutral-300"
               }`}
+              style={
+                tab === t.key && worldMeta
+                  ? { borderColor: worldMeta.color, color: worldMeta.color }
+                  : undefined
+              }
             >
-              {label}
+              {t.label}
             </button>
           ))}
         </div>
 
-        {/* Content */}
         {tab === "sheet" && (
           <CharacterSheet
             character={character}
-            onChange={(updates) => updateCharacter(id, updates)}
-            editable
+            onChange={(u) => updateCharacter(id, u)}
             worlds={worlds}
             optionsFor={optionsFor}
             onCreateWorld={createWorld}
@@ -164,7 +179,11 @@ export default function CharacterPage({
         {tab === "relations" && (
           <RelationshipsPanel
             character={character}
-            allCharacters={characters}
+            allCharacters={characters.filter(
+              (c) =>
+                c.id !== id &&
+                c.world?.trim() === (character.world || "").trim()
+            )}
             onAdd={(rel) => addRelationship(id, rel)}
             onUpdate={(rid, u) => updateRelationship(id, rid, u)}
             onDelete={(rid) => deleteRelationship(id, rid)}
@@ -172,6 +191,7 @@ export default function CharacterPage({
           />
         )}
       </main>
+      <Footer />
     </div>
   );
 }
