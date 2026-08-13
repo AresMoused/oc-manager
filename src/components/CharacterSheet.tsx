@@ -137,10 +137,18 @@ export default function CharacterSheet({
         <div className="lg:col-span-4">
           <SectionHeader title="战斗风格 / Combat Style" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-2 flex justify-center">
-            <RadarChart data={c.combat} size={220} />
+            <RadarChart
+              data={c.combat}
+              size={220}
+              onChange={
+                editable
+                  ? (key, value) => updateNested("combat", key, value)
+                  : undefined
+              }
+            />
           </div>
           {editable && (
-            <div className="bg-[#111] border border-neutral-800 border-t-0 p-2 grid grid-cols-2 gap-1 text-xs">
+            <div className="bg-[#111] border border-neutral-800 border-t-0 p-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
               {(
                 [
                   ["经验", "experience"],
@@ -150,10 +158,21 @@ export default function CharacterSheet({
                   ["应变", "adaptability"],
                 ] as const
               ).map(([label, key]) => (
-                <div key={key} className="flex items-center gap-1">
-                  <span className="w-8 text-neutral-500">{label}</span>
-                  <input type="range" min={0} max={100} value={c.combat[key]} onChange={(e) => updateNested("combat", key, Number(e.target.value))} className="flex-1" />
-                  <span className="w-6 text-right tabular-nums">{c.combat[key]}</span>
+                <div key={key} className="flex items-center gap-1.5">
+                  <span className="w-8 text-neutral-400 shrink-0">{label}</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={c.combat[key]}
+                    onChange={(e) =>
+                      updateNested("combat", key, Number(e.target.value))
+                    }
+                    className="combat-slider flex-1"
+                  />
+                  <span className="w-7 text-right tabular-nums text-purple-300 font-medium">
+                    {c.combat[key]}
+                  </span>
                 </div>
               ))}
             </div>
