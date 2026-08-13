@@ -28,6 +28,7 @@ export default function WorldPage({
   const fileRef = useRef<HTMLInputElement>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [creatingBusy, setCreatingBusy] = useState(false);
 
   const world = getWorld(id);
   const loaded = worldsLoaded && charsLoaded;
@@ -37,12 +38,22 @@ export default function WorldPage({
     return characters.filter((c) => c.world?.trim() === world.name);
   }, [characters, world]);
 
-  const handleCreate = () => {
-    if (!world || !newName.trim()) return;
-    const charId = addCharacter({ name: newName.trim(), world: world.name });
-    setCreating(false);
-    setNewName("");
-    router.push(`/character/${charId}`);
+  const handleCreate = async () => {
+    if (!world || !newName.trim() || creatingBusy) return;
+    setCreatingBusy(true);
+    try {
+      const charId = await addCharacter({
+        name: newName.trim(),
+        world: world.name,
+      });
+      setCreating(false);
+      setNewName("");
+      router.push(`/character/${charId}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "创建失败，请重试");
+    } finally {
+      setCreatingBusy(false);
+    }
   };
 
   const handleExport = () => {
@@ -139,6 +150,12 @@ export default function WorldPage({
             >
               Relationship Map
             </Link>
+            <Link
+              href="/generator"
+              className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
+            >
+              角色生成器
+            </Link>
             <button
               onClick={handleExport}
               className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
@@ -231,11 +248,11 @@ export default function WorldPage({
               </button>
               <button
                 onClick={handleCreate}
-                disabled={!newName.trim()}
+                disabled={!newName.trim() || creatingBusy}
                 className="px-4 py-2 text-sm rounded-lg text-white disabled:opacity-40"
                 style={{ backgroundColor: world.color }}
               >
-                创建
+                {creatingBusy ? "保存中…" : "创建"}
               </button>
             </div>
           </div>
