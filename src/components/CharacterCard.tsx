@@ -43,6 +43,11 @@ export default function CharacterCard({ character: c, onDelete }: Props) {
           <p className="text-xs text-neutral-400 truncate">
             {c.race} · {c.identity}
           </p>
+          {c.world && (
+            <p className="text-[10px] text-purple-400/80 truncate mt-0.5">
+              {c.world}
+            </p>
+          )}
         </div>
       </div>
       <div className="p-3 flex items-center justify-between text-xs text-neutral-500">
