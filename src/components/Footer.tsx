@@ -1,5 +1,3 @@
-import { LOGO_DATA_URL } from "@/lib/logo";
-
 export default function Footer() {
   return (
     <footer className="border-t border-neutral-800 mt-auto">
@@ -7,11 +5,20 @@ export default function Footer() {
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={LOGO_DATA_URL}
+            src="/logo.png"
             alt="AresMoused"
             width={28}
             height={28}
-            className="rounded object-contain opacity-90"
+            className="rounded object-contain opacity-90 bg-purple-700/40"
+            onError={(e) => {
+              const t = e.currentTarget;
+              t.onerror = null;
+              t.src =
+                "data:image/svg+xml," +
+                encodeURIComponent(
+                  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#7c3aed"/><text x="32" y="38" text-anchor="middle" fill="#fff" font-size="14" font-family="sans-serif" font-weight="700">Ares</text></svg>'
+                );
+            }}
           />
           <div>
             <p className="text-neutral-400">
