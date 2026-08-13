@@ -28,6 +28,14 @@ export interface GalleryImage {
   caption?: string;
 }
 
+/** Appearance prompt saved on a character (from generator) */
+export interface StoredPrompt {
+  id: string;
+  text: string;
+  label?: string;
+  createdAt: string;
+}
+
 /** Bipolar trait slider (乐观↔悲观), value 0-100 favoring left */
 export interface BipolarSliderItem {
   id: string;
@@ -53,7 +61,6 @@ export interface DotItem {
 
 export interface Character {
   id: string;
-  // Basic
   name: string;
   gender: string;
   age: number | string;
@@ -66,15 +73,9 @@ export interface Character {
   personality: string;
   birthplace: string;
   avatar: string;
-  /** World / Setting / Universe this character belongs to */
   world: string;
-
-  /** Dynamic bipolar trait sliders */
   traits: BipolarSliderItem[];
-
-  /** Dynamic bipolar emotion dots */
   emotions: BipolarDotItem[];
-
   combat: {
     experience: number;
     collaboration: number;
@@ -82,22 +83,15 @@ export interface Character {
     intelligence: number;
     adaptability: number;
   };
-
-  /** Dynamic happiness dots */
   happiness: DotItem[];
-
-  /** Dynamic preference list (user can add/remove) */
   preferences: PreferenceItem[];
-
-  /** Dynamic outward dots */
   outward: DotItem[];
-
   story: string;
   timeline: TimelineEvent[];
   relationships: Relationship[];
-  /** Image gallery (URLs, e.g. Discord CDN) */
   gallery: GalleryImage[];
-
+  /** Appearance prompts from character generator */
+  prompts: StoredPrompt[];
   createdAt: string;
   updatedAt: string;
 }
@@ -187,6 +181,7 @@ export const defaultCharacter = (): Omit<
   timeline: [],
   relationships: [],
   gallery: [],
+  prompts: [],
 });
 
 export function migrateTraits(raw: unknown): BipolarSliderItem[] {
@@ -241,7 +236,6 @@ export function migrateOutward(raw: unknown): DotItem[] {
   return defaults;
 }
 
-/** Migrate old hardcoded preferences object → new array format */
 export function migratePreferences(raw: unknown): PreferenceItem[] {
   if (Array.isArray(raw)) return raw as PreferenceItem[];
   if (raw && typeof raw === "object") {
@@ -254,11 +248,7 @@ export function migratePreferences(raw: unknown): PreferenceItem[] {
     ];
     for (const [key, title] of map) {
       if (old[key]) {
-        items.push({
-          id: key,
-          title,
-          content: old[key],
-        });
+        items.push({ id: key, title, content: old[key] });
       }
     }
     return items;
