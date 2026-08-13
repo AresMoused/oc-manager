@@ -6,7 +6,10 @@ import Navbar from "@/components/Navbar";
 import CharacterSheet from "@/components/CharacterSheet";
 import Timeline from "@/components/Timeline";
 import RelationshipsPanel from "@/components/RelationshipsPanel";
+import Gallery from "@/components/Gallery";
+import WorldSelect from "@/components/WorldSelect";
 import { useCharacters } from "@/hooks/useCharacters";
+import { useWorldCatalog } from "@/hooks/useWorldCatalog";
 
 export default function CharacterPage({
   params,
@@ -28,7 +31,16 @@ export default function CharacterPage({
     deleteRelationship,
   } = useCharacters();
 
-  const [tab, setTab] = useState<"sheet" | "timeline" | "relations">("sheet");
+  const {
+    worlds,
+    createWorld,
+    addFieldOption,
+    optionsFor,
+  } = useWorldCatalog();
+
+  const [tab, setTab] = useState<
+    "sheet" | "timeline" | "relations" | "gallery"
+  >("sheet");
   const character = getCharacter(id);
 
   if (!loaded) {
@@ -59,7 +71,7 @@ export default function CharacterPage({
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <Link
               href="/"
               className="text-neutral-400 hover:text-white transition text-sm"
@@ -70,11 +82,22 @@ export default function CharacterPage({
             <span className="text-xs text-neutral-500 px-2 py-0.5 rounded bg-neutral-800">
               {character.race}
             </span>
+            <WorldSelect
+              value={character.world || ""}
+              worlds={worlds}
+              onChange={(w) => updateCharacter(id, { world: w })}
+              onCreateWorld={createWorld}
+              editable
+            />
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
-                if (confirm(`Delete ${character.name}? This cannot be undone.`)) {
+                if (
+                  confirm(
+                    `Delete ${character.name}? This cannot be undone.`
+                  )
+                ) {
                   deleteCharacter(id);
                   window.location.href = "/";
                 }
@@ -87,10 +110,11 @@ export default function CharacterPage({
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-4 border-b border-neutral-800">
+        <div className="flex gap-1 mb-4 border-b border-neutral-800 overflow-x-auto">
           {(
             [
               ["sheet", "Character Sheet"],
+              ["gallery", "Gallery"],
               ["timeline", "Timeline"],
               ["relations", "Relationships"],
             ] as const
@@ -98,7 +122,7 @@ export default function CharacterPage({
             <button
               key={key}
               onClick={() => setTab(key)}
-              className={`px-4 py-2 text-sm transition border-b-2 -mb-px ${
+              className={`px-4 py-2 text-sm transition border-b-2 -mb-px whitespace-nowrap ${
                 tab === key
                   ? "border-purple-500 text-purple-300"
                   : "border-transparent text-neutral-400 hover:text-white"
@@ -114,6 +138,17 @@ export default function CharacterPage({
           <CharacterSheet
             character={character}
             onChange={(updates) => updateCharacter(id, updates)}
+            editable
+            worlds={worlds}
+            optionsFor={optionsFor}
+            onCreateWorld={createWorld}
+            onAddOption={addFieldOption}
+          />
+        )}
+        {tab === "gallery" && (
+          <Gallery
+            images={character.gallery || []}
+            onChange={(gallery) => updateCharacter(id, { gallery })}
             editable
           />
         )}
