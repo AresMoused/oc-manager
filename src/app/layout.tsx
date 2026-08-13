@@ -13,9 +13,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OC Manager | TRPG Character Manager",
+  title: "OC Manager | AresMoused",
   description:
-    "Original Character Manager for DnD / CoC / Cyberpunk TRPGs. Create, edit, timeline & relationship maps.",
+    "Original Character Manager for DnD / CoC / Cyberpunk TRPGs. Create, edit, timeline, relationship maps & galleries. Created by AresMoused.",
+  authors: [{ name: "AresMoused", url: "https://civitai.red/user/AresMoused" }],
+  creator: "AresMoused",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({
