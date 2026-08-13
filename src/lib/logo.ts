@@ -1,2 +1,2 @@
-/** AresMoused logo — SVG (reliable, no binary corruption) */
+/** AresMoused logo from public/logo.png */
 export const LOGO_DATA_URL = "/logo.png";
