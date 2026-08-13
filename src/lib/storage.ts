@@ -1,6 +1,27 @@
-import { Character, defaultCharacter, migratePreferences } from "./types";
+import {
+  Character,
+  defaultCharacter,
+  migratePreferences,
+  migrateTraits,
+  migrateEmotions,
+  migrateHappiness,
+  migrateOutward,
+} from "./types";
 
 const STORAGE_KEY = "oc-manager-characters-v1";
+
+function normalizeCharacter(c: Character): Character {
+  return {
+    ...c,
+    world: c.world ?? "",
+    gallery: Array.isArray(c.gallery) ? c.gallery : [],
+    preferences: migratePreferences(c.preferences),
+    traits: migrateTraits(c.traits),
+    emotions: migrateEmotions(c.emotions),
+    happiness: migrateHappiness(c.happiness),
+    outward: migrateOutward(c.outward),
+  };
+}
 
 export function loadCharacters(): Character[] {
   if (typeof window === "undefined") return [];
@@ -8,12 +29,7 @@ export function loadCharacters(): Character[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return getSampleCharacters();
     const parsed = JSON.parse(raw) as Character[];
-    return parsed.map((c) => ({
-      ...c,
-      world: c.world ?? "",
-      gallery: Array.isArray(c.gallery) ? c.gallery : [],
-      preferences: migratePreferences(c.preferences),
-    }));
+    return parsed.map(normalizeCharacter);
   } catch {
     return getSampleCharacters();
   }
@@ -52,7 +68,7 @@ export function createId(): string {
 export function getSampleCharacters(): Character[] {
   const now = new Date().toISOString();
   return [
-    {
+    normalizeCharacter({
       id: "sample-fiona",
       name: "菲欧娜 (Fiona)",
       gender: "女",
@@ -75,7 +91,7 @@ export function getSampleCharacters(): Character[] {
         talkative: 80,
         adventurous: 21,
         gentle: 38,
-      },
+      } as never,
       emotions: {
         extrovert: 4,
         positive: 2,
@@ -87,7 +103,7 @@ export function getSampleCharacters(): Character[] {
         tolerant: 3,
         strong: 2,
         cheerful: 4,
-      },
+      } as never,
       combat: {
         experience: 64,
         collaboration: 54,
@@ -105,7 +121,7 @@ export function getSampleCharacters(): Character[] {
         growth: 2,
         psychology: 3,
         autonomy: 4,
-      },
+      } as never,
       preferences: [
         {
           id: "p1",
@@ -115,7 +131,8 @@ export function getSampleCharacters(): Character[] {
         {
           id: "p2",
           title: "仰望星空 · Gazing at the Stars",
-          content: "清澈的异界夜空下，她能一动不动地躺上整夜，星辰是她孤独旅途中永恒且沉默的同伴。",
+          content:
+            "清澈的异界夜空下，她能一动不动地躺上整夜，星辰是她孤独旅途中永恒且沉默的同伴。",
         },
         {
           id: "p3",
@@ -131,7 +148,7 @@ export function getSampleCharacters(): Character[] {
         efficient: 3,
         friendly: 5,
         steady: 2,
-      },
+      } as never,
       story: `菲欧娜曾是绿叶边境溪木镇的半精灵少女，直到“黑铁之乱”的烈焰吞噬了她的家园。她亲眼目睹精灵母亲与人类父亲为保护她而倒在血泊中，手中只余母亲那枚银质树叶别针。葬礼后的黎明，她站在仍冒着青烟的废墟上，将别针紧紧扣在肩头。风中不再有精灵的歌谣与人类的炊烟，只有哭泣。她终于明白，任何种族的法律与神明都无法真正守护弱小。\n\n那一天，她拾起父亲遗留的长弓，转身走入苍茫林海。从此，世上少了一个天真的少女，多了一位独行的“翠风箭矢”。她的弓矢不再为任何王国而战，只遵从风中传来的、那些微弱的求救声。`,
       timeline: [
         {
@@ -154,7 +171,7 @@ export function getSampleCharacters(): Character[] {
       relationships: [],
       createdAt: now,
       updatedAt: now,
-    },
+    }),
   ];
 }
 
@@ -163,9 +180,7 @@ export function exportCharacters(chars: Character[]): string {
   return JSON.stringify(chars, null, 2);
 }
 
-/**
- * Hierarchical export grouped by world folders.
- */
+/** Hierarchical export grouped by world folders. */
 export function exportByWorld(chars: Character[]): string {
   const worlds: Record<string, { characters: Character[] }> = {};
   const unassigned: Character[] = [];
@@ -196,16 +211,19 @@ export function importCharacters(json: string): Character[] {
   if (data && typeof data === "object" && data.format === "oc-manager-world-folders") {
     const list: Character[] = [];
     const worlds = data.worlds || {};
-    for (const [worldName, folder] of Object.entries(worlds) as [string, { characters?: Character[] }][]) {
+    for (const [worldName, folder] of Object.entries(worlds) as [
+      string,
+      { characters?: Character[] }
+    ][]) {
       for (const c of folder.characters || []) {
-        list.push({ ...c, world: c.world || worldName });
+        list.push(normalizeCharacter({ ...c, world: c.world || worldName }));
       }
     }
     for (const c of data.unassigned || []) {
-      list.push(c);
+      list.push(normalizeCharacter(c));
     }
     return list;
   }
   if (!Array.isArray(data)) throw new Error("Invalid format");
-  return data as Character[];
+  return (data as Character[]).map(normalizeCharacter);
 }
