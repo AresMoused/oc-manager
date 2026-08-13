@@ -6,13 +6,24 @@ import { Character } from "@/lib/types";
 interface Props {
   character: Character;
   onDelete?: (id: string) => void;
+  accentColor?: string;
 }
 
-export default function CharacterCard({ character: c, onDelete }: Props) {
+export default function CharacterCard({
+  character: c,
+  onDelete,
+  accentColor,
+}: Props) {
   return (
     <Link
       href={`/character/${c.id}`}
-      className="group block bg-[#111] border border-neutral-800 rounded-xl overflow-hidden hover:border-purple-600/60 transition-all hover:shadow-lg hover:shadow-purple-900/20"
+      className="group block bg-[#111] border border-neutral-800 rounded-xl overflow-hidden transition-all hover:shadow-lg"
+      onMouseEnter={(e) => {
+        if (accentColor) e.currentTarget.style.borderColor = accentColor;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = "";
+      }}
     >
       <div className="aspect-[3/4] relative bg-neutral-900 overflow-hidden">
         {c.avatar ? (
@@ -23,36 +34,28 @@ export default function CharacterCard({ character: c, onDelete }: Props) {
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-neutral-600">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="64"
-              height="64"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1"
-            >
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
+          <div className="w-full h-full flex items-center justify-center text-4xl text-neutral-700">
+            {c.name?.[0] || "?"}
           </div>
         )}
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-3 pt-10">
-          <h3 className="font-semibold text-white truncate">{c.name}</h3>
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-3 pt-12">
+          <h3 className="font-semibold text-white text-sm truncate">{c.name}</h3>
           <p className="text-xs text-neutral-400 truncate">
-            {c.race} · {c.identity}
+            {[c.race, c.identity].filter(Boolean).join(" · ")}
           </p>
           {c.world && (
-            <p className="text-[10px] text-purple-400/80 truncate mt-0.5">
+            <p
+              className="text-[10px] mt-0.5 truncate"
+              style={{ color: accentColor || "#a78bfa" }}
+            >
               {c.world}
             </p>
           )}
         </div>
       </div>
-      <div className="p-3 flex items-center justify-between text-xs text-neutral-500">
+      <div className="px-3 py-2 flex items-center justify-between text-xs text-neutral-500">
         <span>
-          {c.gender} · {c.age}
+          {c.gender || "?"} · {c.age || "?"}
         </span>
         {onDelete && (
           <button
@@ -61,7 +64,7 @@ export default function CharacterCard({ character: c, onDelete }: Props) {
               e.stopPropagation();
               if (confirm(`Delete ${c.name}?`)) onDelete(c.id);
             }}
-            className="opacity-0 group-hover:opacity-100 text-rose-400 hover:text-rose-300 transition"
+            className="text-rose-500/80 hover:text-rose-400"
           >
             Delete
           </button>
