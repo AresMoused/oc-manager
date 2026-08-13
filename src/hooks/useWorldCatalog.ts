@@ -1,28 +1,45 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   WorldCatalog,
   OptionField,
-  loadWorldCatalog,
-  saveWorldCatalog,
   ensureWorld,
   addOption,
   getOptions,
   listWorlds,
 } from "@/lib/worldCatalog";
+import { fetchAppData, putCatalog } from "@/lib/apiClient";
 
 export function useWorldCatalog() {
   const [catalog, setCatalog] = useState<WorldCatalog>({});
   const [loaded, setLoaded] = useState(false);
+  const skipSave = useRef(true);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setCatalog(loadWorldCatalog());
-    setLoaded(true);
+    fetchAppData()
+      .then((data) => {
+        setCatalog(data.catalog || {});
+        skipSave.current = true;
+      })
+      .catch(console.warn)
+      .finally(() => setLoaded(true));
   }, []);
 
   useEffect(() => {
-    if (loaded) saveWorldCatalog(catalog);
+    if (!loaded) return;
+    if (skipSave.current) {
+      skipSave.current = false;
+      return;
+    }
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      putCatalog(catalog).catch(console.warn);
+    }, 400);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
   }, [catalog, loaded]);
 
   const createWorld = useCallback((world: string) => {
@@ -43,6 +60,10 @@ export function useWorldCatalog() {
 
   const worlds = listWorlds(catalog);
 
+  const replaceAll = useCallback((c: WorldCatalog) => {
+    setCatalog(c);
+  }, []);
+
   return {
     catalog,
     loaded,
@@ -50,5 +71,6 @@ export function useWorldCatalog() {
     createWorld,
     addFieldOption,
     optionsFor,
+    replaceAll,
   };
 }
