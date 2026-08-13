@@ -1,5 +1,7 @@
 "use client";
 
+import { useRef, useCallback } from "react";
+
 interface Props {
   data: {
     experience: number;
@@ -9,7 +11,6 @@ interface Props {
     adaptability: number;
   };
   size?: number;
-  editable?: boolean;
   onChange?: (key: keyof Props["data"], value: number) => void;
 }
 
@@ -24,9 +25,11 @@ const LABELS = [
 export default function RadarChart({
   data,
   size = 200,
-  editable = false,
   onChange,
 }: Props) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const dragging = useRef<keyof Props["data"] | null>(null);
+
   const cx = size / 2;
   const cy = size / 2;
   const maxR = size * 0.38;
@@ -40,12 +43,51 @@ export default function RadarChart({
     };
   };
 
+  /** Convert mouse position to a 0–100 value along the axis of a given angle */
+  const valueFromPointer = useCallback(
+    (clientX: number, clientY: number, angleDeg: number) => {
+      if (!svgRef.current) return 50;
+      const rect = svgRef.current.getBoundingClientRect();
+      const scaleX = size / rect.width;
+      const scaleY = size / rect.height;
+      const mx = (clientX - rect.left) * scaleX - cx;
+      const my = (clientY - rect.top) * scaleY - cy;
+
+      const rad = (angleDeg * Math.PI) / 180;
+      // Project mouse vector onto the axis direction
+      const proj = mx * Math.cos(rad) + my * Math.sin(rad);
+      const clamped = Math.max(0, Math.min(maxR, proj));
+      return Math.round((clamped / maxR) * 100);
+    },
+    [size, cx, cy, maxR]
+  );
+
+  const handlePointerDown = (key: keyof Props["data"], angle: number) => (e: React.PointerEvent) => {
+    if (!onChange) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragging.current = key;
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+
+    const onMove = (ev: PointerEvent) => {
+      if (!dragging.current) return;
+      const val = valueFromPointer(ev.clientX, ev.clientY, angle);
+      onChange(dragging.current, val);
+    };
+    const onUp = () => {
+      dragging.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   const points = LABELS.map((l) => {
     const p = getPoint(data[l.key], l.angle);
     return `${p.x},${p.y}`;
   }).join(" ");
 
-  // Grid polygons
   const grids = [20, 40, 60, 80, 100].map((pct) => {
     return LABELS.map((l) => {
       const p = getPoint(pct, l.angle);
@@ -54,8 +96,14 @@ export default function RadarChart({
   });
 
   return (
-    <div className="relative flex items-center justify-center">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+    <div className="relative flex items-center justify-center select-none">
+      <svg
+        ref={svgRef}
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        className={onChange ? "cursor-default" : ""}
+      >
         {/* Grid */}
         {grids.map((pts, i) => (
           <polygon
@@ -94,23 +142,43 @@ export default function RadarChart({
           const labelP = getPoint(118, l.angle);
           return (
             <g key={l.key}>
-              <circle cx={p.x} cy={p.y} r={4} fill="#c084fc" />
+              {/* Larger invisible hit area for easier dragging */}
+              {onChange && (
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={14}
+                  fill="transparent"
+                  className="cursor-grab active:cursor-grabbing"
+                  onPointerDown={handlePointerDown(l.key, l.angle)}
+                />
+              )}
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r={5}
+                fill="#c084fc"
+                stroke="#fff"
+                strokeWidth={1.5}
+                className={onChange ? "pointer-events-none" : ""}
+              />
               <text
                 x={labelP.x}
                 y={labelP.y}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                className="fill-neutral-400 text-[10px]"
+                fill="#a3a3a3"
                 style={{ fontSize: 10 }}
               >
                 {l.label}
               </text>
               <text
                 x={p.x}
-                y={p.y - 10}
+                y={p.y - 12}
                 textAnchor="middle"
-                className="fill-purple-300 text-[9px] font-medium"
-                style={{ fontSize: 9 }}
+                fill="#d8b4fe"
+                style={{ fontSize: 10, fontWeight: 600 }}
+                className="pointer-events-none"
               >
                 {data[l.key]}
               </text>
@@ -118,6 +186,11 @@ export default function RadarChart({
           );
         })}
       </svg>
+      {onChange && (
+        <p className="absolute bottom-0 left-0 right-0 text-center text-[10px] text-neutral-500 pointer-events-none">
+          拖动圆点调整数值
+        </p>
+      )}
     </div>
   );
 }

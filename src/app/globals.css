@@ -52,8 +52,8 @@ body {
   background: #555;
 }
 
-/* Slider track */
-input[type="range"] {
+/* Bipolar trait slider track (green ↔ pink) */
+input[type="range"]:not(.combat-slider) {
   -webkit-appearance: none;
   appearance: none;
   height: 6px;
@@ -61,7 +61,7 @@ input[type="range"] {
   border-radius: 3px;
   outline: none;
 }
-input[type="range"]::-webkit-slider-thumb {
+input[type="range"]:not(.combat-slider)::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 16px;
@@ -92,4 +92,45 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .dot:hover {
   transform: scale(1.15);
+}
+
+/* Combat style mono slider (purple, not bipolar) */
+input.combat-slider[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: transparent;
+  border-radius: 3px;
+  outline: none;
+}
+input.combat-slider[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: #2a2a2a;
+}
+input.combat-slider[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #c084fc;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 0 6px rgba(168, 85, 247, 0.6);
+  margin-top: -4px;
+}
+input.combat-slider[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: #2a2a2a;
+}
+input.combat-slider[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #c084fc;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 0 6px rgba(168, 85, 247, 0.6);
 }
