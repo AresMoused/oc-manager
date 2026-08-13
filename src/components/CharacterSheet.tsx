@@ -1,11 +1,12 @@
 "use client";
 
-import { Character } from "@/lib/types";
+import { Character, PreferenceItem } from "@/lib/types";
 import SectionHeader from "./SectionHeader";
 import TraitSlider from "./TraitSlider";
 import DotRating from "./DotRating";
 import RadarChart from "./RadarChart";
 import AvatarUpload from "./AvatarUpload";
+import Gallery from "./Gallery";
 
 interface Props {
   character: Character;
@@ -23,7 +24,7 @@ export default function CharacterSheet({
   };
 
   const updateNested = <
-    T extends "traits" | "emotions" | "combat" | "happiness" | "preferences" | "outward"
+    T extends "traits" | "emotions" | "combat" | "happiness" | "outward"
   >(
     section: T,
     key: keyof Character[T],
@@ -71,6 +72,7 @@ export default function CharacterSheet({
                 ["天赋", "talent", c.talent],
                 ["性格", "personality", c.personality],
                 ["出生地", "birthplace", c.birthplace],
+                ["世界", "world", c.world || ""],
               ] as const
             ).map(([label, key, val]) => (
               <div key={key} className="flex gap-2 items-center">
@@ -206,36 +208,77 @@ export default function CharacterSheet({
 
       {/* Bottom row: Preferences + Outward + Story */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+        {/* Personal Preferences - dynamic */}
         <div className="lg:col-span-4">
-          <SectionHeader title="个人喜好 / Preferences" />
+          <SectionHeader
+            title="个人喜好 / Preferences"
+            onAdd={
+              editable
+                ? () => {
+                    const item: PreferenceItem = {
+                      id: crypto.randomUUID(),
+                      title: "新喜好",
+                      content: "",
+                    };
+                    onChange({ preferences: [...c.preferences, item] });
+                  }
+                : undefined
+            }
+          />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-3 text-xs">
-            <div>
-              <div className="text-purple-400 mb-1 font-medium">聆听风语 · Listening to the Wind</div>
-              {editable ? (
-                <textarea className="w-full bg-[#0a0a0a] border border-neutral-700 rounded p-2 text-neutral-300 min-h-[60px] outline-none focus:border-purple-500" value={c.preferences.listeningWind} onChange={(e) => updateNested("preferences", "listeningWind", e.target.value)} />
-              ) : (
-                <p className="text-neutral-400 leading-relaxed">{c.preferences.listeningWind || "—"}</p>
-              )}
-            </div>
-            <div>
-              <div className="text-purple-400 mb-1 font-medium">仰望星空 · Gazing at the Stars</div>
-              {editable ? (
-                <textarea className="w-full bg-[#0a0a0a] border border-neutral-700 rounded p-2 text-neutral-300 min-h-[60px] outline-none focus:border-purple-500" value={c.preferences.gazingStars} onChange={(e) => updateNested("preferences", "gazingStars", e.target.value)} />
-              ) : (
-                <p className="text-neutral-400 leading-relaxed">{c.preferences.gazingStars || "—"}</p>
-              )}
-            </div>
-            <div>
-              <div className="text-purple-400 mb-1 font-medium">记录见闻 · Recording Sights</div>
-              {editable ? (
-                <textarea className="w-full bg-[#0a0a0a] border border-neutral-700 rounded p-2 text-neutral-300 min-h-[60px] outline-none focus:border-purple-500" value={c.preferences.recordingSights} onChange={(e) => updateNested("preferences", "recordingSights", e.target.value)} />
-              ) : (
-                <p className="text-neutral-400 leading-relaxed">{c.preferences.recordingSights || "—"}</p>
-              )}
-            </div>
+            {c.preferences.length === 0 && (
+              <p className="text-neutral-500 text-center py-4">
+                点击 + 添加自定义喜好条目
+              </p>
+            )}
+            {c.preferences.map((pref, idx) => (
+              <div key={pref.id} className="relative group">
+                {editable ? (
+                  <>
+                    <input
+                      className="w-full bg-transparent text-purple-400 mb-1 font-medium outline-none border-b border-transparent focus:border-purple-600"
+                      value={pref.title}
+                      placeholder="标题"
+                      onChange={(e) => {
+                        const next = [...c.preferences];
+                        next[idx] = { ...pref, title: e.target.value };
+                        onChange({ preferences: next });
+                      }}
+                    />
+                    <textarea
+                      className="w-full bg-[#0a0a0a] border border-neutral-700 rounded p-2 text-neutral-300 min-h-[60px] outline-none focus:border-purple-500"
+                      value={pref.content}
+                      placeholder="内容..."
+                      onChange={(e) => {
+                        const next = [...c.preferences];
+                        next[idx] = { ...pref, content: e.target.value };
+                        onChange({ preferences: next });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange({
+                          preferences: c.preferences.filter((p) => p.id !== pref.id),
+                        });
+                      }}
+                      className="absolute top-0 right-0 text-neutral-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 text-xs px-1"
+                    >
+                      ×
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-purple-400 mb-1 font-medium">{pref.title}</div>
+                    <p className="text-neutral-400 leading-relaxed">{pref.content || "—"}</p>
+                  </>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
+        {/* Outward Performance */}
         <div className="lg:col-span-3">
           <SectionHeader title="对外表现 / Outward" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2.5 text-xs">
@@ -251,12 +294,20 @@ export default function CharacterSheet({
             ).map(([label, key]) => (
               <div key={key} className="flex items-center gap-2">
                 <span className="w-8 text-neutral-400">{label}</span>
-                <DotRating value={c.outward[key]} onChange={editable ? (v) => updateNested("outward", key, v) : undefined} />
+                <DotRating
+                  value={c.outward[key]}
+                  onChange={
+                    editable
+                      ? (v) => updateNested("outward", key, v)
+                      : undefined
+                  }
+                />
               </div>
             ))}
           </div>
         </div>
 
+        {/* Story Experience */}
         <div className="lg:col-span-5">
           <SectionHeader title="故事经历 / Story Experience" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3">
@@ -275,6 +326,13 @@ export default function CharacterSheet({
           </div>
         </div>
       </div>
+
+      {/* Gallery */}
+      <Gallery
+        images={c.gallery || []}
+        onChange={(gallery) => onChange({ gallery })}
+        editable={editable}
+      />
     </div>
   );
 }
