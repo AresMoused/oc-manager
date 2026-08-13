@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import CharacterSheet from "@/components/CharacterSheet";
@@ -23,6 +23,7 @@ export default function CharacterPage({
   const {
     characters,
     loaded,
+    reload,
     getCharacter,
     updateCharacter,
     deleteCharacter,
@@ -34,6 +35,8 @@ export default function CharacterPage({
     deleteRelationship,
   } = useCharacters();
 
+  const [retryCount, setRetryCount] = useState(0);
+
   const { worlds, createWorld, addFieldOption, optionsFor } = useWorldCatalog();
   const { getWorldByName } = useWorlds();
 
@@ -43,7 +46,16 @@ export default function CharacterPage({
 
   const character = getCharacter(id);
 
-  if (!loaded) {
+  // After create, wait for server write — retry a few times before not found
+  useEffect(() => {
+    if (!loaded || character || retryCount >= 8) return;
+    const t = setTimeout(() => {
+      reload().finally(() => setRetryCount((n) => n + 1));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [loaded, character, retryCount, reload]);
+
+  if (!loaded || (!character && retryCount < 8)) {
     return (
       <div className="min-h-screen flex items-center justify-center text-neutral-500">
         Loading...
