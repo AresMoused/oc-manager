@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState, useMemo } from "react";
 import Navbar from "@/components/Navbar";
 import CharacterCard from "@/components/CharacterCard";
 import { useCharacters } from "@/hooks/useCharacters";
@@ -15,6 +15,21 @@ export default function HomePage() {
     replaceAll,
   } = useCharacters();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [worldFilter, setWorldFilter] = useState<string>("all");
+
+  const worlds = useMemo(() => {
+    const set = new Set<string>();
+    characters.forEach((c) => {
+      if (c.world?.trim()) set.add(c.world.trim());
+    });
+    return Array.from(set).sort();
+  }, [characters]);
+
+  const filtered = useMemo(() => {
+    if (worldFilter === "all") return characters;
+    if (worldFilter === "__none__") return characters.filter((c) => !c.world?.trim());
+    return characters.filter((c) => c.world?.trim() === worldFilter);
+  }, [characters, worldFilter]);
 
   const handleExport = () => {
     const data = exportCharacters(characters);
@@ -108,8 +123,50 @@ export default function HomePage() {
             </button>
           </div>
         ) : (
+          <>
+          {/* World filter tabs */}
+          {(worlds.length > 0 || characters.some((c) => !c.world?.trim())) && (
+            <div className="flex flex-wrap gap-2 mb-6">
+              <button
+                onClick={() => setWorldFilter("all")}
+                className={`px-3 py-1 rounded-full text-xs transition ${
+                  worldFilter === "all"
+                    ? "bg-purple-600 text-white"
+                    : "bg-neutral-800 text-neutral-400 hover:text-white"
+                }`}
+              >
+                All ({characters.length})
+              </button>
+              {worlds.map((w) => (
+                <button
+                  key={w}
+                  onClick={() => setWorldFilter(w)}
+                  className={`px-3 py-1 rounded-full text-xs transition ${
+                    worldFilter === w
+                      ? "bg-purple-600 text-white"
+                      : "bg-neutral-800 text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  {w} ({characters.filter((c) => c.world?.trim() === w).length})
+                </button>
+              ))}
+              {characters.some((c) => !c.world?.trim()) && (
+                <button
+                  onClick={() => setWorldFilter("__none__")}
+                  className={`px-3 py-1 rounded-full text-xs transition ${
+                    worldFilter === "__none__"
+                      ? "bg-purple-600 text-white"
+                      : "bg-neutral-800 text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  Unassigned ({characters.filter((c) => !c.world?.trim()).length})
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {characters.map((c) => (
+            {filtered.map((c) => (
               <CharacterCard
                 key={c.id}
                 character={c}
@@ -117,6 +174,7 @@ export default function HomePage() {
               />
             ))}
           </div>
+          </>
         )}
       </main>
     </div>
