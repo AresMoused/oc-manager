@@ -1,16 +1,16 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { uploadImage } from "@/lib/apiClient";
 
 interface Props {
   src: string;
   name: string;
-  onChange?: (value: string) => void; // can be URL or compressed base64
+  onChange?: (value: string) => void;
   /** Portrait height in px; width is derived as 3:4 (w:h) */
   size?: number;
 }
 
-/** Compress an image file to a small JPEG data URL (max 400px, quality 0.7) */
 async function compressImage(
   file: File,
   maxSize = 400,
@@ -40,8 +40,7 @@ async function compressImage(
         return;
       }
       ctx.drawImage(img, 0, 0, width, height);
-      const dataUrl = canvas.toDataURL("image/jpeg", quality);
-      resolve(dataUrl);
+      resolve(canvas.toDataURL("image/jpeg", quality));
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -61,7 +60,6 @@ export default function AvatarUpload({
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [urlValue, setUrlValue] = useState("");
   const [compressing, setCompressing] = useState(false);
-  // 3:4 portrait — size is height
   const height = size;
   const width = Math.round((size * 3) / 4);
 
@@ -70,8 +68,14 @@ export default function AvatarUpload({
     if (!file || !onChange) return;
     setCompressing(true);
     try {
-      const compressed = await compressImage(file, 400, 0.7);
-      onChange(compressed);
+      try {
+        const url = await uploadImage(file);
+        onChange(url);
+      } catch (uploadErr) {
+        console.warn("Server upload failed, fallback to data URL", uploadErr);
+        const compressed = await compressImage(file, 400, 0.7);
+        onChange(compressed);
+      }
     } catch (err) {
       console.error(err);
       alert("Failed to process image. Try a smaller file or use a URL instead.");
@@ -125,10 +129,9 @@ export default function AvatarUpload({
             <span className="text-xs mt-2">No avatar</span>
           </div>
         )}
-
         {compressing && (
           <div className="absolute inset-0 bg-black/70 flex items-center justify-center text-white text-xs">
-            Compressing…
+            Uploading…
           </div>
         )}
       </div>
@@ -164,7 +167,6 @@ export default function AvatarUpload({
               </button>
             )}
           </div>
-
           {showUrlInput && (
             <div className="flex gap-1">
               <input
@@ -184,9 +186,8 @@ export default function AvatarUpload({
               </button>
             </div>
           )}
-
           <p className="text-[10px] text-neutral-500 text-center leading-tight">
-            Prefer URL (Discord / Imgur). Local files are auto-compressed.
+            Local files upload to server (/uploads). Or paste Discord/Imgur URL.
           </p>
         </div>
       )}
