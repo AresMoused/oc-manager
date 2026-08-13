@@ -14,21 +14,18 @@ export interface Relationship {
   note: string;
 }
 
-/** Custom preference block (user-defined title + content) */
 export interface PreferenceItem {
   id: string;
   title: string;
   content: string;
 }
 
-/** Gallery image (prefer Discord CDN / any URL) */
 export interface GalleryImage {
   id: string;
   url: string;
   caption?: string;
 }
 
-/** Appearance prompt saved on a character (from generator) */
 export interface StoredPrompt {
   id: string;
   text: string;
@@ -36,7 +33,6 @@ export interface StoredPrompt {
   createdAt: string;
 }
 
-/** Bipolar trait slider (乐观↔悲观), value 0-100 favoring left */
 export interface BipolarSliderItem {
   id: string;
   leftLabel: string;
@@ -44,7 +40,6 @@ export interface BipolarSliderItem {
   value: number;
 }
 
-/** Bipolar emotion dots (外向↔内向), value 0-5 */
 export interface BipolarDotItem {
   id: string;
   leftLabel: string;
@@ -52,7 +47,6 @@ export interface BipolarDotItem {
   value: number;
 }
 
-/** Single-label dots (幸福/对外), value 0-5 */
 export interface DotItem {
   id: string;
   label: string;
@@ -69,8 +63,10 @@ export interface Character {
   weight: string;
   affiliation: string;
   identity: string;
-  talent: string;
-  personality: string;
+  /** 现住地 */
+  residence: string;
+  /** 派系 */
+  faction: string;
   birthplace: string;
   avatar: string;
   world: string;
@@ -90,7 +86,6 @@ export interface Character {
   timeline: TimelineEvent[];
   relationships: Relationship[];
   gallery: GalleryImage[];
-  /** Appearance prompts from character generator */
   prompts: StoredPrompt[];
   createdAt: string;
   updatedAt: string;
@@ -160,8 +155,8 @@ export const defaultCharacter = (): Omit<
   weight: "60 kg",
   affiliation: "None",
   identity: "Adventurer",
-  talent: "",
-  personality: "",
+  residence: "",
+  faction: "",
   birthplace: "",
   avatar: "",
   world: "",
