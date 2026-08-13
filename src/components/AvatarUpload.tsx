@@ -6,11 +6,16 @@ interface Props {
   src: string;
   name: string;
   onChange?: (value: string) => void; // can be URL or compressed base64
+  /** Portrait height in px; width is derived as 3:4 (w:h) */
   size?: number;
 }
 
 /** Compress an image file to a small JPEG data URL (max 400px, quality 0.7) */
-async function compressImage(file: File, maxSize = 400, quality = 0.7): Promise<string> {
+async function compressImage(
+  file: File,
+  maxSize = 400,
+  quality = 0.7
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -35,7 +40,6 @@ async function compressImage(file: File, maxSize = 400, quality = 0.7): Promise<
         return;
       }
       ctx.drawImage(img, 0, 0, width, height);
-      // Prefer JPEG for photos (much smaller than PNG base64)
       const dataUrl = canvas.toDataURL("image/jpeg", quality);
       resolve(dataUrl);
     };
@@ -51,12 +55,15 @@ export default function AvatarUpload({
   src,
   name,
   onChange,
-  size = 160,
+  size = 200,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [urlValue, setUrlValue] = useState("");
   const [compressing, setCompressing] = useState(false);
+  // 3:4 portrait — size is height
+  const height = size;
+  const width = Math.round((size * 3) / 4);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -88,7 +95,7 @@ export default function AvatarUpload({
     <div className="flex flex-col items-center gap-2">
       <div
         className="relative group rounded-lg overflow-hidden bg-[#1a1a1a] border border-neutral-800"
-        style={{ width: size, height: size }}
+        style={{ width, height, aspectRatio: "3 / 4" }}
       >
         {src ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -127,7 +134,10 @@ export default function AvatarUpload({
       </div>
 
       {onChange && (
-        <div className="flex flex-col gap-1.5 w-full" style={{ maxWidth: size + 40 }}>
+        <div
+          className="flex flex-col gap-1.5 w-full"
+          style={{ maxWidth: Math.max(width, 180) }}
+        >
           <div className="flex gap-1 justify-center flex-wrap">
             <button
               type="button"
