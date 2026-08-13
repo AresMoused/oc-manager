@@ -6,18 +6,28 @@ import TraitSlider from "./TraitSlider";
 import DotRating from "./DotRating";
 import RadarChart from "./RadarChart";
 import AvatarUpload from "./AvatarUpload";
-import Gallery from "./Gallery";
+import OptionSelect from "./OptionSelect";
+import WorldSelect from "./WorldSelect";
+import { OptionField } from "@/lib/worldCatalog";
 
 interface Props {
   character: Character;
   onChange: (updates: Partial<Character>) => void;
   editable?: boolean;
+  worlds?: string[];
+  optionsFor?: (world: string, field: OptionField) => string[];
+  onCreateWorld?: (world: string) => void;
+  onAddOption?: (world: string, field: OptionField, value: string) => void;
 }
 
 export default function CharacterSheet({
   character: c,
   onChange,
   editable = true,
+  worlds = [],
+  optionsFor = () => [],
+  onCreateWorld,
+  onAddOption,
 }: Props) {
   const update = <K extends keyof Character>(key: K, value: Character[K]) => {
     onChange({ [key]: value });
@@ -40,9 +50,7 @@ export default function CharacterSheet({
 
   return (
     <div className="space-y-4">
-      {/* Top row: Avatar + Basic + Traits */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        {/* Avatar */}
         <div className="lg:col-span-3">
           <SectionHeader title="头像 / Avatar" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 flex justify-center">
@@ -55,24 +63,55 @@ export default function CharacterSheet({
           </div>
         </div>
 
-        {/* Basic Info */}
         <div className="lg:col-span-4">
           <SectionHeader title="基础信息 / Basic Info" />
-          <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-1.5 text-sm">
+          <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2 text-sm">
+            <div className="flex gap-2 items-center pb-1 mb-1 border-b border-neutral-800">
+              <span className="w-14 text-neutral-500 shrink-0">世界:</span>
+              <WorldSelect
+                value={c.world || ""}
+                worlds={worlds}
+                onChange={(w) => update("world", w)}
+                onCreateWorld={onCreateWorld}
+                editable={editable}
+              />
+            </div>
+
+            <div className="flex gap-2 items-center">
+              <span className="w-14 text-neutral-500 shrink-0">姓名:</span>
+              {editable ? (
+                <input
+                  className="flex-1 bg-transparent border-b border-neutral-700 focus:border-purple-500 outline-none px-1 py-0.5 text-neutral-200"
+                  value={c.name}
+                  onChange={(e) => update("name", e.target.value)}
+                />
+              ) : (
+                <span className="text-neutral-200">{c.name}</span>
+              )}
+            </div>
+
+            <OptionSelect
+              label="性别"
+              value={c.gender}
+              options={optionsFor(c.world || "", "genders")}
+              onChange={(v) => update("gender", v)}
+              onCreateOption={(v) => onAddOption?.(c.world || "", "genders", v)}
+              editable={editable}
+            />
+            <OptionSelect
+              label="种族"
+              value={c.race}
+              options={optionsFor(c.world || "", "races")}
+              onChange={(v) => update("race", v)}
+              onCreateOption={(v) => onAddOption?.(c.world || "", "races", v)}
+              editable={editable}
+            />
+
             {(
               [
-                ["姓名", "name", c.name],
-                ["性别", "gender", c.gender],
                 ["年龄", "age", String(c.age)],
-                ["种族", "race", c.race],
                 ["身高", "height", c.height],
                 ["体重", "weight", c.weight],
-                ["阵营", "affiliation", c.affiliation],
-                ["身份", "identity", c.identity],
-                ["天赋", "talent", c.talent],
-                ["性格", "personality", c.personality],
-                ["出生地", "birthplace", c.birthplace],
-                ["世界", "world", c.world || ""],
               ] as const
             ).map(([label, key, val]) => (
               <div key={key} className="flex gap-2 items-center">
@@ -90,10 +129,54 @@ export default function CharacterSheet({
                 )}
               </div>
             ))}
+
+            <OptionSelect
+              label="阵营"
+              value={c.affiliation}
+              options={optionsFor(c.world || "", "affiliations")}
+              onChange={(v) => update("affiliation", v)}
+              onCreateOption={(v) =>
+                onAddOption?.(c.world || "", "affiliations", v)
+              }
+              editable={editable}
+            />
+
+            {(
+              [
+                ["身份", "identity", c.identity],
+                ["天赋", "talent", c.talent],
+                ["性格", "personality", c.personality],
+              ] as const
+            ).map(([label, key, val]) => (
+              <div key={key} className="flex gap-2 items-center">
+                <span className="w-14 text-neutral-500 shrink-0">{label}:</span>
+                {editable ? (
+                  <input
+                    className="flex-1 bg-transparent border-b border-neutral-700 focus:border-purple-500 outline-none px-1 py-0.5 text-neutral-200"
+                    value={val}
+                    onChange={(e) =>
+                      update(key as keyof Character, e.target.value as never)
+                    }
+                  />
+                ) : (
+                  <span className="text-neutral-200">{val}</span>
+                )}
+              </div>
+            ))}
+
+            <OptionSelect
+              label="出生地"
+              value={c.birthplace}
+              options={optionsFor(c.world || "", "birthplaces")}
+              onChange={(v) => update("birthplace", v)}
+              onCreateOption={(v) =>
+                onAddOption?.(c.world || "", "birthplaces", v)
+              }
+              editable={editable}
+            />
           </div>
         </div>
 
-        {/* Trait Analysis */}
         <div className="lg:col-span-5">
           <SectionHeader title="特质分析 / Trait Analysis" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2.5">
@@ -108,7 +191,6 @@ export default function CharacterSheet({
         </div>
       </div>
 
-      {/* Middle row: Emotions + Combat + Happiness */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
         <div className="lg:col-span-4">
           <SectionHeader title="情绪评估 / Emotional Assessment" />
@@ -206,9 +288,7 @@ export default function CharacterSheet({
         </div>
       </div>
 
-      {/* Bottom row: Preferences + Outward + Story */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        {/* Personal Preferences - dynamic */}
         <div className="lg:col-span-4">
           <SectionHeader
             title="个人喜好 / Preferences"
@@ -278,7 +358,6 @@ export default function CharacterSheet({
           </div>
         </div>
 
-        {/* Outward Performance */}
         <div className="lg:col-span-3">
           <SectionHeader title="对外表现 / Outward" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3 space-y-2.5 text-xs">
@@ -307,7 +386,6 @@ export default function CharacterSheet({
           </div>
         </div>
 
-        {/* Story Experience */}
         <div className="lg:col-span-5">
           <SectionHeader title="故事经历 / Story Experience" />
           <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-3">
@@ -326,13 +404,6 @@ export default function CharacterSheet({
           </div>
         </div>
       </div>
-
-      {/* Gallery */}
-      <Gallery
-        images={c.gallery || []}
-        onChange={(gallery) => onChange({ gallery })}
-        editable={editable}
-      />
     </div>
   );
 }
