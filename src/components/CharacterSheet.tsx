@@ -163,7 +163,9 @@ export default function CharacterSheet({
                   <AvatarUpload
                     src={c.avatar}
                     name={c.name}
-                    onChange={editable ? (b64) => update("avatar", b64) : undefined}
+                    onChange={
+                      editable ? (b64) => update("avatar", b64) : undefined
+                    }
                     size={avatarSize}
                   />
                 </div>
@@ -200,7 +202,9 @@ export default function CharacterSheet({
                     value={c.gender}
                     options={optionsFor(c.world || "", "genders")}
                     onChange={(v) => update("gender", v)}
-                    onCreateOption={(v) => onAddOption?.(c.world || "", "genders", v)}
+                    onCreateOption={(v) =>
+                      onAddOption?.(c.world || "", "genders", v)
+                    }
                     editable={editable}
                   />
                   <OptionSelect
@@ -208,7 +212,9 @@ export default function CharacterSheet({
                     value={c.race}
                     options={optionsFor(c.world || "", "races")}
                     onChange={(v) => update("race", v)}
-                    onCreateOption={(v) => onAddOption?.(c.world || "", "races", v)}
+                    onCreateOption={(v) =>
+                      onAddOption?.(c.world || "", "races", v)
+                    }
                     editable={editable}
                   />
                   {(
@@ -219,13 +225,18 @@ export default function CharacterSheet({
                     ] as const
                   ).map(([label, key, val]) => (
                     <div key={key} className="flex gap-2 items-center">
-                      <span className="w-14 text-neutral-500 shrink-0">{label}:</span>
+                      <span className="w-14 text-neutral-500 shrink-0">
+                        {label}:
+                      </span>
                       {editable ? (
                         <input
                           className="flex-1 bg-transparent border-b border-neutral-700 focus:border-purple-500 outline-none px-1 py-0.5 text-neutral-200"
                           value={val}
                           onChange={(e) =>
-                            update(key as keyof Character, e.target.value as never)
+                            update(
+                              key as keyof Character,
+                              e.target.value as never
+                            )
                           }
                         />
                       ) : (
@@ -243,28 +254,38 @@ export default function CharacterSheet({
                     }
                     editable={editable}
                   />
-                  {(
-                    [
-                      ["身份", "identity", c.identity],
-                      ["天赋", "talent", c.talent],
-                      ["性格", "personality", c.personality],
-                    ] as const
-                  ).map(([label, key, val]) => (
-                    <div key={key} className="flex gap-2 items-center">
-                      <span className="w-14 text-neutral-500 shrink-0">{label}:</span>
-                      {editable ? (
-                        <input
-                          className="flex-1 bg-transparent border-b border-neutral-700 focus:border-purple-500 outline-none px-1 py-0.5 text-neutral-200"
-                          value={val}
-                          onChange={(e) =>
-                            update(key as keyof Character, e.target.value as never)
-                          }
-                        />
-                      ) : (
-                        <span className="text-neutral-200">{val}</span>
-                      )}
-                    </div>
-                  ))}
+                  <div className="flex gap-2 items-center">
+                    <span className="w-14 text-neutral-500 shrink-0">身份:</span>
+                    {editable ? (
+                      <input
+                        className="flex-1 bg-transparent border-b border-neutral-700 focus:border-purple-500 outline-none px-1 py-0.5 text-neutral-200"
+                        value={c.identity}
+                        onChange={(e) => update("identity", e.target.value)}
+                      />
+                    ) : (
+                      <span className="text-neutral-200">{c.identity}</span>
+                    )}
+                  </div>
+                  <OptionSelect
+                    label="现住地"
+                    value={c.residence || ""}
+                    options={optionsFor(c.world || "", "residences")}
+                    onChange={(v) => update("residence", v)}
+                    onCreateOption={(v) =>
+                      onAddOption?.(c.world || "", "residences", v)
+                    }
+                    editable={editable}
+                  />
+                  <OptionSelect
+                    label="派系"
+                    value={c.faction || ""}
+                    options={optionsFor(c.world || "", "factions")}
+                    onChange={(v) => update("faction", v)}
+                    onCreateOption={(v) =>
+                      onAddOption?.(c.world || "", "factions", v)
+                    }
+                    editable={editable}
+                  />
                   <OptionSelect
                     label="出生地"
                     value={c.birthplace}
@@ -358,7 +379,9 @@ export default function CharacterSheet({
                       ] as const
                     ).map(([label, key]) => (
                       <div key={key} className="flex items-center gap-1.5">
-                        <span className="w-7 text-neutral-500 shrink-0">{label}</span>
+                        <span className="w-7 text-neutral-500 shrink-0">
+                          {label}
+                        </span>
                         <input
                           type="range"
                           min={0}
