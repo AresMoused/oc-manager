@@ -15,7 +15,29 @@ export function loadCharacters(): Character[] {
 
 export function saveCharacters(chars: Character[]) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(chars));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(chars));
+  } catch (err) {
+    // QuotaExceededError – try stripping large base64 avatars and retry once
+    console.warn("localStorage quota exceeded, attempting cleanup…", err);
+    const cleaned = chars.map((c) => {
+      if (c.avatar && c.avatar.startsWith("data:") && c.avatar.length > 80_000) {
+        return { ...c, avatar: "" }; // drop oversized base64
+      }
+      return c;
+    });
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+      alert(
+        "Storage almost full. Some large local avatars were cleared.\n" +
+          "Tip: use image URLs (Discord / Imgur) instead of uploading files."
+      );
+    } catch {
+      alert(
+        "Browser storage is full. Please export your data, clear some avatars, or use image URLs."
+      );
+    }
+  }
 }
 
 export function createId(): string {
@@ -94,9 +116,7 @@ export function getSampleCharacters(): Character[] {
         friendly: 5,
         steady: 2,
       },
-      story: `菲欧娜曾是绿叶边境溪木镇的半精灵少女，直到“黑铁之乱”的烈焰吞噬了她的家园。她亲眼目睹精灵母亲与人类父亲为保护她而倒在血泊中，手中只余母亲那枚银质树叶别针。葬礼后的黎明，她站在仍冒着青烟的废墟上，将别针紧紧扣在肩头。风中不再有精灵的歌谣与人类的炊烟，只有哭泣。她终于明白，任何种族的法律与神明都无法真正守护弱小。
-
-那一天，她拾起父亲遗留的长弓，转身走入苍茫林海。从此，世上少了一个天真的少女，多了一位独行的“翠风箭矢”。她的弓矢不再为任何王国而战，只遵从风中传来的、那些微弱的求救声。`,
+      story: `菲欧娜曾是绿叶边境溪木镇的半精灵少女，直到“黑铁之乱”的烈焰吞噬了她的家园。她亲眼目睹精灵母亲与人类父亲为保护她而倒在血泊中，手中只余母亲那枚银质树叶别针。葬礼后的黎明，她站在仍冒着青烟的废墟上，将别针紧紧扣在肩头。风中不再有精灵的歌谣与人类的炊烟，只有哭泣。她终于明白，任何种族的法律与神明都无法真正守护弱小。\n\n那一天，她拾起父亲遗留的长弓，转身走入苍茫林海。从此，世上少了一个天真的少女，多了一位独行的“翠风箭矢”。她的弓矢不再为任何王国而战，只遵从风中传来的、那些微弱的求救声。`,
       timeline: [
         {
           id: "e1",
