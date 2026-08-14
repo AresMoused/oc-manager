@@ -16,11 +16,27 @@ export interface ComfyParams {
   sampler_name: string;
   width: number;
   height: number;
+  /** @deprecated use prompt_prefix / prompt_character / prompt_suffix */
   prompt: string;
+  prompt_prefix: string;
+  prompt_character: string;
+  prompt_suffix: string;
   negative_prompt: string;
   MODEL_NAME: string;
   scheduler: string;
   vae: string;
+}
+
+/** Positive prompt preset (prefix / character / suffix) */
+export interface ComfyPromptPreset {
+  id: string;
+  name: string;
+  prompt_prefix: string;
+  prompt_character: string;
+  prompt_suffix: string;
+  negative_prompt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ComfySettings {
@@ -31,6 +47,7 @@ export interface ComfySettings {
 const SETTINGS_KEY = "oc-comfy-settings-v1";
 const WORKFLOWS_KEY = "oc-comfy-workflows-v1";
 const PARAMS_KEY = "oc-comfy-params-v1";
+const PRESETS_KEY = "oc-comfy-prompt-presets-v1";
 
 export const PLACEHOLDERS = [
   "seed",
@@ -83,11 +100,31 @@ export function defaultParams(): ComfyParams {
     width: 512,
     height: 768,
     prompt: "",
-    negative_prompt: "lowres, bad anatomy, bad hands, text, error, missing fingers",
+    prompt_prefix: "masterpiece, best quality, ",
+    prompt_character: "",
+    prompt_suffix: "",
+    negative_prompt:
+      "lowres, bad anatomy, bad hands, text, error, missing fingers",
     MODEL_NAME: "",
     scheduler: "normal",
     vae: "",
   };
+}
+
+/** Join prefix + character + suffix into final positive prompt */
+export function composePositivePrompt(p: {
+  prompt_prefix?: string;
+  prompt_character?: string;
+  prompt_suffix?: string;
+  prompt?: string;
+}): string {
+  const parts = [
+    (p.prompt_prefix || "").trim(),
+    (p.prompt_character || "").trim(),
+    (p.prompt_suffix || "").trim(),
+  ].filter(Boolean);
+  if (parts.length > 0) return parts.join(", ");
+  return (p.prompt || "").trim();
 }
 
 export function defaultSettings(): ComfySettings {
@@ -108,7 +145,10 @@ function safeParse<T>(raw: string | null, fallback: T): T {
 
 export function loadSettings(): ComfySettings {
   if (typeof window === "undefined") return defaultSettings();
-  return { ...defaultSettings(), ...safeParse(localStorage.getItem(SETTINGS_KEY), {}) };
+  return {
+    ...defaultSettings(),
+    ...safeParse(localStorage.getItem(SETTINGS_KEY), {}),
+  };
 }
 
 export function saveSettings(s: ComfySettings) {
@@ -128,12 +168,38 @@ export function saveWorkflows(list: ComfyWorkflowTemplate[]) {
 
 export function loadParams(): ComfyParams {
   if (typeof window === "undefined") return defaultParams();
-  return { ...defaultParams(), ...safeParse(localStorage.getItem(PARAMS_KEY), {}) };
+  const raw = safeParse<Partial<ComfyParams>>(
+    localStorage.getItem(PARAMS_KEY),
+    {}
+  );
+  const base = defaultParams();
+  const merged = { ...base, ...raw };
+  // migrate old single `prompt` into character slot if new fields empty
+  if (
+    raw.prompt &&
+    !raw.prompt_character &&
+    !raw.prompt_prefix &&
+    !raw.prompt_suffix
+  ) {
+    merged.prompt_character = raw.prompt;
+    merged.prompt_prefix = "";
+  }
+  return merged;
 }
 
 export function saveParams(p: ComfyParams) {
   if (typeof window === "undefined") return;
   localStorage.setItem(PARAMS_KEY, JSON.stringify(p));
+}
+
+export function loadPromptPresets(): ComfyPromptPreset[] {
+  if (typeof window === "undefined") return [];
+  return safeParse(localStorage.getItem(PRESETS_KEY), []);
+}
+
+export function savePromptPresets(list: ComfyPromptPreset[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(PRESETS_KEY, JSON.stringify(list));
 }
 
 /** Replace %key% placeholders in workflow JSON string */
@@ -146,6 +212,8 @@ export function applyPlaceholders(
       ? Math.floor(Math.random() * 2 ** 32)
       : Math.floor(params.seed);
 
+  const fullPrompt = composePositivePrompt(params);
+
   const map: Record<string, string | number> = {
     seed: resolvedSeed,
     steps: params.steps,
@@ -153,7 +221,7 @@ export function applyPlaceholders(
     sampler_name: params.sampler_name,
     width: params.width,
     height: params.height,
-    prompt: params.prompt,
+    prompt: fullPrompt,
     negative_prompt: params.negative_prompt,
     MODEL_NAME: params.MODEL_NAME,
     scheduler: params.scheduler,
@@ -279,14 +347,20 @@ export async function comfyCheckConnection(baseUrl: string): Promise<string> {
   const res = await fetch(`${root}/system_stats`);
   if (!res.ok) throw new Error(`连接失败 ${res.status}`);
   const data = await res.json();
-  const ver = data?.system?.comfyui_version || data?.system?.python_version || "ok";
+  const ver =
+    data?.system?.comfyui_version || data?.system?.python_version || "ok";
   return String(ver);
 }
 
 /** Normalize uploaded workflow file text into API-format object string */
 export function normalizeWorkflowUpload(raw: string): string {
   const data = JSON.parse(raw);
-  if (data && typeof data === "object" && data.prompt && typeof data.prompt === "object") {
+  if (
+    data &&
+    typeof data === "object" &&
+    data.prompt &&
+    typeof data.prompt === "object"
+  ) {
     return JSON.stringify(data.prompt, null, 2);
   }
   if (data && typeof data === "object") {
