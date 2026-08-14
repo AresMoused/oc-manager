@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { AppDataProvider } from "@/context/AppDataContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,8 +20,11 @@ export const metadata: Metadata = {
   authors: [{ name: "AresMoused", url: "https://civitai.red/user/AresMoused" }],
   creator: "AresMoused",
   icons: {
-    icon: "/logo.png",
-    apple: "/logo.png",
+    icon: [
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/logo.png", sizes: "256x256", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
   },
 };
 
@@ -35,7 +39,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-[#0a0a0a] text-neutral-200">
-        {children}
+        <AppDataProvider>{children}</AppDataProvider>
       </body>
     </html>
   );
