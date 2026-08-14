@@ -32,7 +32,6 @@ export function normalizeCharacterList(list: unknown): Character[] {
   return (list as Character[]).map(normalizeCharacter);
 }
 
-/** Still used for one-time migration from browser localStorage → server */
 export function loadCharacters(): Character[] {
   if (typeof window === "undefined") return [];
   try {
@@ -58,10 +57,12 @@ export function createId(): string {
   return crypto.randomUUID();
 }
 
+/** Flat array export (legacy) */
 export function exportCharacters(chars: Character[]): string {
   return JSON.stringify(chars, null, 2);
 }
 
+/** Hierarchical export grouped by world folders */
 export function exportByWorld(chars: Character[]): string {
   const worlds: Record<string, { characters: Character[] }> = {};
   const unassigned: Character[] = [];
@@ -89,7 +90,11 @@ export function exportByWorld(chars: Character[]): string {
 
 export function importCharacters(json: string): Character[] {
   const data = JSON.parse(json);
-  if (data && typeof data === "object" && data.format === "oc-manager-world-folders") {
+  if (
+    data &&
+    typeof data === "object" &&
+    data.format === "oc-manager-world-folders"
+  ) {
     const list: Character[] = [];
     const worlds = data.worlds || {};
     for (const [worldName, folder] of Object.entries(worlds) as [
@@ -107,4 +112,87 @@ export function importCharacters(json: string): Character[] {
   }
   if (!Array.isArray(data)) throw new Error("Invalid format");
   return (data as Character[]).map(normalizeCharacter);
+}
+
+/** Single character card export */
+export function exportSingleCharacter(c: Character): string {
+  return JSON.stringify(
+    {
+      version: 3,
+      format: "oc-manager-single-character",
+      exportedAt: new Date().toISOString(),
+      character: normalizeCharacter(c),
+    },
+    null,
+    2
+  );
+}
+
+/** Parse import JSON into characters (single / array / world-folders) */
+export function importCharacterPayload(json: string): Character[] {
+  const data = JSON.parse(json);
+  if (
+    data &&
+    typeof data === "object" &&
+    data.format === "oc-manager-single-character"
+  ) {
+    return [normalizeCharacter(data.character)];
+  }
+  return importCharacters(json);
+}
+
+/** Full database dump */
+export function exportFullDatabase(payload: {
+  characters: Character[];
+  worlds: unknown[];
+  catalog: unknown;
+}): string {
+  return JSON.stringify(
+    {
+      version: 4,
+      format: "oc-manager-full-database",
+      exportedAt: new Date().toISOString(),
+      characters: (payload.characters || []).map(normalizeCharacter),
+      worlds: payload.worlds || [],
+      catalog: payload.catalog || {},
+    },
+    null,
+    2
+  );
+}
+
+export function importFullDatabase(json: string): {
+  characters: Character[];
+  worlds: unknown[];
+  catalog: unknown;
+} {
+  const data = JSON.parse(json);
+  if (
+    data &&
+    typeof data === "object" &&
+    data.format === "oc-manager-full-database"
+  ) {
+    return {
+      characters: normalizeCharacterList(data.characters),
+      worlds: Array.isArray(data.worlds) ? data.worlds : [],
+      catalog:
+        data.catalog && typeof data.catalog === "object" ? data.catalog : {},
+    };
+  }
+  return {
+    characters: importCharacters(json),
+    worlds: [],
+    catalog: {},
+  };
+}
+
+export function downloadExport(filename: string, content: string) {
+  if (typeof document === "undefined") return;
+  const blob = new Blob([content], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
