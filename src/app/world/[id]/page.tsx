@@ -9,7 +9,7 @@ import { useWorlds } from "@/hooks/useWorlds";
 import { useCharacters } from "@/hooks/useCharacters";
 import {
   exportByWorld,
-  importCharacterPayload,
+  importCharacters,
   downloadExport,
   createId,
 } from "@/lib/storage";
@@ -67,31 +67,37 @@ export default function WorldPage({
     );
   };
 
-  const handleImportCharacter = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportWorld = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !world) return;
     const reader = new FileReader();
     reader.onload = async () => {
       try {
-        const list = importCharacterPayload(reader.result as string);
+        const list = importCharacters(reader.result as string);
         if (!list.length) {
           alert("文件中没有角色卡");
           return;
         }
-        const src = list[0];
         const now = new Date().toISOString();
-        const card = {
-          ...src,
+        const imported = list.map((c) => ({
+          ...c,
           id: createId(),
           world: world.name,
-          createdAt: now,
+          createdAt: c.createdAt || now,
           updatedAt: now,
-        };
-        if (!confirm(`将角色「${card.name}」导入到世界「${world.name}」？`)) {
+        }));
+        if (
+          !confirm(
+            `将导入 ${imported.length} 张角色卡到世界「${world.name}」？\n（会替换本世界现有角色，其他世界不受影响）`
+          )
+        ) {
           return;
         }
-        await replaceAll([...characters, card]);
-        alert(`已导入：${card.name}`);
+        const others = characters.filter(
+          (c) => c.world?.trim() !== world.name
+        );
+        await replaceAll([...others, ...imported]);
+        alert(`已导入 ${imported.length} 张角色卡到「${world.name}」`);
       } catch {
         alert("导入失败：无效 JSON");
       }
@@ -170,16 +176,16 @@ export default function WorldPage({
             <button
               onClick={() => fileRef.current?.click()}
               className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
-              title="导入一张角色卡到此世界"
+              title="导入整个世界的角色卡"
             >
-              输入单一角色卡
+              输入整个世界
             </button>
             <input
               ref={fileRef}
               type="file"
               accept=".json"
               className="hidden"
-              onChange={handleImportCharacter}
+              onChange={handleImportWorld}
             />
             <button
               onClick={() => setCreating(true)}
