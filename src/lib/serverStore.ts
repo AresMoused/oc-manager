@@ -1,3 +1,6 @@
+/**
+ * Server-side JSON file storage (local disk).
+ */
 import { promises as fs } from "fs";
 import path from "path";
 import type { Character } from "./types";
@@ -63,56 +66,24 @@ export async function writeAppData(data: AppData): Promise<AppData> {
 }
 
 export async function patchAppData(
-  partial: Partial<Pick<AppData, "characters" | "worlds" | "catalog">> & {
-    forceEmpty?: boolean;
-  }
+  partial: Partial<Pick<AppData, "characters" | "worlds" | "catalog">>
 ): Promise<AppData> {
   const current = await readAppData();
-  const force = partial.forceEmpty === true;
-
-  let nextCharacters = current.characters;
-  if ("characters" in partial && Array.isArray(partial.characters)) {
-    if (
-      partial.characters.length === 0 &&
-      current.characters.length > 0 &&
-      !force
-    ) {
-      console.warn(
-        "[serverStore] blocked empty characters overwrite (had",
-        current.characters.length,
-        "items)"
-      );
-      nextCharacters = current.characters;
-    } else {
-      nextCharacters = partial.characters;
-    }
-  }
-
-  let nextWorlds = current.worlds;
-  if ("worlds" in partial && Array.isArray(partial.worlds)) {
-    if (partial.worlds.length === 0 && current.worlds.length > 0 && !force) {
-      console.warn(
-        "[serverStore] blocked empty worlds overwrite (had",
-        current.worlds.length,
-        "items)"
-      );
-      nextWorlds = current.worlds;
-    } else {
-      nextWorlds = partial.worlds;
-    }
-  }
-
-  const nextCatalog =
-    "catalog" in partial &&
-    partial.catalog &&
-    typeof partial.catalog === "object"
-      ? partial.catalog
-      : current.catalog;
-
   return writeAppData({
-    characters: nextCharacters || [],
-    worlds: nextWorlds || [],
-    catalog: nextCatalog || {},
+    characters:
+      "characters" in partial && Array.isArray(partial.characters)
+        ? partial.characters
+        : current.characters,
+    worlds:
+      "worlds" in partial && Array.isArray(partial.worlds)
+        ? partial.worlds
+        : current.worlds,
+    catalog:
+      "catalog" in partial &&
+      partial.catalog &&
+      typeof partial.catalog === "object"
+        ? partial.catalog
+        : current.catalog,
     updatedAt: new Date().toISOString(),
   });
 }

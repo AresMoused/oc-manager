@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import {
   WorldMeta,
   createWorldId,
@@ -10,8 +10,17 @@ import {
 import { useAppData } from "@/context/AppDataContext";
 
 export function useWorlds() {
-  const { worlds, characters, loaded, setWorlds, flush, reload } = useAppData();
+  const {
+    worlds,
+    characters,
+    loaded,
+    setWorlds,
+    setCharacters,
+    flush,
+    reload,
+  } = useAppData();
 
+  // Display helper only — does not auto-write deleted worlds back
   const ensured = useMemo(
     () =>
       migrateWorldsFromCharacters(
@@ -20,13 +29,6 @@ export function useWorlds() {
       ),
     [worlds, characters]
   );
-
-  useEffect(() => {
-    if (!loaded) return;
-    if (ensured.length > worlds.length) {
-      setWorlds(ensured);
-    }
-  }, [loaded, ensured, worlds.length, setWorlds]);
 
   const addWorld = useCallback(
     (name: string, color?: string) => {
@@ -38,7 +40,10 @@ export function useWorlds() {
         createdAt: now,
         updatedAt: now,
       };
-      setWorlds((prev) => [...prev, w]);
+      setWorlds((prev) => {
+        if (prev.some((x) => x.name === w.name)) return prev;
+        return [...prev, w];
+      });
       return w;
     },
     [setWorlds]
@@ -59,20 +64,33 @@ export function useWorlds() {
 
   const deleteWorld = useCallback(
     async (id: string) => {
-      const next = worlds.filter((w) => w.id !== id);
-      await flush({ worlds: next });
+      const target = worlds.find((w) => w.id === id);
+      if (!target) return;
+      const nextWorlds = worlds.filter((w) => w.id !== id);
+      // Unassign characters so the world is not recreated from character.world
+      const nextChars = characters.map((c) =>
+        c.world?.trim() === target.name
+          ? { ...c, world: "", updatedAt: new Date().toISOString() }
+          : c
+      );
+      setCharacters(nextChars);
+      setWorlds(nextWorlds);
+      await flush({ worlds: nextWorlds, characters: nextChars });
     },
-    [worlds, flush]
+    [worlds, characters, setWorlds, setCharacters, flush]
   );
 
   const getWorld = useCallback(
-    (id: string) => ensured.find((w) => w.id === id),
-    [ensured]
+    (id: string) =>
+      worlds.find((w) => w.id === id) ?? ensured.find((w) => w.id === id),
+    [worlds, ensured]
   );
 
   const getWorldByName = useCallback(
-    (name: string) => ensured.find((w) => w.name === name.trim()),
-    [ensured]
+    (name: string) =>
+      worlds.find((w) => w.name === name.trim()) ??
+      ensured.find((w) => w.name === name.trim()),
+    [worlds, ensured]
   );
 
   const replaceAll = useCallback(
@@ -83,7 +101,7 @@ export function useWorlds() {
   );
 
   return {
-    worlds: ensured,
+    worlds,
     loaded,
     reload,
     addWorld,
