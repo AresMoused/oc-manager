@@ -62,6 +62,9 @@ export default function Navbar({ worldColor }: { worldColor?: string }) {
           <Link href="/ai-generate" className={linkClass("/ai-generate")}>
             AI生成角色
           </Link>
+          <Link href="/comfy" className={linkClass("/comfy")}>
+            ComfyUI
+          </Link>
         </nav>
       </div>
     </header>
