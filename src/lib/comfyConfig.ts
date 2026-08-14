@@ -3,7 +3,6 @@
 export interface ComfyWorkflowTemplate {
   id: string;
   name: string;
-  /** Raw API-format workflow JSON string (may contain %placeholders%) */
   workflow: string;
   createdAt: string;
   updatedAt: string;
@@ -16,7 +15,6 @@ export interface ComfyParams {
   sampler_name: string;
   width: number;
   height: number;
-  /** @deprecated use prompt_prefix / prompt_character / prompt_suffix */
   prompt: string;
   prompt_prefix: string;
   prompt_character: string;
@@ -27,7 +25,6 @@ export interface ComfyParams {
   vae: string;
 }
 
-/** Positive prompt preset (prefix / character / suffix) */
 export interface ComfyPromptPreset {
   id: string;
   name: string;
@@ -50,184 +47,118 @@ const PARAMS_KEY = "oc-comfy-params-v1";
 const PRESETS_KEY = "oc-comfy-prompt-presets-v1";
 
 export const PLACEHOLDERS = [
-  "seed",
-  "steps",
-  "cfg_scale",
-  "sampler_name",
-  "width",
-  "height",
-  "prompt",
-  "negative_prompt",
-  "MODEL_NAME",
-  "scheduler",
-  "vae",
+  "seed", "steps", "cfg_scale", "sampler_name", "width", "height",
+  "prompt", "negative_prompt", "MODEL_NAME", "scheduler", "vae",
 ] as const;
 
 export type PlaceholderKey = (typeof PLACEHOLDERS)[number];
 
 export const DEFAULT_SAMPLERS = [
-  "euler",
-  "euler_ancestral",
-  "heun",
-  "dpm_2",
-  "dpm_2_ancestral",
-  "lms",
-  "dpm_fast",
-  "dpm_adaptive",
-  "dpmpp_2s_ancestral",
-  "dpmpp_sde",
-  "dpmpp_2m",
-  "dpmpp_2m_sde",
-  "ddim",
-  "uni_pc",
+  "euler", "euler_ancestral", "heun", "dpm_2", "dpm_2_ancestral", "lms",
+  "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_sde", "dpmpp_2m",
+  "dpmpp_2m_sde", "ddim", "uni_pc",
 ];
 
 export const DEFAULT_SCHEDULERS = [
-  "normal",
-  "karras",
-  "exponential",
-  "sgm_uniform",
-  "simple",
-  "ddim_uniform",
+  "normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform",
+];
+
+export interface SizePreset {
+  id: string;
+  label: string;
+  width: number;
+  height: number;
+}
+
+export const SIZE_PRESETS: SizePreset[] = [
+  { id: "p512", label: "竖图 512×768", width: 512, height: 768 },
+  { id: "p768", label: "竖图 768×1152", width: 768, height: 1152 },
+  { id: "p832", label: "SDXL 竖 832×1216", width: 832, height: 1216 },
+  { id: "l512", label: "横图 768×512", width: 768, height: 512 },
+  { id: "l768", label: "横图 1152×768", width: 1152, height: 768 },
+  { id: "l832", label: "SDXL 横 1216×832", width: 1216, height: 832 },
+  { id: "s512", label: "方图 512×512", width: 512, height: 512 },
+  { id: "s768", label: "方图 768×768", width: 768, height: 768 },
+  { id: "s1024", label: "方图 1024×1024", width: 1024, height: 1024 },
 ];
 
 export function defaultParams(): ComfyParams {
   return {
-    seed: -1,
-    steps: 20,
-    cfg_scale: 7,
-    sampler_name: "euler",
-    width: 512,
-    height: 768,
-    prompt: "",
+    seed: -1, steps: 20, cfg_scale: 7, sampler_name: "euler",
+    width: 512, height: 768, prompt: "",
     prompt_prefix: "masterpiece, best quality, ",
-    prompt_character: "",
-    prompt_suffix: "",
-    negative_prompt:
-      "lowres, bad anatomy, bad hands, text, error, missing fingers",
-    MODEL_NAME: "",
-    scheduler: "normal",
-    vae: "",
+    prompt_character: "", prompt_suffix: "",
+    negative_prompt: "lowres, bad anatomy, bad hands, text, error, missing fingers",
+    MODEL_NAME: "", scheduler: "normal", vae: "",
   };
 }
 
-/** Join prefix + character + suffix into final positive prompt */
 export function composePositivePrompt(p: {
-  prompt_prefix?: string;
-  prompt_character?: string;
-  prompt_suffix?: string;
-  prompt?: string;
+  prompt_prefix?: string; prompt_character?: string; prompt_suffix?: string; prompt?: string;
 }): string {
-  const parts = [
-    (p.prompt_prefix || "").trim(),
-    (p.prompt_character || "").trim(),
-    (p.prompt_suffix || "").trim(),
-  ].filter(Boolean);
+  const parts = [(p.prompt_prefix || "").trim(), (p.prompt_character || "").trim(), (p.prompt_suffix || "").trim()].filter(Boolean);
   if (parts.length > 0) return parts.join(", ");
   return (p.prompt || "").trim();
 }
 
 export function defaultSettings(): ComfySettings {
-  return {
-    baseUrl: "http://127.0.0.1:8188",
-    activeWorkflowId: "",
-  };
+  return { baseUrl: "http://127.0.0.1:8188", activeWorkflowId: "" };
 }
 
 function safeParse<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
+  try { return JSON.parse(raw) as T; } catch { return fallback; }
 }
 
 export function loadSettings(): ComfySettings {
   if (typeof window === "undefined") return defaultSettings();
-  return {
-    ...defaultSettings(),
-    ...safeParse(localStorage.getItem(SETTINGS_KEY), {}),
-  };
+  return { ...defaultSettings(), ...safeParse(localStorage.getItem(SETTINGS_KEY), {}) };
 }
-
 export function saveSettings(s: ComfySettings) {
   if (typeof window === "undefined") return;
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
 }
-
 export function loadWorkflows(): ComfyWorkflowTemplate[] {
   if (typeof window === "undefined") return [];
   return safeParse(localStorage.getItem(WORKFLOWS_KEY), []);
 }
-
 export function saveWorkflows(list: ComfyWorkflowTemplate[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(list));
 }
-
 export function loadParams(): ComfyParams {
   if (typeof window === "undefined") return defaultParams();
-  const raw = safeParse<Partial<ComfyParams>>(
-    localStorage.getItem(PARAMS_KEY),
-    {}
-  );
+  const raw = safeParse<Partial<ComfyParams>>(localStorage.getItem(PARAMS_KEY), {});
   const base = defaultParams();
   const merged = { ...base, ...raw };
-  // migrate old single `prompt` into character slot if new fields empty
-  if (
-    raw.prompt &&
-    !raw.prompt_character &&
-    !raw.prompt_prefix &&
-    !raw.prompt_suffix
-  ) {
+  if (raw.prompt && !raw.prompt_character && !raw.prompt_prefix && !raw.prompt_suffix) {
     merged.prompt_character = raw.prompt;
     merged.prompt_prefix = "";
   }
   return merged;
 }
-
 export function saveParams(p: ComfyParams) {
   if (typeof window === "undefined") return;
   localStorage.setItem(PARAMS_KEY, JSON.stringify(p));
 }
-
 export function loadPromptPresets(): ComfyPromptPreset[] {
   if (typeof window === "undefined") return [];
   return safeParse(localStorage.getItem(PRESETS_KEY), []);
 }
-
 export function savePromptPresets(list: ComfyPromptPreset[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(PRESETS_KEY, JSON.stringify(list));
 }
 
-/** Replace %key% placeholders in workflow JSON string */
-export function applyPlaceholders(
-  workflowRaw: string,
-  params: ComfyParams
-): Record<string, unknown> {
-  const resolvedSeed =
-    params.seed < 0
-      ? Math.floor(Math.random() * 2 ** 32)
-      : Math.floor(params.seed);
-
+export function applyPlaceholders(workflowRaw: string, params: ComfyParams): Record<string, unknown> {
+  const resolvedSeed = params.seed < 0 ? Math.floor(Math.random() * 2 ** 32) : Math.floor(params.seed);
   const fullPrompt = composePositivePrompt(params);
-
   const map: Record<string, string | number> = {
-    seed: resolvedSeed,
-    steps: params.steps,
-    cfg_scale: params.cfg_scale,
-    sampler_name: params.sampler_name,
-    width: params.width,
-    height: params.height,
-    prompt: fullPrompt,
-    negative_prompt: params.negative_prompt,
-    MODEL_NAME: params.MODEL_NAME,
-    scheduler: params.scheduler,
-    vae: params.vae,
+    seed: resolvedSeed, steps: params.steps, cfg_scale: params.cfg_scale,
+    sampler_name: params.sampler_name, width: params.width, height: params.height,
+    prompt: fullPrompt, negative_prompt: params.negative_prompt,
+    MODEL_NAME: params.MODEL_NAME, scheduler: params.scheduler, vae: params.vae,
   };
-
   let s = workflowRaw;
   for (const key of PLACEHOLDERS) {
     const token = `%${key}%`;
@@ -239,11 +170,8 @@ export function applyPlaceholders(
       s = s.split(token).join(String(val));
     }
   }
-
   const parsed = JSON.parse(s);
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("工作流必须是 JSON 对象");
-  }
+  if (typeof parsed !== "object" || parsed === null) throw new Error("工作流必须是 JSON 对象");
   return parsed as Record<string, unknown>;
 }
 
@@ -251,23 +179,16 @@ export function detectPlaceholders(workflowRaw: string): string[] {
   const found = new Set<string>();
   const re = /%([A-Za-z0-9_]+)%/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(workflowRaw))) {
-    found.add(m[1]);
-  }
+  while ((m = re.exec(workflowRaw))) found.add(m[1]);
   return Array.from(found).sort();
 }
 
 function clientId() {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return `oc-${Date.now()}`;
 }
 
-export async function comfyQueuePrompt(
-  baseUrl: string,
-  prompt: Record<string, unknown>
-): Promise<{ prompt_id: string; number?: number }> {
+export async function comfyQueuePrompt(baseUrl: string, prompt: Record<string, unknown>) {
   const root = baseUrl.replace(/\/+$/, "");
   const res = await fetch(`${root}/prompt`, {
     method: "POST",
@@ -288,20 +209,16 @@ export interface ComfyHistoryImage {
 }
 
 export async function comfyWaitForImages(
-  baseUrl: string,
-  promptId: string,
+  baseUrl: string, promptId: string,
   opts?: { timeoutMs?: number; pollMs?: number; signal?: AbortSignal }
 ): Promise<ComfyHistoryImage[]> {
   const root = baseUrl.replace(/\/+$/, "");
   const timeout = opts?.timeoutMs ?? 300_000;
   const poll = opts?.pollMs ?? 1200;
   const start = Date.now();
-
   while (Date.now() - start < timeout) {
     if (opts?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    const res = await fetch(`${root}/history/${promptId}`, {
-      signal: opts?.signal,
-    });
+    const res = await fetch(`${root}/history/${promptId}`, { signal: opts?.signal });
     if (res.ok) {
       const data = await res.json();
       const entry = data[promptId];
@@ -311,17 +228,11 @@ export async function comfyWaitForImages(
           const out = entry.outputs[nodeId];
           if (out?.images && Array.isArray(out.images)) {
             for (const img of out.images) {
-              images.push({
-                filename: img.filename,
-                subfolder: img.subfolder || "",
-                type: img.type || "output",
-              });
+              images.push({ filename: img.filename, subfolder: img.subfolder || "", type: img.type || "output" });
             }
           }
         }
-        if (images.length > 0 || entry.status?.completed) {
-          return images;
-        }
+        if (images.length > 0 || entry.status?.completed) return images;
       }
     }
     await new Promise((r) => setTimeout(r, poll));
@@ -329,16 +240,9 @@ export async function comfyWaitForImages(
   throw new Error("等待 ComfyUI 生成超时");
 }
 
-export function comfyImageUrl(
-  baseUrl: string,
-  img: ComfyHistoryImage
-): string {
+export function comfyImageUrl(baseUrl: string, img: ComfyHistoryImage): string {
   const root = baseUrl.replace(/\/+$/, "");
-  const q = new URLSearchParams({
-    filename: img.filename,
-    subfolder: img.subfolder,
-    type: img.type,
-  });
+  const q = new URLSearchParams({ filename: img.filename, subfolder: img.subfolder, type: img.type });
   return `${root}/view?${q.toString()}`;
 }
 
@@ -347,24 +251,14 @@ export async function comfyCheckConnection(baseUrl: string): Promise<string> {
   const res = await fetch(`${root}/system_stats`);
   if (!res.ok) throw new Error(`连接失败 ${res.status}`);
   const data = await res.json();
-  const ver =
-    data?.system?.comfyui_version || data?.system?.python_version || "ok";
-  return String(ver);
+  return String(data?.system?.comfyui_version || data?.system?.python_version || "ok");
 }
 
-/** Normalize uploaded workflow file text into API-format object string */
 export function normalizeWorkflowUpload(raw: string): string {
   const data = JSON.parse(raw);
-  if (
-    data &&
-    typeof data === "object" &&
-    data.prompt &&
-    typeof data.prompt === "object"
-  ) {
+  if (data && typeof data === "object" && data.prompt && typeof data.prompt === "object") {
     return JSON.stringify(data.prompt, null, 2);
   }
-  if (data && typeof data === "object") {
-    return JSON.stringify(data, null, 2);
-  }
+  if (data && typeof data === "object") return JSON.stringify(data, null, 2);
   throw new Error("无效的工作流 JSON");
 }
