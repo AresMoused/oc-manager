@@ -4,6 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LOGO_SRC } from "@/lib/logo";
 
+const LOGO_FALLBACK =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#7c3aed"/><text x="32" y="38" text-anchor="middle" fill="#fff" font-size="14" font-family="sans-serif" font-weight="700">Ares</text></svg>'
+  );
+
 export default function Navbar({ worldColor }: { worldColor?: string }) {
   const pathname = usePathname();
 
@@ -12,7 +18,9 @@ export default function Navbar({ worldColor }: { worldColor?: string }) {
       href === "/"
         ? pathname === "/"
         : pathname === href || pathname.startsWith(href + "/");
-    return `text-sm transition ${active ? "text-white" : "text-neutral-400 hover:text-white"}`;
+    return `text-sm transition ${
+      active ? "text-white" : "text-neutral-400 hover:text-white"
+    }`;
   };
 
   return (
@@ -30,7 +38,14 @@ export default function Navbar({ worldColor }: { worldColor?: string }) {
           <img
             src={LOGO_SRC}
             alt="AresMoused"
-            className="w-8 h-8 rounded-full object-cover ring-1 ring-neutral-700 group-hover:ring-purple-500 transition"
+            width={32}
+            height={32}
+            className="w-8 h-8 rounded-full object-cover ring-1 ring-neutral-700 group-hover:ring-purple-500 transition bg-purple-700/40"
+            onError={(e) => {
+              const t = e.currentTarget;
+              t.onerror = null;
+              t.src = LOGO_FALLBACK;
+            }}
           />
           <span className="font-semibold text-white tracking-tight">
             OC Manager
