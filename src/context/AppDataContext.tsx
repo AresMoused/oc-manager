@@ -90,25 +90,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       worlds?: WorldMeta[];
       catalog?: WorldCatalog;
     }) => {
+      // When patch provides a field (including empty array), use it intentionally.
       const body = {
-        characters: patch?.characters ?? charsRef.current,
-        worlds: patch?.worlds ?? worldsRef.current,
-        catalog: patch?.catalog ?? catalogRef.current,
+        characters:
+          patch && "characters" in patch
+            ? patch.characters ?? []
+            : charsRef.current,
+        worlds:
+          patch && "worlds" in patch ? patch.worlds ?? [] : worldsRef.current,
+        catalog:
+          patch && "catalog" in patch
+            ? patch.catalog ?? {}
+            : catalogRef.current,
       };
-      if (
-        body.characters.length === 0 &&
-        charsRef.current.length > 0 &&
-        !patch?.characters
-      ) {
-        body.characters = charsRef.current;
-      }
-      if (
-        body.worlds.length === 0 &&
-        worldsRef.current.length > 0 &&
-        !patch?.worlds
-      ) {
-        body.worlds = worldsRef.current;
-      }
 
       try {
         const res = await fetch("/api/data", {
@@ -199,17 +193,20 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         clearTimeout(saveTimer.current);
         saveTimer.current = null;
       }
-      if (patch?.characters) {
-        charsRef.current = patch.characters;
-        setCharactersState(patch.characters);
+      if (patch && "characters" in patch) {
+        const list = patch.characters ?? [];
+        charsRef.current = list;
+        setCharactersState(list);
       }
-      if (patch?.worlds) {
-        worldsRef.current = patch.worlds;
-        setWorldsState(patch.worlds);
+      if (patch && "worlds" in patch) {
+        const list = patch.worlds ?? [];
+        worldsRef.current = list;
+        setWorldsState(list);
       }
-      if (patch?.catalog) {
-        catalogRef.current = patch.catalog;
-        setCatalogState(patch.catalog);
+      if (patch && "catalog" in patch) {
+        const cat = patch.catalog ?? {};
+        catalogRef.current = cat;
+        setCatalogState(cat);
       }
       await persist(patch);
     },
