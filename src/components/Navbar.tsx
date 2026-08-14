@@ -52,12 +52,15 @@ export default function Navbar({ worldColor }: { worldColor?: string }) {
           </span>
         </Link>
 
-        <nav className="flex items-center gap-4 sm:gap-6">
+        <nav className="flex items-center gap-3 sm:gap-5 flex-wrap justify-end">
           <Link href="/" className={linkClass("/")}>
             Worlds
           </Link>
           <Link href="/generator" className={linkClass("/generator")}>
             角色外观生成器
+          </Link>
+          <Link href="/ai-generate" className={linkClass("/ai-generate")}>
+            AI生成角色
           </Link>
         </nav>
       </div>
