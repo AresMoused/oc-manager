@@ -7,7 +7,12 @@ import Footer from "@/components/Footer";
 import CharacterCard from "@/components/CharacterCard";
 import { useWorlds } from "@/hooks/useWorlds";
 import { useCharacters } from "@/hooks/useCharacters";
-import { exportByWorld, importCharacters } from "@/lib/storage";
+import {
+  exportByWorld,
+  importCharacterPayload,
+  downloadExport,
+  createId,
+} from "@/lib/storage";
 
 export default function WorldPage({
   params,
@@ -53,40 +58,42 @@ export default function WorldPage({
     }
   };
 
-  const handleExport = () => {
+  const handleExportWorld = () => {
     if (!world) return;
     const data = exportByWorld(worldChars);
-    const blob = new Blob([data], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `oc-${world.name}-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadExport(
+      `oc-world-${world.name}-${new Date().toISOString().slice(0, 10)}.json`,
+      data
+    );
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportCharacter = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !world) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
-        const imported = importCharacters(reader.result as string).map((c) => ({
-          ...c,
-          world: world.name,
-        }));
-        if (
-          confirm(
-            `Import ${imported.length} characters into "${world.name}"? Existing characters in other worlds are kept.`
-          )
-        ) {
-          const others = characters.filter(
-            (c) => c.world?.trim() !== world.name
-          );
-          replaceAll([...others, ...imported]);
+        const list = importCharacterPayload(reader.result as string);
+        if (!list.length) {
+          alert("文件中没有角色卡");
+          return;
         }
+        const src = list[0];
+        const now = new Date().toISOString();
+        const card = {
+          ...src,
+          id: createId(),
+          world: world.name,
+          createdAt: now,
+          updatedAt: now,
+        };
+        if (!confirm(`将角色「${card.name}」导入到世界「${world.name}」？`)) {
+          return;
+        }
+        await replaceAll([...characters, card]);
+        alert(`已导入：${card.name}`);
       } catch {
-        alert("Invalid JSON");
+        alert("导入失败：无效 JSON");
       }
     };
     reader.readAsText(file);
@@ -151,26 +158,28 @@ export default function WorldPage({
               href="/generator"
               className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
             >
-              角色生成器
+              角色外观生成器
             </Link>
             <button
-              onClick={handleExport}
+              onClick={handleExportWorld}
               className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
+              title="导出此世界全部角色"
             >
-              Export
+              输出整个世界
             </button>
             <button
               onClick={() => fileRef.current?.click()}
               className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
+              title="导入一张角色卡到此世界"
             >
-              Import
+              输入单一角色卡
             </button>
             <input
               ref={fileRef}
               type="file"
               accept=".json"
               className="hidden"
-              onChange={handleImport}
+              onChange={handleImportCharacter}
             />
             <button
               onClick={() => setCreating(true)}
