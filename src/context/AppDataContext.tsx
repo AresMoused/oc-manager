@@ -1,0 +1,245 @@
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import type { Character } from "@/lib/types";
+import type { WorldMeta } from "@/lib/worlds";
+import type { WorldCatalog } from "@/lib/worldCatalog";
+import { fetchAppData } from "@/lib/apiClient";
+import { normalizeCharacterList } from "@/lib/storage";
+
+interface AppDataState {
+  characters: Character[];
+  worlds: WorldMeta[];
+  catalog: WorldCatalog;
+  loaded: boolean;
+  syncError: string | null;
+  setCharacters: (
+    next: Character[] | ((prev: Character[]) => Character[])
+  ) => void;
+  setWorlds: (next: WorldMeta[] | ((prev: WorldMeta[]) => WorldMeta[])) => void;
+  setCatalog: (
+    next: WorldCatalog | ((prev: WorldCatalog) => WorldCatalog)
+  ) => void;
+  flush: (patch?: {
+    characters?: Character[];
+    worlds?: WorldMeta[];
+    catalog?: WorldCatalog;
+  }) => Promise<void>;
+  reload: () => Promise<void>;
+}
+
+const AppDataContext = createContext<AppDataState | null>(null);
+
+export function AppDataProvider({ children }: { children: ReactNode }) {
+  const [characters, setCharactersState] = useState<Character[]>([]);
+  const [worlds, setWorldsState] = useState<WorldMeta[]>([]);
+  const [catalog, setCatalogState] = useState<WorldCatalog>({});
+  const [loaded, setLoaded] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const charsRef = useRef<Character[]>([]);
+  const worldsRef = useRef<WorldMeta[]>([]);
+  const catalogRef = useRef<WorldCatalog>({});
+  const skipSave = useRef(true);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    charsRef.current = characters;
+  }, [characters]);
+  useEffect(() => {
+    worldsRef.current = worlds;
+  }, [worlds]);
+  useEffect(() => {
+    catalogRef.current = catalog;
+  }, [catalog]);
+
+  const reload = useCallback(async () => {
+    try {
+      const data = await fetchAppData();
+      const list = normalizeCharacterList(data.characters);
+      charsRef.current = list;
+      worldsRef.current = data.worlds || [];
+      catalogRef.current = data.catalog || {};
+      setCharactersState(list);
+      setWorldsState(data.worlds || []);
+      setCatalogState(data.catalog || {});
+      setSyncError(null);
+      skipSave.current = true;
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : "加载失败");
+    } finally {
+      setLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const persist = useCallback(
+    async (patch?: {
+      characters?: Character[];
+      worlds?: WorldMeta[];
+      catalog?: WorldCatalog;
+    }) => {
+      const body = {
+        characters: patch?.characters ?? charsRef.current,
+        worlds: patch?.worlds ?? worldsRef.current,
+        catalog: patch?.catalog ?? catalogRef.current,
+      };
+      if (
+        body.characters.length === 0 &&
+        charsRef.current.length > 0 &&
+        !patch?.characters
+      ) {
+        body.characters = charsRef.current;
+      }
+      if (
+        body.worlds.length === 0 &&
+        worldsRef.current.length > 0 &&
+        !patch?.worlds
+      ) {
+        body.worlds = worldsRef.current;
+      }
+
+      try {
+        const res = await fetch("/api/data", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+        const data = await res.json();
+        if (Array.isArray(data.characters)) {
+          const list = normalizeCharacterList(data.characters);
+          charsRef.current = list;
+          setCharactersState(list);
+        }
+        if (Array.isArray(data.worlds)) {
+          worldsRef.current = data.worlds;
+          setWorldsState(data.worlds);
+        }
+        if (data.catalog && typeof data.catalog === "object") {
+          catalogRef.current = data.catalog;
+          setCatalogState(data.catalog);
+        }
+        setSyncError(null);
+        skipSave.current = true;
+      } catch (e) {
+        setSyncError(e instanceof Error ? e.message : "保存失败");
+        throw e;
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!loaded) return;
+    if (skipSave.current) {
+      skipSave.current = false;
+      return;
+    }
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      persist().catch(() => {});
+    }, 500);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [characters, worlds, catalog, loaded, persist]);
+
+  const setCharacters = useCallback(
+    (next: Character[] | ((prev: Character[]) => Character[])) => {
+      setCharactersState((prev) => {
+        const value = typeof next === "function" ? next(prev) : next;
+        charsRef.current = value;
+        return value;
+      });
+    },
+    []
+  );
+
+  const setWorlds = useCallback(
+    (next: WorldMeta[] | ((prev: WorldMeta[]) => WorldMeta[])) => {
+      setWorldsState((prev) => {
+        const value = typeof next === "function" ? next(prev) : next;
+        worldsRef.current = value;
+        return value;
+      });
+    },
+    []
+  );
+
+  const setCatalog = useCallback(
+    (next: WorldCatalog | ((prev: WorldCatalog) => WorldCatalog)) => {
+      setCatalogState((prev) => {
+        const value = typeof next === "function" ? next(prev) : next;
+        catalogRef.current = value;
+        return value;
+      });
+    },
+    []
+  );
+
+  const flush = useCallback(
+    async (patch?: {
+      characters?: Character[];
+      worlds?: WorldMeta[];
+      catalog?: WorldCatalog;
+    }) => {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      if (patch?.characters) {
+        charsRef.current = patch.characters;
+        setCharactersState(patch.characters);
+      }
+      if (patch?.worlds) {
+        worldsRef.current = patch.worlds;
+        setWorldsState(patch.worlds);
+      }
+      if (patch?.catalog) {
+        catalogRef.current = patch.catalog;
+        setCatalogState(patch.catalog);
+      }
+      await persist(patch);
+    },
+    [persist]
+  );
+
+  return (
+    <AppDataContext.Provider
+      value={{
+        characters,
+        worlds,
+        catalog,
+        loaded,
+        syncError,
+        setCharacters,
+        setWorlds,
+        setCatalog,
+        flush,
+        reload,
+      }}
+    >
+      {children}
+    </AppDataContext.Provider>
+  );
+}
+
+export function useAppData() {
+  const ctx = useContext(AppDataContext);
+  if (!ctx) {
+    throw new Error("useAppData must be used within AppDataProvider");
+  }
+  return ctx;
+}
