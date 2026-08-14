@@ -90,7 +90,7 @@ export default function PromptBank({
 
         {prompts.length === 0 ? (
           <p className="text-neutral-600 text-sm text-center py-4">
-            暂无提示词 · 可从「角色生成器」导入，或手动添加
+            暂无提示词 · 可从「角色外观生成器」导入，或手动添加
           </p>
         ) : (
           prompts.map((p) => (
