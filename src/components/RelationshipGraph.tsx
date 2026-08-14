@@ -41,6 +41,7 @@ interface Props {
   height?: number;
   className?: string;
   storageKey?: string;
+  onNodeClick?: (characterId: string) => void;
 }
 
 export default function RelationshipGraph({
@@ -49,12 +50,15 @@ export default function RelationshipGraph({
   height = 520,
   className = "",
   storageKey = "oc-rel-graph-pos",
+  onNodeClick,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: height });
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [dragging, setDragging] = useState<string | null>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
+  const dragMoved = useRef(false);
+  const pointerStart = useRef({ x: 0, y: 0 });
   const [hoverEdge, setHoverEdge] = useState<Edge | null>(null);
   const [hoverNode, setHoverNode] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; lines: string[] } | null>(null);
@@ -67,29 +71,55 @@ export default function RelationshipGraph({
       if (raw) saved = JSON.parse(raw);
     } catch { /* ignore */ }
 
-    const centerX = size.w / 2;
-    const centerY = size.h / 2;
-    const radius = Math.min(size.w, size.h) * 0.32;
+    const centerX = size.w / 2 || 400;
+    const centerY = size.h / 2 || 180;
+    const radius = Math.max(90, Math.min(size.w, size.h) * 0.28);
     const next: Record<string, { x: number; y: number }> = {};
-    characters.forEach((c, i) => {
+
+    const focusChar = focusId
+      ? characters.find((c) => c.id === focusId)
+      : null;
+    const others = characters.filter((c) => c.id !== focusId);
+
+    if (focusChar) {
+      if (saved[focusChar.id]) {
+        next[focusChar.id] = {
+          x: Math.min(size.w - 40, Math.max(40, saved[focusChar.id].x)),
+          y: Math.min(size.h - 40, Math.max(40, saved[focusChar.id].y)),
+        };
+      } else {
+        next[focusChar.id] = { x: centerX, y: centerY };
+      }
+    }
+
+    others.forEach((c, i) => {
       if (saved[c.id]) {
         next[c.id] = {
           x: Math.min(size.w - 40, Math.max(40, saved[c.id].x)),
           y: Math.min(size.h - 40, Math.max(40, saved[c.id].y)),
         };
-      } else if (positions[c.id]) {
-        next[c.id] = positions[c.id];
       } else {
-        const angle = (i / Math.max(characters.length, 1)) * Math.PI * 2 - Math.PI / 2;
+        const n = Math.max(others.length, 1);
+        const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
         next[c.id] = {
           x: centerX + radius * Math.cos(angle),
           y: centerY + radius * Math.sin(angle),
         };
       }
     });
+
+    characters.forEach((c, i) => {
+      if (next[c.id]) return;
+      const angle = (i / Math.max(characters.length, 1)) * Math.PI * 2 - Math.PI / 2;
+      next[c.id] = {
+        x: centerX + radius * Math.cos(angle),
+        y: centerY + radius * Math.sin(angle),
+      };
+    });
+
     setPositions(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [characters.map((c) => c.id).join(","), size.w, size.h, storageKey]);
+  }, [characters.map((c) => c.id).join(","), focusId, size.w, size.h, storageKey]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -149,6 +179,8 @@ export default function RelationshipGraph({
       x: e.clientX - rect.left - pos.x,
       y: e.clientY - rect.top - pos.y,
     };
+    dragMoved.current = false;
+    pointerStart.current = { x: e.clientX, y: e.clientY };
     setDragging(id);
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
@@ -160,23 +192,33 @@ export default function RelationshipGraph({
     const my = e.clientY - rect.top;
 
     if (dragging) {
+      if (
+        Math.abs(e.clientX - pointerStart.current.x) > 4 ||
+        Math.abs(e.clientY - pointerStart.current.y) > 4
+      ) {
+        dragMoved.current = true;
+      }
       const x = Math.min(size.w - 30, Math.max(30, mx - dragOffset.current.x));
       const y = Math.min(size.h - 30, Math.max(30, my - dragOffset.current.y));
-      setPositions((prev) => ({
-        ...prev,
-        [dragging]: { x, y },
-      }));
+      setPositions((prev) => {
+        const next = { ...prev, [dragging]: { x, y } };
+        return next;
+      });
     }
   };
 
   const onPointerUp = () => {
     if (dragging) {
+      const id = dragging;
       setPositions((prev) => {
         persistPos(prev);
         return prev;
       });
+      if (!dragMoved.current && onNodeClick && id !== focusId) {
+        onNodeClick(id);
+      }
+      setDragging(null);
     }
-    setDragging(null);
   };
 
   const showEdgeTip = (edge: Edge, e: React.PointerEvent) => {
@@ -303,7 +345,7 @@ export default function RelationshipGraph({
               onPointerDown={(e) => onPointerDown(c.id, e)}
               onPointerEnter={(e) => showNodeTip(c, e)}
               onPointerLeave={clearTip}
-              style={{ cursor: dragging === c.id ? "grabbing" : "grab" }}
+              style={{ cursor: dragging === c.id ? "grabbing" : onNodeClick ? "pointer" : "grab" }}
             >
               <circle
                 r={r + 3}
@@ -342,8 +384,20 @@ export default function RelationshipGraph({
                 fontWeight={600}
                 style={{ pointerEvents: "none" }}
               >
-                {c.name.length > 14 ? c.name.slice(0, 13) + "…" : c.name}
+                {(isFocus ? "● " : "") +
+                  (c.name.length > 12 ? c.name.slice(0, 11) + "…" : c.name)}
               </text>
+              {isFocus && (
+                <text
+                  y={r + 30}
+                  textAnchor="middle"
+                  fill="#a78bfa"
+                  fontSize={10}
+                  style={{ pointerEvents: "none" }}
+                >
+                  （当前角色）
+                </text>
+              )}
             </g>
           );
         })}
@@ -378,7 +432,7 @@ export default function RelationshipGraph({
           </div>
         ))}
         <div className="text-neutral-600 pt-1 border-t border-neutral-800 mt-1">
-          拖动节点调整位置 · 悬停查看详情
+          当前角色在中心 · 拖动调整 · 点击其他角色进入角色卡
         </div>
       </div>
     </div>
