@@ -1,8 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Character, Relationship } from "@/lib/types";
 import SectionHeader from "./SectionHeader";
+import RelationshipGraph, {
+  REL_TYPE_COLORS,
+  REL_TYPE_LABELS,
+} from "./RelationshipGraph";
 
 interface Props {
   character: Character;
@@ -13,18 +17,7 @@ interface Props {
   editable?: boolean;
 }
 
-const TYPE_LABELS: Record<Relationship["type"], string> = {
-  friend: "Friend 友",
-  family: "Family 亲",
-  ally: "Ally 盟",
-  enemy: "Enemy 敌",
-  rival: "Rival 竞",
-  lover: "Lover 恋",
-  mentor: "Mentor 师",
-  other: "Other 其他",
-};
-
-const TYPE_COLORS: Record<Relationship["type"], string> = {
+const TYPE_BADGE: Record<Relationship["type"], string> = {
   friend: "bg-emerald-900/40 text-emerald-300",
   family: "bg-sky-900/40 text-sky-300",
   ally: "bg-blue-900/40 text-blue-300",
@@ -44,6 +37,7 @@ export default function RelationshipsPanel({
   editable = true,
 }: Props) {
   const [showForm, setShowForm] = useState(false);
+  const [showGraph, setShowGraph] = useState(true);
   const [form, setForm] = useState({
     targetId: "",
     type: "friend" as Relationship["type"],
@@ -60,15 +54,43 @@ export default function RelationshipsPanel({
 
   const others = allCharacters.filter((c) => c.id !== character.id);
 
+  const worldChars = useMemo(() => {
+    const w = character.world?.trim();
+    if (!w) return allCharacters;
+    return allCharacters.filter((c) => c.world?.trim() === w);
+  }, [allCharacters, character.world]);
+
   return (
     <div>
       <SectionHeader
         title="人际关系 / Relationships"
         onAdd={editable ? () => setShowForm(true) : undefined}
       />
-      <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-4">
+      <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-4 space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setShowGraph((v) => !v)}
+            className="text-xs text-neutral-400 hover:text-white"
+          >
+            {showGraph ? "▾ 关系图" : "▸ 关系图"}
+          </button>
+          <span className="text-[10px] text-neutral-600">
+            关系会自动同步到对方角色卡
+          </span>
+        </div>
+
+        {showGraph && worldChars.length > 0 && (
+          <RelationshipGraph
+            characters={worldChars}
+            focusId={character.id}
+            height={320}
+            storageKey={`oc-rel-graph-char-${character.id}`}
+          />
+        )}
+
         {showForm && (
-          <div className="mb-4 p-3 bg-[#0a0a0a] border border-purple-800/50 rounded-lg space-y-2">
+          <div className="p-3 bg-[#0a0a0a] border border-purple-800/50 rounded-lg space-y-2">
             <select
               className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-sm outline-none focus:border-purple-500"
               value={form.targetId}
@@ -78,12 +100,13 @@ export default function RelationshipsPanel({
               {others.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.name}
+                  {o.world ? ` · ${o.world}` : ""}
                 </option>
               ))}
             </select>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="flex gap-2">
               <select
-                className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-sm outline-none focus:border-purple-500"
+                className="flex-1 bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-sm outline-none focus:border-purple-500"
                 value={form.type}
                 onChange={(e) =>
                   setForm({
@@ -92,14 +115,16 @@ export default function RelationshipsPanel({
                   })
                 }
               >
-                {Object.entries(TYPE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
+                {(Object.keys(REL_TYPE_LABELS) as Relationship["type"][]).map(
+                  (t) => (
+                    <option key={t} value={t}>
+                      {REL_TYPE_LABELS[t]}
+                    </option>
+                  )
+                )}
               </select>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-neutral-400">Strength</span>
+              <div className="flex items-center gap-1 px-2">
+                <span className="text-xs text-neutral-500">强度</span>
                 <input
                   type="range"
                   min={1}
@@ -108,37 +133,39 @@ export default function RelationshipsPanel({
                   onChange={(e) =>
                     setForm({ ...form, strength: Number(e.target.value) })
                   }
-                  className="flex-1"
+                  className="w-20 accent-purple-500"
                 />
-                <span className="text-xs w-4">{form.strength}</span>
+                <span className="text-xs text-purple-300 w-3">{form.strength}</span>
               </div>
             </div>
             <input
-              placeholder="Note (optional)"
               className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-sm outline-none focus:border-purple-500"
+              placeholder="备注（可选）"
               value={form.note}
               onChange={(e) => setForm({ ...form, note: e.target.value })}
             />
-            <div className="flex gap-2 justify-end">
+            <div className="flex justify-end gap-2">
               <button
+                type="button"
                 onClick={() => setShowForm(false)}
-                className="px-3 py-1 text-sm text-neutral-400 hover:text-white"
+                className="px-3 py-1 text-xs text-neutral-400"
               >
-                Cancel
+                取消
               </button>
               <button
+                type="button"
                 onClick={handleSubmit}
-                className="px-3 py-1 text-sm bg-purple-600 hover:bg-purple-500 rounded text-white"
+                className="px-3 py-1 text-xs rounded bg-purple-600 text-white"
               >
-                Add
+                添加（双向同步）
               </button>
             </div>
           </div>
         )}
 
         {character.relationships.length === 0 ? (
-          <p className="text-neutral-500 text-sm text-center py-6">
-            No relationships yet. Add connections to other characters.
+          <p className="text-sm text-neutral-500 text-center py-4">
+            暂无关系。添加后会同步出现在对方角色卡上。
           </p>
         ) : (
           <div className="space-y-2">
@@ -147,9 +174,12 @@ export default function RelationshipsPanel({
               return (
                 <div
                   key={rel.id}
-                  className="flex items-center gap-3 p-2.5 bg-[#0a0a0a] border border-neutral-800 rounded-lg group"
+                  className="group flex items-center gap-3 p-2 rounded-lg hover:bg-neutral-900/60 border border-transparent hover:border-neutral-800"
                 >
-                  <div className="w-9 h-9 rounded-full bg-neutral-800 overflow-hidden shrink-0">
+                  <div
+                    className="w-9 h-9 rounded-full bg-neutral-800 overflow-hidden shrink-0"
+                    style={{ boxShadow: `0 0 0 2px ${REL_TYPE_COLORS[rel.type]}` }}
+                  >
                     {target?.avatar ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -169,9 +199,9 @@ export default function RelationshipsPanel({
                         {target?.name || "Unknown"}
                       </span>
                       <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded ${TYPE_COLORS[rel.type]}`}
+                        className={`text-[10px] px-1.5 py-0.5 rounded ${TYPE_BADGE[rel.type]}`}
                       >
-                        {TYPE_LABELS[rel.type]}
+                        {REL_TYPE_LABELS[rel.type]}
                       </span>
                     </div>
                     {rel.note && (
@@ -192,8 +222,10 @@ export default function RelationshipsPanel({
                   </div>
                   {editable && (
                     <button
+                      type="button"
                       onClick={() => onDelete(rel.id)}
                       className="opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-rose-400 text-xs transition"
+                      title="同时从对方角色卡删除"
                     >
                       ×
                     </button>
