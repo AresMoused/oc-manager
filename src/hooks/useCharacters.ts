@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback } from "react";
 import {
   Character,
   defaultCharacter,
@@ -8,74 +8,11 @@ import {
   Relationship,
 } from "@/lib/types";
 import { createId, normalizeCharacterList } from "@/lib/storage";
-import { fetchAppData, putCharacters } from "@/lib/apiClient";
+import { useAppData } from "@/context/AppDataContext";
 
 export function useCharacters() {
-  const [characters, setCharacters] = useState<Character[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-  const skipSave = useRef(true);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const charactersRef = useRef<Character[]>([]);
-
-  useEffect(() => {
-    charactersRef.current = characters;
-  }, [characters]);
-
-  const reload = useCallback(async () => {
-    try {
-      const data = await fetchAppData();
-      const list = normalizeCharacterList(data.characters);
-      charactersRef.current = list;
-      setCharacters(list);
-      setSyncError(null);
-      skipSave.current = true;
-    } catch (e) {
-      setSyncError(e instanceof Error ? e.message : "加载失败");
-    } finally {
-      setLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    reload();
-  }, [reload]);
-
-  useEffect(() => {
-    if (!loaded) return;
-    if (skipSave.current) {
-      skipSave.current = false;
-      return;
-    }
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      putCharacters(charactersRef.current)
-        .then(() => setSyncError(null))
-        .catch((e) =>
-          setSyncError(e instanceof Error ? e.message : "保存失败")
-        );
-    }, 400);
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-    };
-  }, [characters, loaded]);
-
-  const flush = useCallback(async (list: Character[]) => {
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
-    skipSave.current = true;
-    charactersRef.current = list;
-    setCharacters(list);
-    try {
-      await putCharacters(list);
-      setSyncError(null);
-    } catch (e) {
-      setSyncError(e instanceof Error ? e.message : "保存失败");
-      throw e;
-    }
-  }, []);
+  const { characters, loaded, syncError, setCharacters, flush, reload } =
+    useAppData();
 
   const addCharacter = useCallback(
     async (partial?: Partial<Character>) => {
@@ -87,11 +24,11 @@ export function useCharacters() {
         createdAt: now,
         updatedAt: now,
       };
-      const next = [...charactersRef.current, newChar];
-      await flush(next);
+      const next = [...characters, newChar];
+      await flush({ characters: next });
       return newChar.id;
     },
-    [flush]
+    [characters, flush]
   );
 
   const updateCharacter = useCallback(
@@ -104,15 +41,15 @@ export function useCharacters() {
         )
       );
     },
-    []
+    [setCharacters]
   );
 
   const deleteCharacter = useCallback(
     async (id: string) => {
-      const next = charactersRef.current.filter((c) => c.id !== id);
-      await flush(next);
+      const next = characters.filter((c) => c.id !== id);
+      await flush({ characters: next });
     },
-    [flush]
+    [characters, flush]
   );
 
   const getCharacter = useCallback(
@@ -127,15 +64,15 @@ export function useCharacters() {
           if (c.id !== charId) return c;
           return {
             ...c,
-            timeline: [...c.timeline, { ...event, id: createId() }].sort((a, b) =>
-              a.date.localeCompare(b.date)
+            timeline: [...c.timeline, { ...event, id: createId() }].sort(
+              (a, b) => a.date.localeCompare(b.date)
             ),
             updatedAt: new Date().toISOString(),
           };
         })
       );
     },
-    []
+    [setCharacters]
   );
 
   const updateTimelineEvent = useCallback(
@@ -153,21 +90,24 @@ export function useCharacters() {
         })
       );
     },
-    []
+    [setCharacters]
   );
 
-  const deleteTimelineEvent = useCallback((charId: string, eventId: string) => {
-    setCharacters((prev) =>
-      prev.map((c) => {
-        if (c.id !== charId) return c;
-        return {
-          ...c,
-          timeline: c.timeline.filter((e) => e.id !== eventId),
-          updatedAt: new Date().toISOString(),
-        };
-      })
-    );
-  }, []);
+  const deleteTimelineEvent = useCallback(
+    (charId: string, eventId: string) => {
+      setCharacters((prev) =>
+        prev.map((c) => {
+          if (c.id !== charId) return c;
+          return {
+            ...c,
+            timeline: c.timeline.filter((e) => e.id !== eventId),
+            updatedAt: new Date().toISOString(),
+          };
+        })
+      );
+    },
+    [setCharacters]
+  );
 
   const addRelationship = useCallback(
     (charId: string, rel: Omit<Relationship, "id">) => {
@@ -182,7 +122,7 @@ export function useCharacters() {
         })
       );
     },
-    []
+    [setCharacters]
   );
 
   const updateRelationship = useCallback(
@@ -200,25 +140,28 @@ export function useCharacters() {
         })
       );
     },
-    []
+    [setCharacters]
   );
 
-  const deleteRelationship = useCallback((charId: string, relId: string) => {
-    setCharacters((prev) =>
-      prev.map((c) => {
-        if (c.id !== charId) return c;
-        return {
-          ...c,
-          relationships: c.relationships.filter((r) => r.id !== relId),
-          updatedAt: new Date().toISOString(),
-        };
-      })
-    );
-  }, []);
+  const deleteRelationship = useCallback(
+    (charId: string, relId: string) => {
+      setCharacters((prev) =>
+        prev.map((c) => {
+          if (c.id !== charId) return c;
+          return {
+            ...c,
+            relationships: c.relationships.filter((r) => r.id !== relId),
+            updatedAt: new Date().toISOString(),
+          };
+        })
+      );
+    },
+    [setCharacters]
+  );
 
   const replaceAll = useCallback(
     async (list: Character[]) => {
-      await flush(normalizeCharacterList(list));
+      await flush({ characters: normalizeCharacterList(list) });
     },
     [flush]
   );
