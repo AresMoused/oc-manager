@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -14,6 +15,7 @@ export default function WorldRelationshipsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const { getWorld, loaded: worldsLoaded } = useWorlds();
   const { characters: allCharacters, loaded: charsLoaded } = useCharacters();
   const world = getWorld(id);
@@ -66,7 +68,7 @@ export default function WorldRelationshipsPage({
             <h1 className="text-2xl font-bold text-white mt-1">关系图</h1>
             <p className="text-neutral-500 text-sm mt-1">
               拖动角色节点调整布局。连线颜色表示关系类型；悬停可查看完整名字与关系。
-              在角色卡中添加的关系会双向同步。
+              在角色卡中添加的关系会双向同步。点击节点进入角色卡。
             </p>
           </div>
           <div className="text-sm text-neutral-500">
@@ -79,6 +81,7 @@ export default function WorldRelationshipsPage({
           characters={characters}
           height={560}
           storageKey={`oc-rel-graph-${id}`}
+          onNodeClick={(cid) => router.push(`/character/${cid}`)}
         />
       </main>
       <Footer />

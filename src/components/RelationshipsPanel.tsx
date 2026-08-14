@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Character, Relationship } from "@/lib/types";
 import SectionHeader from "./SectionHeader";
 import RelationshipGraph, {
@@ -36,6 +38,7 @@ export default function RelationshipsPanel({
   onDelete,
   editable = true,
 }: Props) {
+  const router = useRouter();
   const [showForm, setShowForm] = useState(false);
   const [showGraph, setShowGraph] = useState(true);
   const [form, setForm] = useState({
@@ -46,19 +49,63 @@ export default function RelationshipsPanel({
   });
 
   const handleSubmit = () => {
-    if (!form.targetId) return;
+    if (!form.targetId || form.targetId === character.id) return;
     onAdd(form);
     setForm({ targetId: "", type: "friend", strength: 3, note: "" });
     setShowForm(false);
   };
 
-  const others = allCharacters.filter((c) => c.id !== character.id);
+  const others = useMemo(
+    () => allCharacters.filter((c) => c.id !== character.id),
+    [allCharacters, character.id]
+  );
 
-  const worldChars = useMemo(() => {
-    const w = character.world?.trim();
-    if (!w) return allCharacters;
-    return allCharacters.filter((c) => c.world?.trim() === w);
-  }, [allCharacters, character.world]);
+  const graphCharacters = useMemo(() => {
+    const byId = new Map<string, Character>();
+    for (const c of allCharacters) byId.set(c.id, c);
+    byId.set(character.id, character);
+
+    const ids = new Set<string>([character.id]);
+
+    for (const r of character.relationships || []) {
+      if (r.targetId && r.targetId !== character.id) ids.add(r.targetId);
+    }
+    for (const c of allCharacters) {
+      if (c.id === character.id) continue;
+      if ((c.relationships || []).some((r) => r.targetId === character.id)) {
+        ids.add(c.id);
+      }
+    }
+
+    const world = character.world?.trim();
+    if (world) {
+      for (const c of allCharacters) {
+        if (c.world?.trim() === world) ids.add(c.id);
+      }
+    }
+
+    const self = byId.get(character.id)!;
+    const rest = [...ids]
+      .filter((id) => id !== character.id)
+      .map((id) => byId.get(id))
+      .filter((c): c is Character => Boolean(c))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    return [self, ...rest];
+  }, [allCharacters, character]);
+
+  const relList = useMemo(
+    () =>
+      (character.relationships || []).filter(
+        (r) => r.targetId && r.targetId !== character.id
+      ),
+    [character.relationships, character.id]
+  );
+
+  const goToCharacter = (cid: string) => {
+    if (cid === character.id) return;
+    router.push(`/character/${cid}`);
+  };
 
   return (
     <div>
@@ -76,16 +123,17 @@ export default function RelationshipsPanel({
             {showGraph ? "▾ 关系图" : "▸ 关系图"}
           </button>
           <span className="text-[10px] text-neutral-600">
-            关系会自动同步到对方角色卡
+            当前角色在中心 · 点击其他节点进入角色卡
           </span>
         </div>
 
-        {showGraph && worldChars.length > 0 && (
+        {showGraph && (
           <RelationshipGraph
-            characters={worldChars}
+            characters={graphCharacters}
             focusId={character.id}
-            height={320}
-            storageKey={`oc-rel-graph-char-${character.id}`}
+            height={360}
+            storageKey={`oc-rel-graph-v2-${character.world || "all"}`}
+            onNodeClick={goToCharacter}
           />
         )}
 
@@ -163,41 +211,60 @@ export default function RelationshipsPanel({
           </div>
         )}
 
-        {character.relationships.length === 0 ? (
+        {relList.length === 0 ? (
           <p className="text-sm text-neutral-500 text-center py-4">
             暂无关系。添加后会同步出现在对方角色卡上。
           </p>
         ) : (
           <div className="space-y-2">
-            {character.relationships.map((rel) => {
+            {relList.map((rel) => {
               const target = allCharacters.find((c) => c.id === rel.targetId);
               return (
                 <div
                   key={rel.id}
                   className="group flex items-center gap-3 p-2 rounded-lg hover:bg-neutral-900/60 border border-transparent hover:border-neutral-800"
                 >
-                  <div
-                    className="w-9 h-9 rounded-full bg-neutral-800 overflow-hidden shrink-0"
-                    style={{ boxShadow: `0 0 0 2px ${REL_TYPE_COLORS[rel.type]}` }}
-                  >
-                    {target?.avatar ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={target.avatar}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-neutral-500 text-xs">
-                        ?
-                      </div>
-                    )}
-                  </div>
+                  {target ? (
+                    <Link
+                      href={`/character/${target.id}`}
+                      className="w-9 h-9 rounded-full bg-neutral-800 overflow-hidden shrink-0 hover:opacity-90"
+                      style={{
+                        boxShadow: `0 0 0 2px ${REL_TYPE_COLORS[rel.type]}`,
+                      }}
+                      title={`打开 ${target.name}`}
+                    >
+                      {target.avatar ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={target.avatar}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-neutral-500 text-xs">
+                          ?
+                        </div>
+                      )}
+                    </Link>
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-neutral-800 overflow-hidden shrink-0 flex items-center justify-center text-neutral-500 text-xs">
+                      ?
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm truncate">
-                        {target?.name || "Unknown"}
-                      </span>
+                      {target ? (
+                        <Link
+                          href={`/character/${target.id}`}
+                          className="font-medium text-sm truncate text-white hover:text-purple-300 hover:underline"
+                        >
+                          {target.name}
+                        </Link>
+                      ) : (
+                        <span className="font-medium text-sm truncate text-neutral-500">
+                          Unknown
+                        </span>
+                      )}
                       <span
                         className={`text-[10px] px-1.5 py-0.5 rounded ${TYPE_BADGE[rel.type]}`}
                       >

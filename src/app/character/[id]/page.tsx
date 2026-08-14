@@ -43,13 +43,17 @@ export default function CharacterPage({
   const [retryCount, setRetryCount] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const { worlds, createWorld, addFieldOption, optionsFor } = useWorldCatalog();
+  const {
+    worlds,
+    createWorld,
+    addFieldOption,
+    optionsFor,
+  } = useWorldCatalog();
   const { getWorldByName } = useWorlds();
 
   const [tab, setTab] = useState<
-    "sheet" | "gallery" | "timeline" | "relations"
+    "sheet" | "timeline" | "relations" | "gallery"
   >("sheet");
-
   const character = getCharacter(id);
 
   useEffect(() => {
@@ -86,157 +90,130 @@ export default function CharacterPage({
   const backHref = worldMeta ? `/world/${worldMeta.id}` : "/";
   const backLabel = worldMeta ? `← ${worldMeta.name}` : "← Worlds";
 
-  const tabs = [
-    { key: "sheet" as const, label: "Character Sheet" },
-    { key: "gallery" as const, label: "Gallery" },
-    { key: "timeline" as const, label: "Timeline" },
-    { key: "relations" as const, label: "Relationships" },
-  ];
-
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar worldColor={worldMeta?.color} />
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Link
-              href={backHref}
-              className="text-neutral-400 hover:text-white transition text-sm"
-            >
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex flex-wrap items-center gap-3 min-w-0">
+            <Link href={backHref} className="text-neutral-500 hover:text-white text-sm">
               {backLabel}
             </Link>
             {worldMeta && (
               <span
-                className="w-2.5 h-2.5 rounded-full"
+                className="text-[10px] px-2 py-0.5 rounded-full text-white/90"
                 style={{ backgroundColor: worldMeta.color }}
-              />
+              >
+                {worldMeta.name}
+              </span>
             )}
-            <h1 className="text-xl font-bold text-white">{character.name}</h1>
-            <span className="text-xs text-neutral-500 px-2 py-0.5 rounded bg-neutral-800">
-              {character.race}
-            </span>
-            <WorldSelect
-              value={character.world || ""}
-              worlds={worlds}
-              onChange={(w) => updateCharacter(id, { world: w })}
-              onCreateWorld={createWorld}
-              editable
-            />
+            <div className="w-40 sm:w-52">
+              <WorldSelect
+                value={character.world || ""}
+                worlds={worlds}
+                onChange={(w) => updateCharacter(id, { world: w })}
+                onCreateWorld={createWorld}
+              />
+            </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-wrap gap-2">
             <button
+              type="button"
               onClick={() => {
                 const data = exportSingleCharacter(character);
-                downloadExport(
-                  `oc-character-${character.name}-${new Date().toISOString().slice(0, 10)}.json`,
-                  data
-                );
+                downloadExport(data, `${character.name || "character"}.json`);
               }}
-              className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
+              className="px-3 py-1.5 text-xs text-neutral-300 border border-neutral-700 rounded-lg hover:bg-neutral-800"
             >
-              输出角色卡
+              导出角色卡
             </button>
             <button
+              type="button"
               onClick={() => fileRef.current?.click()}
-              className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
+              className="px-3 py-1.5 text-xs text-neutral-300 border border-neutral-700 rounded-lg hover:bg-neutral-800"
             >
-              输入角色卡
+              导入角色卡
             </button>
             <input
               ref={fileRef}
               type="file"
-              accept=".json"
+              accept=".json,application/json"
               className="hidden"
-              onChange={(e) => {
+              onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                const reader = new FileReader();
-                reader.onload = () => {
-                  try {
-                    const list = importCharacterPayload(
-                      reader.result as string
-                    );
-                    if (!list.length) {
-                      alert("文件中没有角色卡");
-                      return;
-                    }
-                    const src = list[0];
-                    if (
-                      !confirm(
-                        `用「${src.name}」覆盖当前角色卡「${character.name}」？\n（保留当前 ID 与世界归属）`
-                      )
-                    ) {
-                      return;
-                    }
-                    updateCharacter(id, {
-                      name: src.name,
-                      gender: src.gender,
-                      age: src.age,
-                      race: src.race,
-                      height: src.height,
-                      weight: src.weight,
-                      affiliation: src.affiliation,
-                      identity: src.identity,
-                      residence: src.residence,
-                      faction: src.faction,
-                      birthplace: src.birthplace,
-                      avatar: src.avatar,
-                      traits: src.traits,
-                      emotions: src.emotions,
-                      combat: src.combat,
-                      happiness: src.happiness,
-                      preferences: src.preferences,
-                      outward: src.outward,
-                      story: src.story,
-                      timeline: src.timeline,
-                      relationships: src.relationships,
-                      gallery: src.gallery,
-                      prompts: src.prompts,
-                      world: character.world || src.world || "",
-                    });
-                    alert("角色卡已导入");
-                  } catch {
-                    alert("导入失败：无效 JSON");
+                try {
+                  const text = await file.text();
+                  const src = importCharacterPayload(text);
+                  if (!src) {
+                    alert("无效的角色卡文件");
+                    return;
                   }
-                };
-                reader.readAsText(file);
+                  updateCharacter(id, {
+                    name: src.name,
+                    gender: src.gender,
+                    age: src.age,
+                    race: src.race,
+                    height: src.height,
+                    weight: src.weight,
+                    affiliation: src.affiliation,
+                    identity: src.identity,
+                    residence: src.residence,
+                    faction: src.faction,
+                    birthplace: src.birthplace,
+                    avatar: src.avatar,
+                    world: character.world || src.world || "",
+                    traits: src.traits,
+                    emotions: src.emotions,
+                    combat: src.combat,
+                    happiness: src.happiness,
+                    preferences: src.preferences,
+                    outward: src.outward,
+                    story: src.story,
+                    timeline: src.timeline,
+                    relationships: src.relationships,
+                    gallery: src.gallery,
+                    prompts: src.prompts,
+                  });
+                } catch {
+                  alert("导入失败");
+                }
                 e.target.value = "";
               }}
             />
             <button
+              type="button"
               onClick={async () => {
-                if (
-                  confirm(
-                    `Delete ${character.name}? This cannot be undone.`
-                  )
-                ) {
-                  await deleteCharacter(id);
-                }
+                if (!confirm("删除此角色卡？")) return;
+                await deleteCharacter(id);
+                window.location.href = backHref;
               }}
-              className="px-3 py-1.5 text-sm text-rose-400 border border-rose-900/50 rounded-lg hover:bg-rose-950/30 transition"
+              className="px-3 py-1.5 text-xs text-rose-400 border border-rose-900/50 rounded-lg hover:bg-rose-950/30 transition"
             >
               Delete
             </button>
           </div>
         </div>
 
-        <div className="flex gap-1 border-b border-neutral-800 mb-6 overflow-x-auto">
-          {tabs.map((t) => (
+        <div className="flex gap-1 mb-4 border-b border-neutral-800 overflow-x-auto">
+          {(
+            [
+              ["sheet", "Character Sheet"],
+              ["gallery", "Gallery"],
+              ["timeline", "Timeline"],
+              ["relations", "Relationships"],
+            ] as const
+          ).map(([key, label]) => (
             <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-4 py-2 text-sm whitespace-nowrap transition border-b-2 -mb-px ${
-                tab === t.key
+              key={key}
+              onClick={() => setTab(key)}
+              className={`px-4 py-2 text-sm transition border-b-2 -mb-px whitespace-nowrap ${
+                tab === key
                   ? "border-purple-500 text-purple-300"
-                  : "border-transparent text-neutral-500 hover:text-neutral-300"
+                  : "border-transparent text-neutral-400 hover:text-white"
               }`}
-              style={
-                tab === t.key && worldMeta
-                  ? { borderColor: worldMeta.color, color: worldMeta.color }
-                  : undefined
-              }
             >
-              {t.label}
+              {label}
             </button>
           ))}
         </div>
@@ -244,7 +221,8 @@ export default function CharacterPage({
         {tab === "sheet" && (
           <CharacterSheet
             character={character}
-            onChange={(u) => updateCharacter(id, u)}
+            onChange={(updates) => updateCharacter(id, updates)}
+            editable
             worlds={worlds}
             optionsFor={optionsFor}
             onCreateWorld={createWorld}
@@ -277,11 +255,7 @@ export default function CharacterPage({
         {tab === "relations" && (
           <RelationshipsPanel
             character={character}
-            allCharacters={characters.filter(
-              (c) =>
-                c.id !== id &&
-                c.world?.trim() === (character.world || "").trim()
-            )}
+            allCharacters={characters}
             onAdd={(rel) => addRelationship(id, rel)}
             onUpdate={(rid, u) => updateRelationship(id, rid, u)}
             onDelete={(rid) => deleteRelationship(id, rid)}
