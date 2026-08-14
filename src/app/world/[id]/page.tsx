@@ -1,7 +1,6 @@
 "use client";
 
 import { use, useRef, useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -16,7 +15,6 @@ export default function WorldPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const router = useRouter();
   const { getWorld, loaded: worldsLoaded } = useWorlds();
   const {
     characters,
@@ -42,13 +40,12 @@ export default function WorldPage({
     if (!world || !newName.trim() || creatingBusy) return;
     setCreatingBusy(true);
     try {
-      const charId = await addCharacter({
+      await addCharacter({
         name: newName.trim(),
         world: world.name,
       });
       setCreating(false);
       setNewName("");
-      router.push(`/character/${charId}`);
     } catch (e) {
       alert(e instanceof Error ? e.message : "创建失败，请重试");
     } finally {
