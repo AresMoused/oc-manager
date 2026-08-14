@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -13,8 +13,28 @@ import {
   detectPlaceholders, loadParams, loadPromptPresets, loadSettings, loadWorkflows,
   normalizeWorkflowUpload, saveParams, savePromptPresets, saveSettings, saveWorkflows,
 } from "@/lib/comfyConfig";
+import {
+  BuilderData,
+  composePrompt,
+  loadCachedBuilder,
+  normalizeBuilderData,
+  saveCachedBuilder,
+} from "@/lib/promptBuilder";
 
 function newId() { return crypto.randomUUID(); }
+
+const RANDOM_LOCK_KEY = "oc-comfy-random-char-lock";
+const BATCH_KEY = "oc-comfy-batch-count";
+
+function pickRandomSelected(data: BuilderData): Record<string, number> {
+  const sel: Record<string, number> = {};
+  for (const s of data.sections) {
+    if (s.items.length > 0) {
+      sel[s.key] = Math.floor(Math.random() * s.items.length);
+    }
+  }
+  return sel;
+}
 
 export default function ComfyView() {
   const { characters, loaded: charsLoaded } = useCharacters();
@@ -40,6 +60,12 @@ export default function ComfyView() {
   const [wfName, setWfName] = useState("");
   const [wfRaw, setWfRaw] = useState("");
   const [wfEditingId, setWfEditingId] = useState<string | null>(null);
+
+  const [batchCount, setBatchCount] = useState(1);
+  const [builder, setBuilder] = useState<BuilderData | null>(null);
+  const [randomEnabled, setRandomEnabled] = useState(true);
+  const [randomLocked, setRandomLocked] = useState(false);
+
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -55,7 +81,26 @@ export default function ComfyView() {
       setSettings(next);
       saveSettings(next);
     }
-    setReady(true);
+    try {
+      const b = Number(localStorage.getItem(BATCH_KEY) || "1");
+      if (b >= 1 && b <= 20) setBatchCount(b);
+    } catch { /* ignore */ }
+    setRandomLocked(localStorage.getItem(RANDOM_LOCK_KEY) === "1");
+
+    async function bootBuilder() {
+      let source = loadCachedBuilder();
+      if (!source) {
+        try {
+          const res = await fetch("/prompts/original_character.json", { cache: "force-cache" });
+          if (res.ok) {
+            source = normalizeBuilderData(await res.json());
+            saveCachedBuilder(source);
+          }
+        } catch { /* ignore */ }
+      }
+      setBuilder(source);
+    }
+    bootBuilder().finally(() => setReady(true));
   }, []);
 
   const activeWf = useMemo(
@@ -79,6 +124,36 @@ export default function ComfyView() {
   const persistParams = (p: ComfyParams) => { setParams(p); saveParams(p); };
   const persistWorkflows = (list: ComfyWorkflowTemplate[]) => { setWorkflows(list); saveWorkflows(list); };
   const persistPresets = (list: ComfyPromptPreset[]) => { setPresets(list); savePromptPresets(list); };
+
+  const setBatch = (n: number) => {
+    const v = Math.min(20, Math.max(1, Math.floor(n) || 1));
+    setBatchCount(v);
+    try { localStorage.setItem(BATCH_KEY, String(v)); } catch { /* ignore */ }
+  };
+
+  const toggleRandomLock = () => {
+    setRandomLocked((prev) => {
+      const next = !prev;
+      localStorage.setItem(RANDOM_LOCK_KEY, next ? "1" : "0");
+      return next;
+    });
+  };
+
+  const rollRandomCharacter = useCallback((data: BuilderData | null): string | null => {
+    if (!data || !data.sections.length) return null;
+    const selected = pickRandomSelected(data);
+    return composePrompt(data, selected).trim() || null;
+  }, []);
+
+  const handleRandomNow = () => {
+    const text = rollRandomCharacter(builder);
+    if (!text) {
+      showToast("提示词库为空，请先在「角色外观生成器」同步/配置");
+      return;
+    }
+    persistParams({ ...params, prompt_character: text });
+    showToast("已随机生成角色提示词");
+  };
 
   const handleConnect = async () => {
     setConnecting(true); setConnMsg("");
@@ -138,32 +213,63 @@ export default function ComfyView() {
     }
   };
 
+  const runOneGeneration = async (
+    p: ComfyParams,
+    signal: AbortSignal
+  ): Promise<string[]> => {
+    if (!activeWf) throw new Error("请先上传并选择工作流");
+    const seedUsed = p.seed < 0 ? Math.floor(Math.random() * 2 ** 32) : Math.floor(p.seed);
+    setLastSeed(seedUsed);
+    const promptGraph = applyPlaceholders(activeWf.workflow, { ...p, seed: seedUsed });
+    const { prompt_id } = await comfyQueuePrompt(settings.baseUrl, promptGraph);
+    const outs = await comfyWaitForImages(settings.baseUrl, prompt_id, { signal });
+    return outs.map((img) => comfyImageUrl(settings.baseUrl, img));
+  };
+
   const handleGenerate = async () => {
-    if (!activeWf) { setError("请先上传并选择工作流"); return; }
-    setError(""); setStatus("提交到 ComfyUI…"); setGenerating(true);
+    if (!activeWf) {
+      setError("请先上传并选择工作流");
+      return;
+    }
+    setError("");
+    setGenerating(true);
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
+
+    const total = Math.min(20, Math.max(1, batchCount));
+    let currentParams = { ...params };
+    let collected: string[] = [];
+
     try {
-      const seedUsed = params.seed < 0 ? Math.floor(Math.random() * 2 ** 32) : Math.floor(params.seed);
-      const promptGraph = applyPlaceholders(activeWf.workflow, { ...params, seed: seedUsed });
-      setLastSeed(seedUsed);
-      const { prompt_id } = await comfyQueuePrompt(settings.baseUrl, promptGraph);
-      setStatus(`排队中 · ${prompt_id.slice(0, 8)}…`);
-      const outs = await comfyWaitForImages(settings.baseUrl, prompt_id, { signal: ac.signal });
-      if (!outs.length) {
-        setStatus("完成，但未找到输出图片节点");
-        showToast("无图片输出");
-      } else {
-        const urls = outs.map((img) => comfyImageUrl(settings.baseUrl, img));
-        setImages((prev) => [...urls, ...prev].slice(0, 40));
-        setStatus(`完成 · ${outs.length} 张`);
-        showToast("生成完成");
+      for (let i = 0; i < total; i++) {
+        if (ac.signal.aborted) throw new DOMException("Aborted", "AbortError");
+
+        if (randomEnabled && !randomLocked) {
+          const rolled = rollRandomCharacter(builder);
+          if (rolled) {
+            currentParams = { ...currentParams, prompt_character: rolled };
+            setParams(currentParams);
+            saveParams(currentParams);
+          }
+        }
+
+        setStatus(total > 1 ? `生成中 ${i + 1}/${total}…` : "提交到 ComfyUI…");
+        const urls = await runOneGeneration(currentParams, ac.signal);
+        if (urls.length) {
+          collected = [...urls, ...collected];
+          setImages((prev) => [...urls, ...prev].slice(0, 60));
+        }
       }
+      setStatus(total > 1 ? `完成 · 共 ${total} 次 · ${collected.length} 张` : `完成 · ${collected.length} 张`);
+      showToast(total > 1 ? `批量完成 ${total} 次` : "生成完成");
+      if (!collected.length) showToast("无图片输出");
     } catch (e) {
       if ((e as Error).name === "AbortError") setStatus("已取消");
       else { setError(e instanceof Error ? e.message : "生成失败"); setStatus(""); }
-    } finally { setGenerating(false); }
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const applyCharPrompt = (text: string) => {
@@ -212,6 +318,7 @@ export default function ComfyView() {
   const combinedPreview = composePositivePrompt(params);
   const inp = "w-full bg-[#0c0c0c] border border-neutral-700 focus:border-purple-500 rounded-lg px-3 py-2 text-sm outline-none text-neutral-200";
   const card = "bg-[#141414] border border-neutral-800 rounded-xl p-4 space-y-3";
+  const sectionCount = builder?.sections?.length ?? 0;
 
   if (!ready) {
     return <div className="min-h-screen flex items-center justify-center text-neutral-500">Loading...</div>;
@@ -263,12 +370,43 @@ export default function ComfyView() {
                   onChange={(e) => persistParams({ ...params, prompt_prefix: e.target.value })}
                   placeholder="masterpiece, best quality, …" />
               </div>
+
               <div>
-                <label className="text-xs text-purple-300/90 block mb-1">角色提示词</label>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                  <label className="text-xs text-purple-300/90">角色提示词</label>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <label className="flex items-center gap-1 text-[11px] text-neutral-400 cursor-pointer select-none">
+                      <input type="checkbox" checked={randomEnabled}
+                        onChange={(e) => setRandomEnabled(e.target.checked)}
+                        className="rounded border-neutral-600" />
+                      随机角色
+                    </label>
+                    <button type="button" onClick={toggleRandomLock}
+                      title={randomLocked ? "已锁定：生成时不更换角色提示词" : "未锁定：每次生成会重新随机"}
+                      className={`text-[11px] px-2 py-0.5 rounded border ${
+                        randomLocked
+                          ? "border-amber-600/60 text-amber-300 bg-amber-950/30"
+                          : "border-neutral-600 text-neutral-400 hover:bg-neutral-800"
+                      }`}>
+                      {randomLocked ? "🔒 已锁定" : "🔓 未锁定"}
+                    </button>
+                    <button type="button" onClick={handleRandomNow}
+                      disabled={!sectionCount}
+                      className="text-[11px] px-2 py-0.5 rounded border border-purple-700/50 text-purple-300 hover:bg-purple-950/30 disabled:opacity-40">
+                      🎲 立即随机
+                    </button>
+                  </div>
+                </div>
                 <textarea className={`${inp} min-h-[88px] resize-y border-purple-800/40`} value={params.prompt_character}
                   onChange={(e) => persistParams({ ...params, prompt_character: e.target.value })}
-                  placeholder="从角色卡导入，或手动填写角色外观…" />
+                  placeholder="从角色卡导入，或开启随机角色 / 立即随机…" />
+                <p className="text-[10px] text-neutral-600 mt-1">
+                  使用「角色外观生成器」提示词库
+                  {sectionCount > 0 ? `（${sectionCount} 个分区）` : "（尚未加载，请先打开生成器并同步）"}。
+                  开启随机且未锁定时，每次 Generate 会自动换一条。
+                </p>
               </div>
+
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">后置正面提示词</label>
                 <textarea className={`${inp} min-h-[56px] resize-y`} value={params.prompt_suffix}
@@ -361,21 +499,43 @@ export default function ComfyView() {
                 </div>
               </div>
             </section>
-
-            <div className="flex gap-2">
-              {!generating ? (
-                <button type="button" onClick={handleGenerate}
-                  className="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium text-sm shadow-lg shadow-purple-900/30">Generate</button>
-              ) : (
-                <button type="button" onClick={() => abortRef.current?.abort()}
-                  className="flex-1 py-3 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-medium text-sm">Interrupt</button>
-              )}
-            </div>
-            {status && <p className="text-xs text-neutral-500 text-center">{status}</p>}
-            {error && <p className="text-xs text-rose-400 text-center break-all">{error}</p>}
           </div>
 
           <div className="lg:col-span-7 space-y-3">
+            <section className="bg-[#141414] border border-purple-900/40 rounded-xl p-4 space-y-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="w-24">
+                  <label className="text-xs text-neutral-500 block mb-1">批量次数</label>
+                  <input type="number" min={1} max={20} className={inp}
+                    value={batchCount}
+                    onChange={(e) => setBatch(Number(e.target.value))}
+                    disabled={generating} />
+                </div>
+                <div className="flex-1 min-w-[160px]">
+                  {!generating ? (
+                    <button type="button" onClick={handleGenerate}
+                      className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium text-sm shadow-lg shadow-purple-900/30">
+                      {batchCount > 1 ? `Generate × ${batchCount}` : "Generate"}
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => abortRef.current?.abort()}
+                      className="w-full py-3 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-medium text-sm">
+                      Interrupt
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-[11px] text-neutral-500">
+                {randomEnabled && (
+                  <span>
+                    随机角色：{randomLocked ? "已锁定当前提示词" : "每次生成重新随机"}
+                  </span>
+                )}
+                {status && <span className="text-neutral-400">{status}</span>}
+                {error && <span className="text-rose-400 break-all">{error}</span>}
+              </div>
+            </section>
+
             <section className={card}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold text-neutral-200">工作流</h3>
