@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import CharacterSheet from "@/components/CharacterSheet";
@@ -13,6 +13,11 @@ import { useCharacters } from "@/hooks/useCharacters";
 import { useWorldCatalog } from "@/hooks/useWorldCatalog";
 import { useWorlds } from "@/hooks/useWorlds";
 import Footer from "@/components/Footer";
+import {
+  exportSingleCharacter,
+  importCharacterPayload,
+  downloadExport,
+} from "@/lib/storage";
 
 export default function CharacterPage({
   params,
@@ -36,6 +41,7 @@ export default function CharacterPage({
   } = useCharacters();
 
   const [retryCount, setRetryCount] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const { worlds, createWorld, addFieldOption, optionsFor } = useWorldCatalog();
   const { getWorldByName } = useWorlds();
@@ -46,7 +52,6 @@ export default function CharacterPage({
 
   const character = getCharacter(id);
 
-  // After create, wait for server write — retry a few times before not found
   useEffect(() => {
     if (!loaded || character || retryCount >= 8) return;
     const t = setTimeout(() => {
@@ -118,17 +123,97 @@ export default function CharacterPage({
               editable
             />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => {
+                const data = exportSingleCharacter(character);
+                downloadExport(
+                  `oc-character-${character.name}-${new Date().toISOString().slice(0, 10)}.json`,
+                  data
+                );
+              }}
+              className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
+            >
+              输出角色卡
+            </button>
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
+            >
+              输入角色卡
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                  try {
+                    const list = importCharacterPayload(
+                      reader.result as string
+                    );
+                    if (!list.length) {
+                      alert("文件中没有角色卡");
+                      return;
+                    }
+                    const src = list[0];
+                    if (
+                      !confirm(
+                        `用「${src.name}」覆盖当前角色卡「${character.name}」？\n（保留当前 ID 与世界归属）`
+                      )
+                    ) {
+                      return;
+                    }
+                    updateCharacter(id, {
+                      name: src.name,
+                      gender: src.gender,
+                      age: src.age,
+                      race: src.race,
+                      height: src.height,
+                      weight: src.weight,
+                      affiliation: src.affiliation,
+                      identity: src.identity,
+                      residence: src.residence,
+                      faction: src.faction,
+                      birthplace: src.birthplace,
+                      avatar: src.avatar,
+                      traits: src.traits,
+                      emotions: src.emotions,
+                      combat: src.combat,
+                      happiness: src.happiness,
+                      preferences: src.preferences,
+                      outward: src.outward,
+                      story: src.story,
+                      timeline: src.timeline,
+                      relationships: src.relationships,
+                      gallery: src.gallery,
+                      prompts: src.prompts,
+                      world: character.world || src.world || "",
+                    });
+                    alert("角色卡已导入");
+                  } catch {
+                    alert("导入失败：无效 JSON");
+                  }
+                };
+                reader.readAsText(file);
+                e.target.value = "";
+              }}
+            />
+            <button
+              onClick={async () => {
                 if (
-                  confirm(`Delete ${character.name}? This cannot be undone.`)
+                  confirm(
+                    `Delete ${character.name}? This cannot be undone.`
+                  )
                 ) {
-                  deleteCharacter(id);
-                  window.location.href = backHref;
+                  await deleteCharacter(id);
                 }
               }}
-              className="px-3 py-1.5 text-sm text-rose-400 border border-rose-900/50 rounded-lg hover:bg-rose-950/30"
+              className="px-3 py-1.5 text-sm text-rose-400 border border-rose-900/50 rounded-lg hover:bg-rose-950/30 transition"
             >
               Delete
             </button>
