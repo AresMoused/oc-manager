@@ -43,29 +43,18 @@ export default function Navbar({ worldColor }: { worldColor?: string }) {
             height={32}
             className="w-8 h-8 rounded-full object-cover ring-1 ring-neutral-700 group-hover:ring-purple-500 transition bg-purple-700/40"
             onError={(e) => {
-              const t = e.currentTarget;
-              t.onerror = null;
-              t.src = LOGO_FALLBACK;
+              const el = e.currentTarget;
+              el.onerror = null;
+              el.src = LOGO_FALLBACK;
             }}
           />
-          <span className="font-semibold text-white tracking-tight">
-            OC Manager
-          </span>
+          <span className="font-semibold text-white tracking-tight">OC Manager</span>
         </Link>
-
         <nav className="flex items-center gap-3 sm:gap-5 flex-wrap justify-end">
-          <Link href="/" className={linkClass("/")}>
-            Worlds
-          </Link>
-          <Link href="/generator" className={linkClass("/generator")}>
-            角色外观生成器
-          </Link>
-          <Link href="/ai-generate" className={linkClass("/ai-generate")}>
-            AI生成角色
-          </Link>
-          <Link href="/comfy" className={linkClass("/comfy")}>
-            ComfyUI
-          </Link>
+          <Link href="/" className={linkClass("/")}>Worlds</Link>
+          <Link href="/generator" className={linkClass("/generator")}>角色外观生成器</Link>
+          <Link href="/ai-generate" className={linkClass("/ai-generate")}>AI生成角色</Link>
+          <Link href="/comfy" className={linkClass("/comfy")}>抽卡姬</Link>
           <AuthUserMenu />
         </nav>
       </div>

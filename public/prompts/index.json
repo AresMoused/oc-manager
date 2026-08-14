@@ -1,0 +1,8 @@
+[
+  {
+    "id": "original_character",
+    "name": "通用原创角色",
+    "file": "/prompts/original_character.json",
+    "description": "默认外观词库"
+  }
+]
