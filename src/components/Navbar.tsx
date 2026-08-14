@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LOGO_SRC } from "@/lib/logo";
+import AuthUserMenu from "@/components/AuthUserMenu";
 
 const LOGO_FALLBACK =
   "data:image/svg+xml," +
@@ -65,6 +66,7 @@ export default function Navbar({ worldColor }: { worldColor?: string }) {
           <Link href="/comfy" className={linkClass("/comfy")}>
             ComfyUI
           </Link>
+          <AuthUserMenu />
         </nav>
       </div>
     </header>
