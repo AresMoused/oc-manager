@@ -10,6 +10,7 @@ import {
   loadBuiltinCatalog,
   loadPresetFromFile,
   loadPresetFromUrl,
+  mergeSectionIntoPreset,
   parseNameColonTextList,
   setActivePresetId,
   TextListNameMode,
@@ -29,6 +30,8 @@ interface Props {
   onOverwriteCurrent?: () => void;
 }
 
+type ImportTarget = "new" | "existing";
+
 export default function GeneratorPresetsBar({
   presets,
   activePresetId,
@@ -47,7 +50,11 @@ export default function GeneratorPresetsBar({
   const [textRaw, setTextRaw] = useState("");
   const [textNameMode, setTextNameMode] = useState<TextListNameMode>("title");
   const [textSectionLabel, setTextSectionLabel] = useState("导入分区");
+  const [textSectionKey, setTextSectionKey] = useState("imported");
   const [textCatalogName, setTextCatalogName] = useState("");
+  const [importTarget, setImportTarget] = useState<ImportTarget>("new");
+  const [importPresetId, setImportPresetId] = useState("");
+  const [mergeMode, setMergeMode] = useState<"append" | "replace">("append");
 
   const activeName =
     presets.find((p) => p.id === activePresetId)?.name || "未选择";
@@ -126,19 +133,45 @@ export default function GeneratorPresetsBar({
     }
   };
 
+  const openTextImport = () => {
+    setImportPresetId(activePresetId || presets[0]?.id || "");
+    setImportTarget(presets.length ? "existing" : "new");
+    setTextImportOpen(true);
+  };
+
   const runTextImport = () => {
     try {
       const data = parseNameColonTextList(textRaw, {
         nameMode: textNameMode,
         sectionLabel: textSectionLabel.trim() || "导入分区",
-        sectionKey: "imported",
+        sectionKey: (textSectionKey.trim() || "imported").replace(/\s+/g, "_"),
         catalogName: textCatalogName.trim() || "文本导入词库",
       });
-      const preset = createPresetFromData(data.name || "文本导入词库", data);
-      refresh(preset.data, preset.id);
-      setTextImportOpen(false);
-      setTextRaw("");
-      toast(`已导入 ${data.sections[0]?.items.length || 0} 条 → ${preset.name}`);
+      const section = data.sections[0];
+      if (!section) throw new Error("无分区");
+
+      if (importTarget === "existing") {
+        const pid = importPresetId || activePresetId;
+        if (!pid) {
+          toast("请选择目标预设");
+          return;
+        }
+        const updated = mergeSectionIntoPreset(pid, section, {
+          replaceItems: mergeMode === "replace",
+        });
+        refresh(updated.data, updated.id);
+        setTextImportOpen(false);
+        setTextRaw("");
+        toast(
+          `已${mergeMode === "replace" ? "覆盖" : "合并"} ${section.items.length} 条到「${updated.name}」`
+        );
+      } else {
+        const preset = createPresetFromData(data.name || "文本导入词库", data);
+        refresh(preset.data, preset.id);
+        setTextImportOpen(false);
+        setTextRaw("");
+        toast(`已新建预设并导入 ${section.items.length} 条 → ${preset.name}`);
+      }
     } catch (e) {
       toast(e instanceof Error ? e.message : "解析失败");
     }
@@ -176,26 +209,18 @@ export default function GeneratorPresetsBar({
                 </option>
               ))}
             </select>
-            <button type="button" onClick={handleDeletePreset} className="px-3 py-1.5 text-xs rounded-lg border border-rose-900/50 text-rose-400 hover:bg-rose-950/30">
-              删除当前
-            </button>
+            <button type="button" onClick={handleDeletePreset} className="px-3 py-1.5 text-xs rounded-lg border border-rose-900/50 text-rose-400 hover:bg-rose-950/30">删除当前</button>
           </div>
 
           <div className="flex flex-wrap gap-2">
             {onOverwriteCurrent && (
-              <button type="button" onClick={onOverwriteCurrent} className="px-3 py-1.5 text-xs rounded-lg border border-emerald-800 text-emerald-300 hover:bg-emerald-950/40">
-                保存到当前预设
-              </button>
+              <button type="button" onClick={onOverwriteCurrent} className="px-3 py-1.5 text-xs rounded-lg border border-emerald-800 text-emerald-300 hover:bg-emerald-950/40">保存到当前预设</button>
             )}
             {onSaveCurrent && (
-              <button type="button" onClick={onSaveCurrent} className="px-3 py-1.5 text-xs rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white">
-                另存为新预设
-              </button>
+              <button type="button" onClick={onSaveCurrent} className="px-3 py-1.5 text-xs rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white">另存为新预设</button>
             )}
             {BUILTIN_CATALOGS.map((c) => (
-              <button key={c.id} type="button" onClick={() => handleLoadBuiltin(c.file, c.name)} className="px-2.5 py-1 text-[11px] rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">
-                加载内置：{c.name}
-              </button>
+              <button key={c.id} type="button" onClick={() => handleLoadBuiltin(c.file, c.name)} className="px-2.5 py-1 text-[11px] rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">加载内置：{c.name}</button>
             ))}
           </div>
 
@@ -209,12 +234,8 @@ export default function GeneratorPresetsBar({
 
           <div className="flex flex-wrap gap-2">
             <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAddFromFile(f); e.target.value = ""; }} />
-            <button type="button" onClick={() => fileRef.current?.click()} className="px-3 py-1.5 text-xs rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">
-              从 JSON 文件导入
-            </button>
-            <button type="button" onClick={() => setTextImportOpen(true)} className="px-3 py-1.5 text-xs rounded-lg border border-sky-800 text-sky-300 hover:bg-sky-950/40">
-              从文本列表导入（Name: desc）
-            </button>
+            <button type="button" onClick={() => fileRef.current?.click()} className="px-3 py-1.5 text-xs rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">从 JSON 文件导入</button>
+            <button type="button" onClick={openTextImport} className="px-3 py-1.5 text-xs rounded-lg border border-sky-800 text-sky-300 hover:bg-sky-950/40">从文本列表导入（Name: desc）</button>
           </div>
         </div>
       )}
@@ -223,35 +244,62 @@ export default function GeneratorPresetsBar({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-lg bg-[#111] border border-neutral-700 rounded-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold text-white">从文本列表导入词库</h2>
-            <p className="text-xs text-neutral-500">
-              每行一条：<code className="text-neutral-400">名称: 描述</code>。会自动转成 JSON 词库分区。
-            </p>
+            <p className="text-xs text-neutral-500">每行一条：<code className="text-neutral-400">名称: 描述</code>。会自动转成 JSON 词条。</p>
+
+            <div>
+              <label className="text-xs text-neutral-500 block mb-1">导入目标</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setImportTarget("new")} className={`flex-1 px-3 py-1.5 text-sm rounded-lg border ${importTarget === "new" ? "border-purple-500 text-purple-200" : "border-neutral-700 text-neutral-400"}`}>新建预设</button>
+                <button type="button" onClick={() => setImportTarget("existing")} className={`flex-1 px-3 py-1.5 text-sm rounded-lg border ${importTarget === "existing" ? "border-purple-500 text-purple-200" : "border-neutral-700 text-neutral-400"}`}>合并到已有预设</button>
+              </div>
+            </div>
+
+            {importTarget === "existing" && (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">目标预设</label>
+                  <select className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" value={importPresetId} onChange={(e) => setImportPresetId(e.target.value)}>
+                    {presets.length === 0 && <option value="">（无预设）</option>}
+                    {presets.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">若分区 key 已存在</label>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setMergeMode("append")} className={`flex-1 px-3 py-1.5 text-xs rounded-lg border ${mergeMode === "append" ? "border-emerald-600 text-emerald-200" : "border-neutral-700 text-neutral-400"}`}>追加词条</button>
+                    <button type="button" onClick={() => setMergeMode("replace")} className={`flex-1 px-3 py-1.5 text-xs rounded-lg border ${mergeMode === "replace" ? "border-amber-600 text-amber-200" : "border-neutral-700 text-neutral-400"}`}>覆盖整个分区</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="text-xs text-neutral-500 block mb-1">条目显示名称</label>
               <div className="flex gap-2">
-                <button type="button" onClick={() => setTextNameMode("title")} className={`flex-1 px-3 py-1.5 text-sm rounded-lg border ${textNameMode === "title" ? "border-purple-500 text-purple-200" : "border-neutral-700 text-neutral-400"}`}>
-                  使用文本标题
-                </button>
-                <button type="button" onClick={() => setTextNameMode("id")} className={`flex-1 px-3 py-1.5 text-sm rounded-lg border ${textNameMode === "id" ? "border-purple-500 text-purple-200" : "border-neutral-700 text-neutral-400"}`}>
-                  使用 ID（item_001…）
-                </button>
+                <button type="button" onClick={() => setTextNameMode("title")} className={`flex-1 px-3 py-1.5 text-sm rounded-lg border ${textNameMode === "title" ? "border-purple-500 text-purple-200" : "border-neutral-700 text-neutral-400"}`}>使用文本标题</button>
+                <button type="button" onClick={() => setTextNameMode("id")} className={`flex-1 px-3 py-1.5 text-sm rounded-lg border ${textNameMode === "id" ? "border-purple-500 text-purple-200" : "border-neutral-700 text-neutral-400"}`}>使用 ID（item_001…）</button>
               </div>
-              <p className="text-[11px] text-neutral-600 mt-1">
-                {textNameMode === "title"
-                  ? "名称用冒号前的文字；过长会截断显示，完整内容写入 tags。"
-                  : "名称用 item_001 递增 ID，适合标题过长的列表。"}
-              </p>
             </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs text-neutral-500 block mb-1">预设名称</label>
-                <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" value={textCatalogName} onChange={(e) => setTextCatalogName(e.target.value)} placeholder="例如：性感泳装" />
-              </div>
+              {importTarget === "new" && (
+                <div className="sm:col-span-2">
+                  <label className="text-xs text-neutral-500 block mb-1">新预设名称</label>
+                  <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" value={textCatalogName} onChange={(e) => setTextCatalogName(e.target.value)} placeholder="例如：性感泳装" />
+                </div>
+              )}
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">分区名称</label>
                 <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" value={textSectionLabel} onChange={(e) => setTextSectionLabel(e.target.value)} placeholder="导入分区" />
               </div>
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">分区 key</label>
+                <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-purple-500" value={textSectionKey} onChange={(e) => setTextSectionKey(e.target.value)} placeholder="imported" />
+              </div>
             </div>
+
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs text-neutral-500">文本内容</label>
@@ -266,8 +314,9 @@ export default function GeneratorPresetsBar({
                   <button type="button" onClick={() => textFileRef.current?.click()} className="text-[11px] text-sky-400 hover:text-sky-300">从 .txt 文件载入</button>
                 </div>
               </div>
-              <textarea className="w-full min-h-[180px] bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-purple-500 resize-y" value={textRaw} onChange={(e) => setTextRaw(e.target.value)} placeholder={"The Daring Monokini: A one-piece swimsuit...\nThe String Bikini: A barely-there bikini..."} />
+              <textarea className="w-full min-h-[160px] bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-purple-500 resize-y" value={textRaw} onChange={(e) => setTextRaw(e.target.value)} placeholder={"The Daring Monokini: A one-piece swimsuit...\nThe String Bikini: A barely-there bikini..."} />
             </div>
+
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setTextImportOpen(false)} className="px-4 py-2 text-sm text-neutral-400">取消</button>
               <button type="button" onClick={runTextImport} disabled={!textRaw.trim()} className="px-4 py-2 text-sm rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white">转换并导入</button>
