@@ -27,6 +27,7 @@ import {
   upsertBuilderPreset,
 } from "@/lib/promptBuilder";
 import GeneratorPresetsBar from "@/components/GeneratorPresetsBar";
+import { loadParams, saveParams } from "@/lib/comfyConfig";
 import { StoredPrompt } from "@/lib/types";
 import {
   CatalogToolbar,
@@ -259,6 +260,20 @@ export default function GeneratorPage() {
     }
   };
 
+  const sendPromptToComfy = () => {
+    if (!prompt.trim()) {
+      showToast("提示词为空");
+      return;
+    }
+    try {
+      const cur = loadParams();
+      saveParams({ ...cur, prompt_character: prompt.trim() });
+      showToast("已导入到抽卡姬「角色提示词」");
+    } catch {
+      showToast("写入抽卡姬失败");
+    }
+  };
+
   const handleSync = async () => {
     setSyncing(true);
     setSyncMsg("");
@@ -323,11 +338,9 @@ export default function GeneratorPage() {
       persist({
         ...data,
         sections: [...data.sections, {
-          key,
-          label: sectionEditor.label.trim() || key,
+          key, label: sectionEditor.label.trim() || key,
           icon: sectionEditor.icon.trim() || undefined,
-          desc: sectionEditor.desc.trim() || undefined,
-          items: [],
+          desc: sectionEditor.desc.trim() || undefined, items: [],
         }],
       });
       setSelected((p) => ({ ...p, [key]: -1 }));
@@ -358,11 +371,7 @@ export default function GeneratorPage() {
   const deleteSection = (key: string) => {
     if (!confirm(`删除分区「${key}」及其所有提示词？`)) return;
     persist({ ...data, sections: data.sections.filter((s) => s.key !== key) });
-    setSelected((p) => {
-      const n = { ...p };
-      delete n[key];
-      return n;
-    });
+    setSelected((p) => { const n = { ...p }; delete n[key]; return n; });
     showToast("分区已删除");
   };
 
@@ -377,10 +386,7 @@ export default function GeneratorPage() {
   const saveItemEditor = () => {
     if (!itemEditor) return;
     const name = itemEditor.name.trim();
-    if (!name) {
-      showToast("请填写名称");
-      return;
-    }
+    if (!name) { showToast("请填写名称"); return; }
     let tags = itemEditor.tags.trim();
     if (tags && !tags.endsWith(", ") && !tags.endsWith(",")) tags = tags + ", ";
     const item: BuilderItem = { name, tags, hex: itemEditor.hex.trim() || undefined };
@@ -416,17 +422,11 @@ export default function GeneratorPage() {
   });
 
   const doImport = () => {
-    if (!prompt.trim()) {
-      showToast("提示词为空");
-      return;
-    }
+    if (!prompt.trim()) { showToast("提示词为空"); return; }
     const stored: StoredPrompt = { id: crypto.randomUUID(), text: prompt, createdAt: new Date().toISOString() };
     if (importMode === "new") {
       const w = worlds.find((x) => x.id === targetWorldId);
-      if (!w) {
-        showToast("请选择世界");
-        return;
-      }
+      if (!w) { showToast("请选择世界"); return; }
       const name = newCharName.trim() || "Generated OC";
       const id = addCharacter(name, w.name);
       updateCharacter(id, {
@@ -437,10 +437,7 @@ export default function GeneratorPage() {
       setImportOpen(false);
       router.push(`/character/${id}`);
     } else {
-      if (!targetCharId) {
-        showToast("请选择角色");
-        return;
-      }
+      if (!targetCharId) { showToast("请选择角色"); return; }
       const ch = characters.find((c) => c.id === targetCharId);
       if (!ch) return;
       updateCharacter(targetCharId, { prompts: [...(ch.prompts || []), stored] } as never);
@@ -458,6 +455,8 @@ export default function GeneratorPage() {
             <div className="flex-1 font-mono text-xs text-neutral-400 bg-[#111] border border-neutral-800 rounded-lg px-3 py-2 max-h-16 overflow-y-auto break-all">{prompt || "（未选择）"}</div>
             <div className="flex flex-wrap gap-1.5 shrink-0">
               <button onClick={copyPrompt} className="px-3 py-1.5 text-sm rounded-lg bg-purple-600 hover:bg-purple-500 text-white">复制</button>
+              <button type="button" onClick={sendPromptToComfy} className="px-3 py-1.5 text-sm rounded-lg border border-sky-700 text-sky-300 hover:bg-sky-950/40" title="写入抽卡姬的「角色提示词」栏">导入到抽卡姬</button>
+              <Link href="/comfy" className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">打开抽卡姬</Link>
               <button onClick={() => setImportOpen(true)} className="px-3 py-1.5 text-sm rounded-lg border border-purple-700 text-purple-300 hover:bg-purple-950/40">导入角色卡</button>
               <button onClick={randomize} className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">随机</button>
               <button onClick={reset} className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">重置</button>
@@ -491,13 +490,8 @@ export default function GeneratorPage() {
             const en: Record<string, boolean> = {};
             d.sections.forEach((s) => {
               initSel[s.key] = 0;
-              initLock[s.key] =
-                typeof window !== "undefined" &&
-                localStorage.getItem("oc-gen-lock-" + s.key) === "1";
-              const saved =
-                typeof window !== "undefined"
-                  ? localStorage.getItem("oc-gen-sec-on-" + s.key)
-                  : null;
+              initLock[s.key] = typeof window !== "undefined" && localStorage.getItem("oc-gen-lock-" + s.key) === "1";
+              const saved = typeof window !== "undefined" ? localStorage.getItem("oc-gen-sec-on-" + s.key) : null;
               en[s.key] = saved === null ? true : saved === "1";
             });
             setSelected(initSel);
@@ -510,9 +504,7 @@ export default function GeneratorPage() {
           <button type="button" onClick={() => setSectionPanelOpen((v) => !v)} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-900/60 transition">
             <div>
               <div className="text-sm font-semibold text-neutral-200">分区开关</div>
-              <div className="text-[11px] text-neutral-500 mt-0.5">
-                已启用 {data.sections.filter((s) => sectionEnabled[s.key] !== false).length}/{data.sections.length} 个分区
-              </div>
+              <div className="text-[11px] text-neutral-500 mt-0.5">已启用 {data.sections.filter((s) => sectionEnabled[s.key] !== false).length}/{data.sections.length} 个分区</div>
             </div>
             <span className="text-neutral-400 text-xs">{sectionPanelOpen ? "收起 ▲" : "展开 ▼"}</span>
           </button>
@@ -582,10 +574,20 @@ export default function GeneratorPage() {
                     const active = selected[section.key] === idx;
                     return (
                       <div key={idx} className="relative group">
-                        <button type="button" onClick={() => toggleItem(section.key, idx)} className={`px-2.5 py-1 text-xs rounded-lg border transition ${active && !editMode ? "border-purple-500 bg-purple-950/40 text-purple-200" : "border-neutral-700 text-neutral-300 hover:border-neutral-500"}`}>
+                        <button
+                          type="button"
+                          title={item.tags || item.name}
+                          onClick={() => toggleItem(section.key, idx)}
+                          className={`px-2.5 py-1 text-xs rounded-lg border transition ${active && !editMode ? "border-purple-500 bg-purple-950/40 text-purple-200" : "border-neutral-700 text-neutral-300 hover:border-neutral-500"}`}
+                        >
                           {item.hex && <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: item.hex }} />}
                           {item.name}
                         </button>
+                        {(item.tags || item.name) && (
+                          <div className="pointer-events-none absolute left-0 bottom-full mb-1 z-30 hidden group-hover:block w-max max-w-[min(320px,70vw)] px-2.5 py-1.5 rounded-lg bg-neutral-950 border border-neutral-600 text-[11px] text-neutral-200 shadow-xl whitespace-pre-wrap break-words">
+                            {item.tags || item.name}
+                          </div>
+                        )}
                         {editMode && (
                           <div className="absolute -top-2 -right-1 flex gap-0.5 opacity-0 group-hover:opacity-100">
                             <button type="button" onClick={() => openEditItem(section.key, idx, item)} className="w-5 h-5 text-[10px] rounded bg-neutral-800 border border-neutral-600 text-neutral-300">✎</button>
