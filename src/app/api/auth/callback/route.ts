@@ -5,6 +5,7 @@ import {
   sessionCookieOptions,
   type AuthUser,
 } from "@/lib/auth";
+import { upsertUserIndex } from "@/lib/serverStore";
 
 export async function GET(req: NextRequest) {
   const cfg = getDiscordConfig();
@@ -93,6 +94,12 @@ export async function GET(req: NextRequest) {
     discriminator: me.discriminator || "0",
     roles,
   };
+
+  try {
+    await upsertUserIndex(user);
+  } catch (e) {
+    console.error("upsertUserIndex", e);
+  }
 
   const sessionToken = await encodeSession(user);
   const res = NextResponse.redirect(new URL("/", cfg.appUrl));
