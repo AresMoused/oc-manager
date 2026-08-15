@@ -97,7 +97,8 @@ export function normalizeBuilderData(raw: unknown): BuilderData {
 function migrateLegacyIfNeeded(): void {
   if (typeof window === "undefined") return;
   try {
-    if (localStorage.getItem(PRESETS_KEY)) return;
+    const existing = localStorage.getItem(PRESETS_KEY);
+    if (existing) return;
     const legacy = localStorage.getItem(LEGACY_CACHE_KEY);
     if (!legacy) return;
     const data = normalizeBuilderData(JSON.parse(legacy));
@@ -236,7 +237,9 @@ export function createPresetFromData(
   return preset;
 }
 
-export async function loadBuiltinCatalog(catalog: BuiltinCatalog): Promise<StoredBuilderPreset> {
+export async function loadBuiltinCatalog(
+  catalog: BuiltinCatalog
+): Promise<StoredBuilderPreset> {
   const res = await fetch(catalog.file, { cache: "no-store" });
   if (!res.ok) throw new Error(`无法加载 ${catalog.file}`);
   const data = normalizeBuilderData(await res.json());
@@ -244,7 +247,10 @@ export async function loadBuiltinCatalog(catalog: BuiltinCatalog): Promise<Store
   return createPresetFromData(catalog.name, data, undefined);
 }
 
-export async function loadPresetFromUrl(url: string, name?: string): Promise<StoredBuilderPreset> {
+export async function loadPresetFromUrl(
+  url: string,
+  name?: string
+): Promise<StoredBuilderPreset> {
   const res = await fetch(url.trim(), { cache: "no-store" });
   if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
   const text = await res.text();
@@ -255,12 +261,20 @@ export async function loadPresetFromUrl(url: string, name?: string): Promise<Sto
     throw new Error("无法解析为 JSON，请使用与 original_character.json 相同结构的文件");
   }
   const data = normalizeBuilderData(parsed);
-  return createPresetFromData(name || data.name || data.id || "远程词库", data, url.trim());
+  return createPresetFromData(
+    name || data.name || data.id || "远程词库",
+    data,
+    url.trim()
+  );
 }
 
-export async function loadPresetFromFile(file: File, name?: string): Promise<StoredBuilderPreset> {
+export async function loadPresetFromFile(
+  file: File,
+  name?: string
+): Promise<StoredBuilderPreset> {
   const text = await file.text();
-  const data = normalizeBuilderData(JSON.parse(text));
+  const parsed = JSON.parse(text);
+  const data = normalizeBuilderData(parsed);
   return createPresetFromData(
     name || data.name || file.name.replace(/\.json$/i, "") || "导入词库",
     data
@@ -273,18 +287,27 @@ export async function syncBuilderFromGitHub(
   const active = getActivePreset();
   const target = (url || active?.syncUrl || getSyncUrl()).trim();
   if (!target) throw new Error("No sync URL configured");
+
   const res = await fetch(target, { cache: "no-store" });
   if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
   const text = await res.text();
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new Error("无法解析文件。请使用 JSON 格式（与 original_character.json 相同结构）。");
+    throw new Error(
+      "无法解析文件。请使用 JSON 格式（与 original_character.json 相同结构）。"
+    );
   }
+
   const data = normalizeBuilderData(parsed);
   if (active) {
-    upsertBuilderPreset({ ...active, data: { ...data, name: active.name }, syncUrl: target });
+    upsertBuilderPreset({
+      ...active,
+      data: { ...data, name: active.name },
+      syncUrl: target,
+    });
     setActivePresetId(active.id);
   }
   saveCachedBuilder({ ...data, name: active?.name || data.name });
@@ -292,11 +315,16 @@ export async function syncBuilderFromGitHub(
   return { data: { ...data, name: active?.name || data.name }, source: target };
 }
 
-export function composePrompt(data: BuilderData, selected: Record<string, number>): string {
+export function composePrompt(
+  data: BuilderData,
+  selected: Record<string, number>
+): string {
   let out = (data.base || "") + (data.fixed || "");
   for (const s of data.sections) {
     const idx = selected[s.key];
-    if (idx != null && idx >= 0 && s.items[idx]) out += s.items[idx].tags || "";
+    if (idx != null && idx >= 0 && s.items[idx]) {
+      out += s.items[idx].tags || "";
+    }
   }
   return out;
 }
@@ -309,7 +337,80 @@ export function pickRandomSelected(
   const sel: Record<string, number> = { ...(prev || {}) };
   for (const s of data.sections) {
     if (locked?.[s.key]) continue;
-    if (s.items.length > 0) sel[s.key] = Math.floor(Math.random() * s.items.length);
+    if (s.items.length > 0) {
+      sel[s.key] = Math.floor(Math.random() * s.items.length);
+    }
   }
   return sel;
+}
+
+/** Parse "Name: description" lines into builder items */
+export type TextListNameMode = "title" | "id";
+
+export function parseNameColonTextList(
+  text: string,
+  opts?: {
+    nameMode?: TextListNameMode;
+    sectionKey?: string;
+    sectionLabel?: string;
+    catalogId?: string;
+    catalogName?: string;
+    fixed?: string;
+  }
+): BuilderData {
+  const nameMode = opts?.nameMode || "title";
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith("#"));
+
+  const items: BuilderItem[] = [];
+  let seq = 1;
+  for (const line of lines) {
+    const colon = line.indexOf(":");
+    let title = "";
+    let body = "";
+    if (colon > 0) {
+      title = line.slice(0, colon).trim();
+      body = line.slice(colon + 1).trim();
+    } else {
+      title = line.slice(0, 48);
+      body = line;
+    }
+    if (!title && !body) continue;
+
+    let name: string;
+    if (nameMode === "id") {
+      name = `item_${String(seq).padStart(3, "0")}`;
+    } else {
+      name = title.length > 80 ? title.slice(0, 77) + "…" : title || `item_${seq}`;
+    }
+    let tags = (body || title).trim();
+    if (tags && !tags.endsWith(",") && !tags.endsWith(", ")) {
+      tags = tags + ", ";
+    }
+    items.push({ name, tags });
+    seq += 1;
+  }
+
+  if (items.length === 0) {
+    throw new Error("未解析到任何条目（需要「名称: 描述」每行一条）");
+  }
+
+  const key = opts?.sectionKey || "imported";
+  return {
+    id: opts?.catalogId || "imported_" + Date.now().toString(36),
+    name: opts?.catalogName || "导入词库",
+    base: "",
+    fixed: opts?.fixed ?? "",
+    sections: [
+      {
+        key,
+        label: opts?.sectionLabel || "导入分区",
+        icon: "In",
+        desc: `从文本导入 · ${items.length} 条`,
+        items,
+      },
+    ],
+  };
 }
