@@ -15,7 +15,14 @@ export function useCharacters() {
     useAppData();
 
   const addCharacter = useCallback(
-    async (partial?: Partial<Character>) => {
+    async (
+      nameOrPartial?: string | Partial<Character>,
+      worldName?: string
+    ) => {
+      const partial: Partial<Character> =
+        typeof nameOrPartial === "string"
+          ? { name: nameOrPartial, world: worldName || "" }
+          : nameOrPartial || {};
       const now = new Date().toISOString();
       const newChar: Character = {
         id: createId(),
