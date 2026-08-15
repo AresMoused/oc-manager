@@ -414,3 +414,41 @@ export function parseNameColonTextList(
     ],
   };
 }
+
+/** Merge a section into an existing preset (append items if key exists, else add section). */
+export function mergeSectionIntoPreset(
+  presetId: string,
+  section: BuilderSection,
+  opts?: { replaceItems?: boolean }
+): StoredBuilderPreset {
+  const list = listBuilderPresets();
+  const idx = list.findIndex((p) => p.id === presetId);
+  if (idx < 0) throw new Error("预设不存在");
+  const preset = list[idx];
+  const sections = [...preset.data.sections];
+  const si = sections.findIndex((s) => s.key === section.key);
+  if (si >= 0) {
+    if (opts?.replaceItems) {
+      sections[si] = { ...sections[si], ...section, items: section.items };
+    } else {
+      const existing = sections[si];
+      sections[si] = {
+        ...existing,
+        label: section.label || existing.label,
+        items: [...existing.items, ...section.items],
+      };
+    }
+  } else {
+    sections.push(section);
+  }
+  const data: BuilderData = { ...preset.data, sections };
+  const updated: StoredBuilderPreset = {
+    ...preset,
+    data,
+    updatedAt: new Date().toISOString(),
+  };
+  upsertBuilderPreset(updated);
+  setActivePresetId(preset.id);
+  saveCachedBuilder(data);
+  return updated;
+}
