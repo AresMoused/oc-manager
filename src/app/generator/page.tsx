@@ -48,6 +48,8 @@ export default function GeneratorPage() {
   const [data, setData] = useState<BuilderData>({ id: "loading", sections: [] });
   const [selected, setSelected] = useState<Record<string, number>>({});
   const [locked, setLocked] = useState<Record<string, boolean>>({});
+  const [sectionEnabled, setSectionEnabled] = useState<Record<string, boolean>>({});
+  const [sectionPanelOpen, setSectionPanelOpen] = useState(false);
   const [syncUrl, setSyncUrlState] = useState(DEFAULT_SYNC);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
@@ -89,16 +91,12 @@ export default function GeneratorPage() {
       let source = loadCachedBuilder();
       if (!source) {
         try {
-          const res = await fetch("/prompts/original_character.json", {
-            cache: "force-cache",
-          });
+          const res = await fetch("/prompts/original_character.json", { cache: "force-cache" });
           if (res.ok) {
             source = normalizeBuilderData(await res.json());
             saveCachedBuilder(source);
           }
-        } catch {
-          /* ignore */
-        }
+        } catch { /* ignore */ }
       }
       if (!source) {
         source = { id: "empty", name: "空词库", fixed: "1girl, ", sections: [] };
@@ -121,17 +119,35 @@ export default function GeneratorPage() {
       });
       setSelected(initSel);
       setLocked(initLock);
+      const en: Record<string, boolean> = {};
+      source.sections.forEach((s) => {
+        const saved =
+          typeof window !== "undefined"
+            ? localStorage.getItem("oc-gen-sec-on-" + s.key)
+            : null;
+        en[s.key] = saved === null ? true : saved === "1";
+      });
+      setSectionEnabled(en);
     }
     boot();
   }, []);
 
   useEffect(() => {
-    if (worldsLoaded && worlds.length && !targetWorldId) {
-      setTargetWorldId(worlds[0].id);
-    }
+    if (worldsLoaded && worlds.length && !targetWorldId) setTargetWorldId(worlds[0].id);
   }, [worldsLoaded, worlds, targetWorldId]);
 
-  const prompt = useMemo(() => composePrompt(data, selected), [data, selected]);
+  const activeData = useMemo(
+    () => ({
+      ...data,
+      sections: data.sections.filter((s) => sectionEnabled[s.key] !== false),
+    }),
+    [data, sectionEnabled]
+  );
+
+  const prompt = useMemo(
+    () => composePrompt(activeData, selected),
+    [activeData, selected]
+  );
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -161,11 +177,7 @@ export default function GeneratorPage() {
       saveCurrentAsPreset();
       return;
     }
-    upsertBuilderPreset({
-      ...cur,
-      data: { ...data, name: cur.name },
-      name: cur.name,
-    });
+    upsertBuilderPreset({ ...cur, data: { ...data, name: cur.name }, name: cur.name });
     setActivePresetId(cur.id);
     saveCachedBuilder({ ...data, name: cur.name });
     setPresets(listBuilderPresets());
@@ -174,10 +186,7 @@ export default function GeneratorPage() {
 
   const toggleItem = (key: string, idx: number) => {
     if (editMode) return;
-    setSelected((prev) => ({
-      ...prev,
-      [key]: prev[key] === idx ? -1 : idx,
-    }));
+    setSelected((prev) => ({ ...prev, [key]: prev[key] === idx ? -1 : idx }));
   };
 
   const toggleLock = (key: string) => {
@@ -186,6 +195,23 @@ export default function GeneratorPage() {
       localStorage.setItem("oc-gen-lock-" + key, next ? "1" : "0");
       return { ...prev, [key]: next };
     });
+  };
+
+  const toggleSectionEnabled = (key: string) => {
+    setSectionEnabled((prev) => {
+      const next = !(prev[key] !== false);
+      localStorage.setItem("oc-gen-sec-on-" + key, next ? "1" : "0");
+      return { ...prev, [key]: next };
+    });
+  };
+
+  const setAllSectionsEnabled = (on: boolean) => {
+    const next: Record<string, boolean> = {};
+    data.sections.forEach((s) => {
+      next[s.key] = on;
+      localStorage.setItem("oc-gen-sec-on-" + s.key, on ? "1" : "0");
+    });
+    setSectionEnabled(next);
   };
 
   const lockAll = () => {
@@ -203,6 +229,7 @@ export default function GeneratorPage() {
     setSelected((prev) => {
       const next = { ...prev };
       data.sections.forEach((s) => {
+        if (sectionEnabled[s.key] === false) return;
         if (!locked[s.key] && s.items.length > 0) {
           next[s.key] = Math.floor(Math.random() * s.items.length);
         }
@@ -213,17 +240,13 @@ export default function GeneratorPage() {
 
   const reset = () => {
     const next: Record<string, number> = {};
-    data.sections.forEach((s) => {
-      next[s.key] = 0;
-    });
+    data.sections.forEach((s) => { next[s.key] = 0; });
     setSelected(next);
   };
 
   const clearAll = () => {
     const next: Record<string, number> = {};
-    data.sections.forEach((s) => {
-      next[s.key] = -1;
-    });
+    data.sections.forEach((s) => { next[s.key] = -1; });
     setSelected(next);
   };
 
@@ -244,9 +267,7 @@ export default function GeneratorPage() {
       const { data: next, source } = await syncBuilderFromGitHub(syncUrl);
       setData(next);
       const initSel: Record<string, number> = {};
-      next.sections.forEach((s) => {
-        initSel[s.key] = 0;
-      });
+      next.sections.forEach((s) => { initSel[s.key] = 0; });
       setSelected(initSel);
       setPresets(listBuilderPresets());
       setSyncMsg(`已同步 · ${next.sections.length} 分区 · ${source.split("/").pop()}`);
@@ -284,23 +305,11 @@ export default function GeneratorPage() {
   };
 
   const openAddSection = () => {
-    setSectionEditor({
-      key: null,
-      sectionKey: "section_" + Date.now().toString(36),
-      label: "新分区",
-      icon: "New",
-      desc: "",
-    });
+    setSectionEditor({ key: null, sectionKey: "section_" + Date.now().toString(36), label: "新分区", icon: "New", desc: "" });
   };
 
   const openEditSection = (s: BuilderSection) => {
-    setSectionEditor({
-      key: s.key,
-      sectionKey: s.key,
-      label: s.label,
-      icon: s.icon || "",
-      desc: s.desc || "",
-    });
+    setSectionEditor({ key: s.key, sectionKey: s.key, label: s.label, icon: s.icon || "", desc: s.desc || "" });
   };
 
   const saveSectionEditor = () => {
@@ -311,28 +320,25 @@ export default function GeneratorPage() {
         showToast("分区 key 已存在");
         return;
       }
-      const sec: BuilderSection = {
-        key,
-        label: sectionEditor.label.trim() || key,
-        icon: sectionEditor.icon.trim() || undefined,
-        desc: sectionEditor.desc.trim() || undefined,
-        items: [],
-      };
-      persist({ ...data, sections: [...data.sections, sec] });
+      persist({
+        ...data,
+        sections: [...data.sections, {
+          key,
+          label: sectionEditor.label.trim() || key,
+          icon: sectionEditor.icon.trim() || undefined,
+          desc: sectionEditor.desc.trim() || undefined,
+          items: [],
+        }],
+      });
       setSelected((p) => ({ ...p, [key]: -1 }));
+      setSectionEnabled((p) => ({ ...p, [key]: true }));
     } else {
       const oldKey = sectionEditor.key;
       persist({
         ...data,
         sections: data.sections.map((s) =>
           s.key === oldKey
-            ? {
-                ...s,
-                key,
-                label: sectionEditor.label.trim() || key,
-                icon: sectionEditor.icon.trim() || undefined,
-                desc: sectionEditor.desc.trim() || undefined,
-              }
+            ? { ...s, key, label: sectionEditor.label.trim() || key, icon: sectionEditor.icon.trim() || undefined, desc: sectionEditor.desc.trim() || undefined }
             : s
         ),
       });
@@ -365,13 +371,7 @@ export default function GeneratorPage() {
   };
 
   const openEditItem = (sectionKey: string, index: number, item: BuilderItem) => {
-    setItemEditor({
-      sectionKey,
-      index,
-      name: item.name,
-      tags: item.tags,
-      hex: item.hex || "",
-    });
+    setItemEditor({ sectionKey, index, name: item.name, tags: item.tags, hex: item.hex || "" });
   };
 
   const saveItemEditor = () => {
@@ -383,11 +383,7 @@ export default function GeneratorPage() {
     }
     let tags = itemEditor.tags.trim();
     if (tags && !tags.endsWith(", ") && !tags.endsWith(",")) tags = tags + ", ";
-    const item: BuilderItem = {
-      name,
-      tags,
-      hex: itemEditor.hex.trim() || undefined,
-    };
+    const item: BuilderItem = { name, tags, hex: itemEditor.hex.trim() || undefined };
     persist({
       ...data,
       sections: data.sections.map((s) => {
@@ -424,11 +420,7 @@ export default function GeneratorPage() {
       showToast("提示词为空");
       return;
     }
-    const stored: StoredPrompt = {
-      id: crypto.randomUUID(),
-      text: prompt,
-      createdAt: new Date().toISOString(),
-    };
+    const stored: StoredPrompt = { id: crypto.randomUUID(), text: prompt, createdAt: new Date().toISOString() };
     if (importMode === "new") {
       const w = worlds.find((x) => x.id === targetWorldId);
       if (!w) {
@@ -439,11 +431,7 @@ export default function GeneratorPage() {
       const id = addCharacter(name, w.name);
       updateCharacter(id, {
         prompts: [stored],
-        tags: prompt
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-          .slice(0, 20),
+        tags: prompt.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20),
       } as never);
       showToast("已创建角色");
       setImportOpen(false);
@@ -455,9 +443,7 @@ export default function GeneratorPage() {
       }
       const ch = characters.find((c) => c.id === targetCharId);
       if (!ch) return;
-      updateCharacter(targetCharId, {
-        prompts: [...(ch.prompts || []), stored],
-      } as never);
+      updateCharacter(targetCharId, { prompts: [...(ch.prompts || []), stored] } as never);
       showToast("已导入到角色");
       setImportOpen(false);
     }
@@ -469,18 +455,14 @@ export default function GeneratorPage() {
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-6 space-y-4">
         <div className="sticky top-14 z-40 -mx-4 px-4 py-3 bg-[#0a0a0a]/95 backdrop-blur border-b border-neutral-800">
           <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-            <div className="flex-1 font-mono text-xs text-neutral-400 bg-[#111] border border-neutral-800 rounded-lg px-3 py-2 max-h-16 overflow-y-auto break-all">
-              {prompt || "（未选择）"}
-            </div>
+            <div className="flex-1 font-mono text-xs text-neutral-400 bg-[#111] border border-neutral-800 rounded-lg px-3 py-2 max-h-16 overflow-y-auto break-all">{prompt || "（未选择）"}</div>
             <div className="flex flex-wrap gap-1.5 shrink-0">
               <button onClick={copyPrompt} className="px-3 py-1.5 text-sm rounded-lg bg-purple-600 hover:bg-purple-500 text-white">复制</button>
               <button onClick={() => setImportOpen(true)} className="px-3 py-1.5 text-sm rounded-lg border border-purple-700 text-purple-300 hover:bg-purple-950/40">导入角色卡</button>
               <button onClick={randomize} className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">随机</button>
               <button onClick={reset} className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">重置</button>
               <button onClick={clearAll} className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">清除</button>
-              <button onClick={lockAll} className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">
-                {data.sections.every((s) => locked[s.key]) ? "全部解锁" : "全部锁定"}
-              </button>
+              <button onClick={lockAll} className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">{data.sections.every((s) => locked[s.key]) ? "全部解锁" : "全部锁定"}</button>
             </div>
           </div>
         </div>
@@ -491,13 +473,7 @@ export default function GeneratorPage() {
             <h1 className="text-2xl font-bold text-white mt-1">角色外观生成器</h1>
             <p className="text-neutral-500 text-sm mt-1">组合外观标签；可编辑词库并保存为预设。</p>
           </div>
-          <CatalogToolbar
-            editMode={editMode}
-            onToggleEdit={() => setEditMode((v) => !v)}
-            onExport={handleExport}
-            onImportFile={handleImportFile}
-            onAddSection={openAddSection}
-          />
+          <CatalogToolbar editMode={editMode} onToggleEdit={() => setEditMode((v) => !v)} onExport={handleExport} onImportFile={handleImportFile} onAddSection={openAddSection} />
         </div>
 
         <GeneratorPresetsBar
@@ -512,59 +488,80 @@ export default function GeneratorPage() {
             setData(d);
             const initSel: Record<string, number> = {};
             const initLock: Record<string, boolean> = {};
+            const en: Record<string, boolean> = {};
             d.sections.forEach((s) => {
               initSel[s.key] = 0;
               initLock[s.key] =
                 typeof window !== "undefined" &&
                 localStorage.getItem("oc-gen-lock-" + s.key) === "1";
+              const saved =
+                typeof window !== "undefined"
+                  ? localStorage.getItem("oc-gen-sec-on-" + s.key)
+                  : null;
+              en[s.key] = saved === null ? true : saved === "1";
             });
             setSelected(initSel);
             setLocked(initLock);
+            setSectionEnabled(en);
           }}
         />
+
+        <div className="bg-[#111] border border-neutral-800 rounded-xl overflow-hidden">
+          <button type="button" onClick={() => setSectionPanelOpen((v) => !v)} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-900/60 transition">
+            <div>
+              <div className="text-sm font-semibold text-neutral-200">分区开关</div>
+              <div className="text-[11px] text-neutral-500 mt-0.5">
+                已启用 {data.sections.filter((s) => sectionEnabled[s.key] !== false).length}/{data.sections.length} 个分区
+              </div>
+            </div>
+            <span className="text-neutral-400 text-xs">{sectionPanelOpen ? "收起 ▲" : "展开 ▼"}</span>
+          </button>
+          {sectionPanelOpen && (
+            <div className="px-4 pb-4 border-t border-neutral-800 pt-3 space-y-2">
+              <div className="flex flex-wrap gap-2 mb-1">
+                <button type="button" onClick={() => setAllSectionsEnabled(true)} className="px-2.5 py-1 text-[11px] rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">全部开启</button>
+                <button type="button" onClick={() => setAllSectionsEnabled(false)} className="px-2.5 py-1 text-[11px] rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">全部关闭</button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {data.sections.map((s) => {
+                  const on = sectionEnabled[s.key] !== false;
+                  return (
+                    <button key={s.key} type="button" onClick={() => toggleSectionEnabled(s.key)} className={`px-2.5 py-1 text-xs rounded-lg border transition ${on ? "border-emerald-700/70 bg-emerald-950/30 text-emerald-200" : "border-neutral-800 text-neutral-600 line-through"}`}>
+                      {on ? "✓ " : "○ "}{s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="bg-[#111] border border-neutral-800 rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-neutral-200">同步当前预设 (GitHub)</h2>
-            <button onClick={handleSync} disabled={syncing} className="px-3 py-1.5 text-sm rounded-lg bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white">
-              {syncing ? "同步中…" : "Sync"}
-            </button>
+            <button onClick={handleSync} disabled={syncing} className="px-3 py-1.5 text-sm rounded-lg bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white">{syncing ? "同步中…" : "Sync"}</button>
           </div>
-          <input
-            className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-purple-500 text-neutral-300"
-            value={syncUrl}
-            onChange={(e) => setSyncUrlState(e.target.value)}
-            placeholder="https://raw.githubusercontent.com/.../prompts.json"
-          />
+          <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-purple-500 text-neutral-300" value={syncUrl} onChange={(e) => setSyncUrlState(e.target.value)} placeholder="https://raw.githubusercontent.com/.../prompts.json" />
           {syncMsg && <p className="text-xs text-neutral-500 break-all">{syncMsg}</p>}
           <div className="flex flex-wrap gap-2 items-center">
             <label className="text-[11px] text-neutral-500">固定前缀 fixed:</label>
-            <input
-              className="flex-1 min-w-[120px] bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs font-mono outline-none focus:border-purple-500"
-              value={data.fixed || ""}
-              onChange={(e) => persist({ ...data, fixed: e.target.value })}
-              placeholder="1girl, "
-            />
+            <input className="flex-1 min-w-[120px] bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs font-mono outline-none focus:border-purple-500" value={data.fixed || ""} onChange={(e) => persist({ ...data, fixed: e.target.value })} placeholder="1girl, " />
           </div>
         </div>
 
         {editMode && (
-          <p className="text-xs text-amber-400/90 px-1">
-            编辑模式：可增删改分区与提示词；改完后请点「保存到当前预设」或「另存为新预设」。
-          </p>
+          <p className="text-xs text-amber-400/90 px-1">编辑模式：可增删改分区与提示词；改完后请点「保存到当前预设」或「另存为新预设」。</p>
         )}
 
         {data.sections.length === 0 ? (
           <p className="text-center text-neutral-500 py-12 text-sm">暂无分区 · 请加载预设、Sync，或进入编辑模式添加</p>
         ) : (
           <div className="space-y-4">
-            {data.sections.map((section) => (
+            {data.sections.filter((section) => editMode || sectionEnabled[section.key] !== false).map((section) => (
               <div key={section.key} className="bg-[#111] border border-neutral-800 rounded-xl overflow-hidden">
                 <div className="px-4 py-2 border-b border-neutral-800 flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <h3 className="text-sm font-medium text-white truncate">
-                      {section.icon ? `${section.icon} ` : ""}{section.label}
-                    </h3>
+                    <h3 className="text-sm font-medium text-white truncate">{section.icon ? `${section.icon} ` : ""}{section.label}</h3>
                     {section.desc && <p className="text-[11px] text-neutral-500 truncate">{section.desc}</p>}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -574,15 +571,7 @@ export default function GeneratorPage() {
                         <button type="button" onClick={() => deleteSection(section.key)} className="text-[11px] px-2 py-0.5 rounded border border-rose-900/50 text-rose-400">删除</button>
                       </>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => toggleLock(section.key)}
-                        className={`text-[11px] px-2 py-0.5 rounded border ${
-                          locked[section.key]
-                            ? "border-amber-600 text-amber-300"
-                            : "border-neutral-700 text-neutral-400"
-                        }`}
-                      >
+                      <button type="button" onClick={() => toggleLock(section.key)} className={`text-[11px] px-2 py-0.5 rounded border ${locked[section.key] ? "border-amber-600 text-amber-300" : "border-neutral-700 text-neutral-400"}`}>
                         {locked[section.key] ? "已锁定" : "锁定"}
                       </button>
                     )}
@@ -593,18 +582,8 @@ export default function GeneratorPage() {
                     const active = selected[section.key] === idx;
                     return (
                       <div key={idx} className="relative group">
-                        <button
-                          type="button"
-                          onClick={() => toggleItem(section.key, idx)}
-                          className={`px-2.5 py-1 text-xs rounded-lg border transition ${
-                            active && !editMode
-                              ? "border-purple-500 bg-purple-950/40 text-purple-200"
-                              : "border-neutral-700 text-neutral-300 hover:border-neutral-500"
-                          }`}
-                        >
-                          {item.hex && (
-                            <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: item.hex }} />
-                          )}
+                        <button type="button" onClick={() => toggleItem(section.key, idx)} className={`px-2.5 py-1 text-xs rounded-lg border transition ${active && !editMode ? "border-purple-500 bg-purple-950/40 text-purple-200" : "border-neutral-700 text-neutral-300 hover:border-neutral-500"}`}>
+                          {item.hex && <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: item.hex }} />}
                           {item.name}
                         </button>
                         {editMode && (
@@ -617,9 +596,7 @@ export default function GeneratorPage() {
                     );
                   })}
                   {editMode && (
-                    <button type="button" onClick={() => openAddItem(section.key)} className="px-2.5 py-1 text-xs rounded-lg border border-dashed border-amber-700/60 text-amber-400/90">
-                      + 词条
-                    </button>
+                    <button type="button" onClick={() => openAddItem(section.key)} className="px-2.5 py-1 text-xs rounded-lg border border-dashed border-amber-700/60 text-amber-400/90">+ 词条</button>
                   )}
                 </div>
               </div>
@@ -629,12 +606,8 @@ export default function GeneratorPage() {
       </main>
       <Footer />
 
-      {itemEditor && (
-        <ItemEditorModal editor={itemEditor} onChange={setItemEditor} onClose={() => setItemEditor(null)} onSave={saveItemEditor} />
-      )}
-      {sectionEditor && (
-        <SectionEditorModal editor={sectionEditor} onChange={setSectionEditor} onClose={() => setSectionEditor(null)} onSave={saveSectionEditor} />
-      )}
+      {itemEditor && <ItemEditorModal editor={itemEditor} onChange={setItemEditor} onClose={() => setItemEditor(null)} onSave={saveItemEditor} />}
+      {sectionEditor && <SectionEditorModal editor={sectionEditor} onChange={setSectionEditor} onClose={() => setSectionEditor(null)} onSave={saveSectionEditor} />}
 
       {importOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
@@ -648,9 +621,7 @@ export default function GeneratorPage() {
               <label className="text-xs text-neutral-500 block mb-1">世界</label>
               <select className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" value={targetWorldId} onChange={(e) => { setTargetWorldId(e.target.value); setTargetCharId(""); }}>
                 {worlds.length === 0 && <option value="">（请先创建世界）</option>}
-                {worlds.map((w) => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
+                {worlds.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             </div>
             {importMode === "new" ? (
@@ -663,9 +634,7 @@ export default function GeneratorPage() {
                 <label className="text-xs text-neutral-500 block mb-1">选择角色</label>
                 <select className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" value={targetCharId} onChange={(e) => setTargetCharId(e.target.value)}>
                   <option value="">—</option>
-                  {worldChars.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
+                  {worldChars.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
             )}
@@ -677,9 +646,7 @@ export default function GeneratorPage() {
         </div>
       )}
 
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full bg-white text-black text-sm shadow-lg">{toast}</div>
-      )}
+      {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full bg-white text-black text-sm shadow-lg">{toast}</div>}
     </div>
   );
 }
