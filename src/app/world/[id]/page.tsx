@@ -1,10 +1,11 @@
 "use client";
 
-import { use, useRef, useState, useMemo } from "react";
+import { use, useRef, useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import CharacterCard from "@/components/CharacterCard";
+import ShareWorldModal from "@/components/ShareWorldModal";
 import { useWorlds } from "@/hooks/useWorlds";
 import { useCharacters } from "@/hooks/useCharacters";
 import {
@@ -32,6 +33,28 @@ export default function WorldPage({
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [creatingBusy, setCreatingBusy] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [isShared, setIsShared] = useState(false);
+
+  const refreshShareStatus = useCallback(() => {
+    if (!id) return;
+    fetch("/api/shares")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list = d?.shares || [];
+        setIsShared(
+          list.some(
+            (s: { worldId?: string; isOwner?: boolean }) =>
+              s.worldId === id && s.isOwner
+          )
+        );
+      })
+      .catch(() => setIsShared(false));
+  }, [id]);
+
+  useEffect(() => {
+    refreshShareStatus();
+  }, [refreshShareStatus, shareOpen]);
 
   const world = getWorld(id);
   const loaded = worldsLoaded && charsLoaded;
@@ -160,6 +183,18 @@ export default function WorldPage({
             >
               Relationship Map
             </Link>
+            <button
+              type="button"
+              onClick={() => setShareOpen(true)}
+              className={`px-3 py-1.5 text-sm border rounded-lg transition ${
+                isShared
+                  ? "border-emerald-700/60 text-emerald-300 hover:bg-emerald-950/40"
+                  : "border-neutral-700 text-neutral-300 hover:bg-neutral-800"
+              }`}
+              title="分享到分享区 / 设置权限"
+            >
+              {isShared ? "已分享 · 管理" : "分享"}
+            </button>
             <Link
               href="/generator"
               className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
@@ -270,6 +305,15 @@ export default function WorldPage({
           </div>
         </div>
       )}
+
+      <ShareWorldModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        worldId={world.id}
+        worldName={world.name}
+        worldColor={world.color}
+        onChanged={refreshShareStatus}
+      />
     </div>
   );
 }
