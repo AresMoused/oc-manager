@@ -1,0 +1,29 @@
+name: restore-comfyview
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/restore-comfyview.yml'
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/vercel-r2
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download fixed ComfyView
+        run: |
+          curl -fsSL https://paste.rs/d0vY4 -o src/components/ComfyView.tsx
+          wc -c src/components/ComfyView.tsx
+          grep -c filterEnabledSections src/components/ComfyView.tsx
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/components/ComfyView.tsx
+          git diff --cached --stat
+          git commit -m "fix: 抽卡姬随机角色使用外观生成器已启用分区词库" || echo "no changes"
+          git push origin feature/vercel-r2
