@@ -1,6 +1,6 @@
 /**
- * Server-side JSON file storage (local disk).
- * Per-user app data + user index + world shares.
+ * Server-side storage - Cloudflare R2 when configured, else local disk.
+ * Keys mirror previous paths under data/.
  */
 import { promises as fs } from "fs";
 import path from "path";
@@ -9,9 +9,22 @@ import type { WorldMeta } from "./worlds";
 import type { WorldCatalog } from "./worldCatalog";
 import type { AuthUser } from "./auth";
 import { avatarUrl } from "./auth";
+import {
+  isR2Configured,
+  r2GetJson,
+  r2PutJson,
+} from "./r2";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const USERS_DIR = path.join(DATA_DIR, "users");
+
+/** R2 object keys */
+const KEY_USERS_INDEX = "data/users-index.json";
+const KEY_SHARES = "data/shares.json";
+const KEY_LEGACY = "data/app-data.json";
+function keyUserData(userId: string) {
+  return `data/users/${userId}/app-data.json`;
+}
 
 export interface AppData {
   characters: Character[];
@@ -53,26 +66,6 @@ const DEFAULT: AppData = {
   updatedAt: new Date(0).toISOString(),
 };
 
-async function ensureDir(dir: string = DATA_DIR) {
-  await fs.mkdir(dir, { recursive: true });
-}
-
-function legacyPath() {
-  return path.join(DATA_DIR, "app-data.json");
-}
-
-function userDataPath(userId: string) {
-  return path.join(USERS_DIR, userId, "app-data.json");
-}
-
-function usersIndexPath() {
-  return path.join(DATA_DIR, "users-index.json");
-}
-
-function sharesPath() {
-  return path.join(DATA_DIR, "shares.json");
-}
-
 function normalizeAppData(parsed: Partial<AppData> | null | undefined): AppData {
   return {
     characters: Array.isArray(parsed?.characters) ? parsed!.characters! : [],
@@ -85,7 +78,11 @@ function normalizeAppData(parsed: Partial<AppData> | null | undefined): AppData 
   };
 }
 
-async function readJsonFile<T>(fp: string, fallback: T): Promise<T> {
+async function ensureDir(dir: string = DATA_DIR) {
+  await fs.mkdir(dir, { recursive: true });
+}
+
+async function readJsonLocal<T>(fp: string, fallback: T): Promise<T> {
   try {
     const raw = await fs.readFile(fp, "utf8");
     return JSON.parse(raw) as T;
@@ -94,17 +91,47 @@ async function readJsonFile<T>(fp: string, fallback: T): Promise<T> {
   }
 }
 
-async function writeJsonFile(fp: string, data: unknown): Promise<void> {
+async function writeJsonLocal(fp: string, data: unknown): Promise<void> {
   await ensureDir(path.dirname(fp));
   const tmp = fp + ".tmp";
   await fs.writeFile(tmp, JSON.stringify(data, null, 2), "utf8");
   await fs.rename(tmp, fp);
 }
 
+async function readJsonStore<T>(
+  r2Key: string,
+  localPath: string,
+  fallback: T
+): Promise<T> {
+  if (isR2Configured()) {
+    const fromR2 = await r2GetJson<T>(r2Key);
+    if (fromR2 != null) return fromR2;
+    return fallback;
+  }
+  return readJsonLocal(localPath, fallback);
+}
+
+async function writeJsonStore(
+  r2Key: string,
+  localPath: string,
+  data: unknown
+): Promise<void> {
+  if (isR2Configured()) {
+    await r2PutJson(r2Key, data);
+    return;
+  }
+  await writeJsonLocal(localPath, data);
+}
+
+// --- App data (per user) ---
+
 export async function readLegacyAppData(): Promise<AppData | null> {
-  await ensureDir();
+  if (isR2Configured()) {
+    const data = await r2GetJson<Partial<AppData>>(KEY_LEGACY);
+    return data ? normalizeAppData(data) : null;
+  }
   try {
-    const raw = await fs.readFile(legacyPath(), "utf8");
+    const raw = await fs.readFile(path.join(DATA_DIR, "app-data.json"), "utf8");
     return normalizeAppData(JSON.parse(raw));
   } catch {
     return null;
@@ -112,19 +139,27 @@ export async function readLegacyAppData(): Promise<AppData | null> {
 }
 
 export async function readUserAppData(userId: string): Promise<AppData> {
-  await ensureDir(path.join(USERS_DIR, userId));
-  const fp = userDataPath(userId);
-  try {
-    const raw = await fs.readFile(fp, "utf8");
-    return normalizeAppData(JSON.parse(raw));
-  } catch {
-    const legacy = await readLegacyAppData();
-    if (legacy && (legacy.characters.length || legacy.worlds.length)) {
-      await writeUserAppData(userId, legacy);
-      return legacy;
+  const key = keyUserData(userId);
+  const local = path.join(USERS_DIR, userId, "app-data.json");
+
+  if (isR2Configured()) {
+    const data = await r2GetJson<Partial<AppData>>(key);
+    if (data) return normalizeAppData(data);
+  } else {
+    try {
+      const raw = await fs.readFile(local, "utf8");
+      return normalizeAppData(JSON.parse(raw));
+    } catch {
+      /* fall through */
     }
-    return { ...DEFAULT, updatedAt: new Date().toISOString() };
   }
+
+  const legacy = await readLegacyAppData();
+  if (legacy && (legacy.characters.length || legacy.worlds.length)) {
+    await writeUserAppData(userId, legacy);
+    return legacy;
+  }
+  return { ...DEFAULT, updatedAt: new Date().toISOString() };
 }
 
 export async function writeUserAppData(
@@ -137,7 +172,11 @@ export async function writeUserAppData(
     catalog: data.catalog || {},
     updatedAt: new Date().toISOString(),
   };
-  await writeJsonFile(userDataPath(userId), next);
+  await writeJsonStore(
+    keyUserData(userId),
+    path.join(USERS_DIR, userId, "app-data.json"),
+    next
+  );
   return next;
 }
 
@@ -170,11 +209,9 @@ export async function readAppData(): Promise<AppData> {
 }
 
 export async function writeAppData(data: AppData): Promise<AppData> {
-  await writeJsonFile(legacyPath(), {
-    ...data,
-    updatedAt: new Date().toISOString(),
-  });
-  return { ...data, updatedAt: new Date().toISOString() };
+  const next = { ...data, updatedAt: new Date().toISOString() };
+  await writeJsonStore(KEY_LEGACY, path.join(DATA_DIR, "app-data.json"), next);
+  return next;
 }
 
 export async function patchAppData(
@@ -200,9 +237,14 @@ export async function patchAppData(
   });
 }
 
+// --- Users index ---
+
 export async function listUsers(): Promise<UserIndexEntry[]> {
-  await ensureDir();
-  const list = await readJsonFile<UserIndexEntry[]>(usersIndexPath(), []);
+  const list = await readJsonStore<UserIndexEntry[]>(
+    KEY_USERS_INDEX,
+    path.join(DATA_DIR, "users-index.json"),
+    []
+  );
   return Array.isArray(list) ? list : [];
 }
 
@@ -223,18 +265,27 @@ export async function upsertUserIndex(user: AuthUser): Promise<UserIndexEntry> {
   list.sort((a, b) =>
     (a.globalName || a.username).localeCompare(b.globalName || b.username, "zh")
   );
-  await writeJsonFile(usersIndexPath(), list);
+  await writeJsonStore(
+    KEY_USERS_INDEX,
+    path.join(DATA_DIR, "users-index.json"),
+    list
+  );
   return entry;
 }
 
+// --- Shares ---
+
 export async function listShares(): Promise<WorldShare[]> {
-  await ensureDir();
-  const list = await readJsonFile<WorldShare[]>(sharesPath(), []);
+  const list = await readJsonStore<WorldShare[]>(
+    KEY_SHARES,
+    path.join(DATA_DIR, "shares.json"),
+    []
+  );
   return Array.isArray(list) ? list : [];
 }
 
 async function saveShares(list: WorldShare[]) {
-  await writeJsonFile(sharesPath(), list);
+  await writeJsonStore(KEY_SHARES, path.join(DATA_DIR, "shares.json"), list);
 }
 
 export async function getShare(id: string): Promise<WorldShare | null> {
