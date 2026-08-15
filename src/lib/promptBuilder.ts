@@ -210,13 +210,35 @@ export function upsertBuilderPreset(
   return full;
 }
 
-export function deleteBuilderPreset(id: string) {
+export function deleteBuilderPreset(id: string): StoredBuilderPreset[] {
   const list = listBuilderPresets().filter((p) => p.id !== id);
   savePresetsList(list);
   if (getActivePresetId() === id) {
     if (list[0]) setActivePresetId(list[0].id);
     else localStorage.removeItem(ACTIVE_PRESET_KEY);
   }
+  return list;
+}
+
+export function renameBuilderPreset(
+  id: string,
+  name: string
+): StoredBuilderPreset | null {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const list = listBuilderPresets();
+  const idx = list.findIndex((p) => p.id === id);
+  if (idx < 0) return null;
+  const cur = list[idx];
+  const updated: StoredBuilderPreset = {
+    ...cur,
+    name: trimmed,
+    data: { ...cur.data, name: trimmed },
+    updatedAt: new Date().toISOString(),
+  };
+  list[idx] = updated;
+  savePresetsList(list);
+  return updated;
 }
 
 export function createPresetFromData(
