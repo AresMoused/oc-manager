@@ -331,7 +331,7 @@ export default function ComfyView() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <Link href="/" className="text-neutral-500 hover:text-white text-sm">← Worlds</Link>
-            <h1 className="text-2xl font-bold text-white mt-1">ComfyUI 生成</h1>
+            <h1 className="text-2xl font-bold text-white mt-1">抽卡姬</h1>
             <p className="text-neutral-500 text-sm mt-1">上传 API 格式工作流，用占位符注入参数。界面参考 A1111。</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -395,6 +395,13 @@ export default function ComfyView() {
                       className="text-[11px] px-2 py-0.5 rounded border border-purple-700/50 text-purple-300 hover:bg-purple-950/30 disabled:opacity-40">
                       🎲 立即随机
                     </button>
+                    <Link
+                      href="/generator"
+                      className="text-[11px] px-2 py-0.5 rounded border border-sky-700/50 text-sky-300 hover:bg-sky-950/30"
+                      title="在角色外观生成器中调整词库与选项"
+                    >
+                      ✎ 去外观生成器修改
+                    </Link>
                   </div>
                 </div>
                 <textarea className={`${inp} min-h-[88px] resize-y border-purple-800/40`} value={params.prompt_character}
@@ -404,6 +411,7 @@ export default function ComfyView() {
                   使用「角色外观生成器」提示词库
                   {sectionCount > 0 ? `（${sectionCount} 个分区）` : "（尚未加载，请先打开生成器并同步）"}。
                   开启随机且未锁定时，每次 Generate 会自动换一条。
+                  在外观生成器组合好后可点「导入到抽卡姬」写回本栏。
                 </p>
               </div>
 
