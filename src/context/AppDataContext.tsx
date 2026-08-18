@@ -55,9 +55,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const worldsRef = useRef<WorldMeta[]>([]);
   const catalogRef = useRef<WorldCatalog>({});
   const loreRef = useRef<WorldLoreMap>({});
+  /** Only skip the auto-save that would fire right after initial load / reload. */
   const skipSave = useRef(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Serialize network saves so an older in-flight PUT cannot finish after a newer one. */
+  /** Serialize network saves so older in-flight PUTs cannot finish out of order. */
   const saveChain = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
@@ -107,8 +108,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       catalog?: WorldCatalog;
       lore?: WorldLoreMap;
     }) => {
-      // Queue behind previous saves. Always read the latest refs at execution
-      // time so a deferred older task still writes the newest local snapshot.
+      // Queue behind previous saves. Read latest refs at execution time so a
+      // deferred task still writes the newest local snapshot (including lore).
       const run = async () => {
         const body = {
           characters:
@@ -123,8 +124,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             patch && "catalog" in patch
               ? patch.catalog ?? {}
               : catalogRef.current,
-          // Prefer live ref when no explicit lore patch — avoids stale empty lore
-          // from a concurrent character-only save overwriting a newer lore edit.
           lore:
             patch && "lore" in patch ? patch.lore ?? {} : loreRef.current,
         };
@@ -135,18 +134,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error(`Save failed: ${res.status}`);
-        // Intentionally do NOT apply the response back into React state.
-        // Re-hydrating from the server after every debounced save caused the
-        // "add lore entry → UI appears → vanishes → reappears" flicker when an
-        // older in-flight PUT finished after a newer local edit.
-        // Local optimistic state is the source of truth until explicit reload().
+        // Do NOT re-hydrate React state from the response.
+        // Applying the server payload after every debounced save caused:
+        // "add lore entry → appears → vanishes → reappears" when an older
+        // in-flight PUT completed after a newer local edit.
         await res.json().catch(() => null);
         setSyncError(null);
-        skipSave.current = true;
       };
 
       const next = saveChain.current.then(run, run);
-      // Keep chain alive even if one save fails
       saveChain.current = next.catch(() => {});
       try {
         await next;
