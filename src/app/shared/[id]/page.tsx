@@ -7,6 +7,8 @@ import Footer from "@/components/Footer";
 import CharacterCard from "@/components/CharacterCard";
 import WorldLorePanel from "@/components/WorldLorePanel";
 import type { Character } from "@/lib/types";
+import { defaultCharacter } from "@/lib/types";
+import { createId } from "@/lib/storage";
 import { emptyLore, type WorldLore } from "@/lib/worldLore";
 
 interface ShareMeta {
@@ -34,12 +36,20 @@ export default function SharedWorldPage({
   const [error, setError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [creatingBusy, setCreatingBusy] = useState(false);
   const loreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loreRef = useRef<WorldLore>(emptyLore());
+  const charsRef = useRef<Character[]>([]);
 
   useEffect(() => {
     loreRef.current = lore;
   }, [lore]);
+
+  useEffect(() => {
+    charsRef.current = characters;
+  }, [characters]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -91,6 +101,36 @@ export default function SharedWorldPage({
     [id, share?.canEdit]
   );
 
+  const persistCharacters = useCallback(
+    async (nextList: Character[]) => {
+      if (!share?.canEdit) return;
+      setSaving(true);
+      setSaveError("");
+      try {
+        const res = await fetch(`/api/shares/${id}/content`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ characters: nextList }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error || `保存失败 (${res.status})`);
+        }
+        const d = await res.json();
+        if (Array.isArray(d.characters)) {
+          setCharacters(d.characters);
+          charsRef.current = d.characters;
+        }
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : "保存失败");
+        throw e;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [id, share?.canEdit]
+  );
+
   const handleLoreChange = (next: WorldLore) => {
     if (!share?.canEdit) return;
     setLore(next);
@@ -101,11 +141,46 @@ export default function SharedWorldPage({
     }, 600);
   };
 
+  const handleCreate = async () => {
+    if (!share?.canEdit || !newName.trim() || creatingBusy) return;
+    const name = newName.trim();
+    const now = new Date().toISOString();
+    const newChar: Character = {
+      id: createId(),
+      ...defaultCharacter(),
+      name,
+      world: share.worldName,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextList = [...charsRef.current, newChar];
+    setCreatingBusy(true);
+    setSaveError("");
+    // Optimistic update
+    setCharacters(nextList);
+    charsRef.current = nextList;
+    try {
+      await persistCharacters(nextList);
+      setCreating(false);
+      setNewName("");
+    } catch {
+      // Revert optimistic add on failure
+      const reverted = charsRef.current.filter((c) => c.id !== newChar.id);
+      setCharacters(reverted);
+      charsRef.current = reverted;
+    } finally {
+      setCreatingBusy(false);
+    }
+  };
+
   useEffect(() => {
     return () => {
       if (loreTimer.current) clearTimeout(loreTimer.current);
     };
   }, []);
+
+  const canEdit = !!share?.canEdit;
+  const accent = share?.worldColor || "#a855f7";
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -176,18 +251,44 @@ export default function SharedWorldPage({
           <>
             {/* Characters */}
             <section className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <h2 className="text-sm font-semibold text-white">
                   角色卡
                   <span className="ml-2 text-xs font-normal text-neutral-500">
                     {characters.length} 名
                   </span>
                 </h2>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewName("");
+                      setCreating(true);
+                    }}
+                    className="px-3 py-1.5 text-sm rounded-lg text-white font-medium transition flex items-center gap-1.5 shrink-0"
+                    style={{ backgroundColor: accent }}
+                  >
+                    <span className="text-lg leading-none">+</span> 新建角色
+                  </button>
+                )}
               </div>
               {characters.length === 0 ? (
-                <p className="text-neutral-600 text-center py-10 border border-dashed border-neutral-800 rounded-xl text-sm">
-                  此世界暂无角色
-                </p>
+                <div className="text-center py-10 border border-dashed border-neutral-800 rounded-xl">
+                  <p className="text-neutral-600 text-sm mb-3">此世界暂无角色</p>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewName("");
+                        setCreating(true);
+                      }}
+                      className="px-4 py-2 rounded-lg text-white text-sm"
+                      style={{ backgroundColor: accent }}
+                    >
+                      + 新建角色
+                    </button>
+                  )}
+                </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {characters.map((c) => (
@@ -218,6 +319,60 @@ export default function SharedWorldPage({
         )}
       </main>
       <Footer />
+
+      {creating && share && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-[#111] border border-neutral-700 rounded-xl p-5 space-y-4">
+            <h2 className="text-lg font-semibold text-white">新建角色</h2>
+            <div
+              className="flex items-center gap-2 text-xs rounded-lg px-3 py-2"
+              style={{
+                backgroundColor: accent + "22",
+                color: accent,
+              }}
+            >
+              <span
+                className="w-2.5 h-2.5 rounded-full"
+                style={{ backgroundColor: accent }}
+              />
+              {share.worldName}
+            </div>
+            <input
+              autoFocus
+              className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-purple-500 text-white"
+              placeholder="角色姓名..."
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleCreate();
+              }}
+              disabled={creatingBusy}
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCreating(false);
+                  setNewName("");
+                }}
+                disabled={creatingBusy}
+                className="px-4 py-2 text-sm text-neutral-400 disabled:opacity-40"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleCreate()}
+                disabled={!newName.trim() || creatingBusy}
+                className="px-4 py-2 text-sm rounded-lg text-white disabled:opacity-40"
+                style={{ backgroundColor: accent }}
+              >
+                {creatingBusy ? "创建中…" : "创建"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
