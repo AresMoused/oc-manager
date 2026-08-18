@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
@@ -15,15 +15,12 @@ import {
   createPresetFromData,
   getActivePreset,
   getActivePresetId,
-  getSyncUrl,
   listBuilderPresets,
   loadCachedBuilder,
   normalizeBuilderData,
   saveCachedBuilder,
   setActivePresetId,
-  setSyncUrl,
   StoredBuilderPreset,
-  syncBuilderFromGitHub,
   upsertBuilderPreset,
 } from "@/lib/promptBuilder";
 import GeneratorPresetsBar from "@/components/GeneratorPresetsBar";
@@ -31,14 +28,53 @@ import { loadParams, saveParams } from "@/lib/comfyConfig";
 import { StoredPrompt } from "@/lib/types";
 import {
   CatalogToolbar,
-  ItemEditorModal,
   SectionEditorModal,
 } from "@/components/GeneratorCatalogControls";
-
-const DEFAULT_SYNC =
-  "https://raw.githubusercontent.com/AresMoused/oc-manager/main/public/prompts/original_character.json";
+import { uploadImage } from "@/lib/apiClient";
 
 type ImportMode = "new" | "existing";
+
+/** Compress image to 128×128 cover-crop webp for lexicon previews */
+async function compressToPreviewWebp(file: File): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const size = 128;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas not supported"));
+        return;
+      }
+      const scale = Math.max(size / img.width, size / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      const x = (size - w) / 2;
+      const y = (size - h) / 2;
+      ctx.drawImage(img, x, y, w, h);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("WebP encode failed"));
+            return;
+          }
+          resolve(new File([blob], "preview.webp", { type: "image/webp" }));
+        },
+        "image/webp",
+        0.85
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to load image"));
+    };
+    img.src = url;
+  });
+}
 
 export default function GeneratorPage() {
   const router = useRouter();
@@ -51,13 +87,11 @@ export default function GeneratorPage() {
   const [locked, setLocked] = useState<Record<string, boolean>>({});
   const [sectionEnabled, setSectionEnabled] = useState<Record<string, boolean>>({});
   const [sectionPanelOpen, setSectionPanelOpen] = useState(false);
-  const [syncUrl, setSyncUrlState] = useState(DEFAULT_SYNC);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState("");
   const [toast, setToast] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [presets, setPresets] = useState<StoredBuilderPreset[]>([]);
   const [activePresetId, setActivePresetIdState] = useState("");
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null);
 
   const [importOpen, setImportOpen] = useState(false);
   const [importMode, setImportMode] = useState<ImportMode>("new");
@@ -73,13 +107,7 @@ export default function GeneratorPage() {
     desc: string;
   } | null>(null);
 
-  const [itemEditor, setItemEditor] = useState<{
-    sectionKey: string;
-    index: number | null;
-    name: string;
-    tags: string;
-    hex: string;
-  } | null>(null);
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const persist = useCallback((next: BuilderData) => {
     setData(next);
@@ -87,7 +115,6 @@ export default function GeneratorPage() {
   }, []);
 
   useEffect(() => {
-    setSyncUrlState(getSyncUrl());
     async function boot() {
       let source = loadCachedBuilder();
       if (!source) {
@@ -274,28 +301,6 @@ export default function GeneratorPage() {
     }
   };
 
-  const handleSync = async () => {
-    setSyncing(true);
-    setSyncMsg("");
-    try {
-      setSyncUrl(syncUrl);
-      const { data: next, source } = await syncBuilderFromGitHub(syncUrl);
-      setData(next);
-      const initSel: Record<string, number> = {};
-      next.sections.forEach((s) => { initSel[s.key] = 0; });
-      setSelected(initSel);
-      setPresets(listBuilderPresets());
-      setSyncMsg(`已同步 · ${next.sections.length} 分区 · ${source.split("/").pop()}`);
-      showToast("同步成功");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "同步失败";
-      setSyncMsg(msg);
-      showToast(msg);
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   const handleExport = () => {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -375,33 +380,34 @@ export default function GeneratorPage() {
     showToast("分区已删除");
   };
 
-  const openAddItem = (sectionKey: string) => {
-    setItemEditor({ sectionKey, index: null, name: "", tags: "", hex: "" });
-  };
-
-  const openEditItem = (sectionKey: string, index: number, item: BuilderItem) => {
-    setItemEditor({ sectionKey, index, name: item.name, tags: item.tags, hex: item.hex || "" });
-  };
-
-  const saveItemEditor = () => {
-    if (!itemEditor) return;
-    const name = itemEditor.name.trim();
-    if (!name) { showToast("请填写名称"); return; }
-    let tags = itemEditor.tags.trim();
-    if (tags && !tags.endsWith(", ") && !tags.endsWith(",")) tags = tags + ", ";
-    const item: BuilderItem = { name, tags, hex: itemEditor.hex.trim() || undefined };
+  const updateItemField = (
+    sectionKey: string,
+    index: number,
+    patch: Partial<BuilderItem>
+  ) => {
     persist({
       ...data,
       sections: data.sections.map((s) => {
-        if (s.key !== itemEditor.sectionKey) return s;
-        const items = [...s.items];
-        if (itemEditor.index === null) items.push(item);
-        else items[itemEditor.index] = item;
+        if (s.key !== sectionKey) return s;
+        const items = s.items.map((it, i) =>
+          i === index ? { ...it, ...patch } : it
+        );
         return { ...s, items };
       }),
     });
-    setItemEditor(null);
-    showToast("词条已保存");
+  };
+
+  const addItemInline = (sectionKey: string) => {
+    persist({
+      ...data,
+      sections: data.sections.map((s) => {
+        if (s.key !== sectionKey) return s;
+        return {
+          ...s,
+          items: [...s.items, { name: "", tags: "", image: undefined }],
+        };
+      }),
+    });
   };
 
   const deleteItem = (sectionKey: string, index: number) => {
@@ -414,6 +420,41 @@ export default function GeneratorPage() {
       }),
     });
     showToast("词条已删除");
+  };
+
+  const handlePreviewUpload = async (
+    sectionKey: string,
+    index: number,
+    file: File
+  ) => {
+    const ukey = `${sectionKey}:${index}`;
+    setUploadingKey(ukey);
+    try {
+      const webp = await compressToPreviewWebp(file);
+      let url: string;
+      try {
+        url = await uploadImage(webp);
+      } catch (uploadErr) {
+        console.warn("CDN upload failed, using data URL", uploadErr);
+        // Fallback: data URL from the compressed webp
+        url = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("read failed"));
+          reader.readAsDataURL(webp);
+        });
+      }
+      updateItemField(sectionKey, index, { image: url });
+      showToast("预览图已上传");
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "上传失败");
+    } finally {
+      setUploadingKey(null);
+    }
+  };
+
+  const clearPreview = (sectionKey: string, index: number) => {
+    updateItemField(sectionKey, index, { image: undefined });
   };
 
   const worldChars = characters.filter((c) => {
@@ -528,25 +569,26 @@ export default function GeneratorPage() {
           )}
         </div>
 
-        <div className="bg-[#111] border border-neutral-800 rounded-xl p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-neutral-200">同步当前预设 (GitHub)</h2>
-            <button onClick={handleSync} disabled={syncing} className="px-3 py-1.5 text-sm rounded-lg bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white">{syncing ? "同步中…" : "Sync"}</button>
-          </div>
-          <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-purple-500 text-neutral-300" value={syncUrl} onChange={(e) => setSyncUrlState(e.target.value)} placeholder="https://raw.githubusercontent.com/.../prompts.json" />
-          {syncMsg && <p className="text-xs text-neutral-500 break-all">{syncMsg}</p>}
+        <div className="bg-[#111] border border-neutral-800 rounded-xl p-4">
           <div className="flex flex-wrap gap-2 items-center">
-            <label className="text-[11px] text-neutral-500">固定前缀 fixed:</label>
-            <input className="flex-1 min-w-[120px] bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs font-mono outline-none focus:border-purple-500" value={data.fixed || ""} onChange={(e) => persist({ ...data, fixed: e.target.value })} placeholder="1girl, " />
+            <label className="text-[11px] text-neutral-500 shrink-0">固定前缀 fixed:</label>
+            <input
+              className="flex-1 min-w-[120px] bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-xs font-mono outline-none focus:border-purple-500"
+              value={data.fixed || ""}
+              onChange={(e) => persist({ ...data, fixed: e.target.value })}
+              placeholder="1girl, "
+            />
           </div>
         </div>
 
         {editMode && (
-          <p className="text-xs text-amber-400/90 px-1">编辑模式：可增删改分区与提示词；改完后请点「保存到当前预设」或「另存为新预设」。</p>
+          <p className="text-xs text-amber-400/90 px-1">
+            编辑模式：可直接改名称、提示词、上传预览图（自动压缩为 128×128 webp 并上传 CDN）。改完后请点「保存到当前预设」或「另存为新预设」。
+          </p>
         )}
 
         {data.sections.length === 0 ? (
-          <p className="text-center text-neutral-500 py-12 text-sm">暂无分区 · 请加载预设、Sync，或进入编辑模式添加</p>
+          <p className="text-center text-neutral-500 py-12 text-sm">暂无分区 · 请加载预设，或进入编辑模式添加</p>
         ) : (
           <div className="space-y-4">
             {data.sections.filter((section) => editMode || sectionEnabled[section.key] !== false).map((section) => (
@@ -569,38 +611,180 @@ export default function GeneratorPage() {
                     )}
                   </div>
                 </div>
-                <div className="p-3 flex flex-wrap gap-2">
-                  {section.items.map((item, idx) => {
-                    const active = selected[section.key] === idx;
-                    return (
-                      <div key={idx} className="relative group">
-                        <button
-                          type="button"
-                          title={item.tags || item.name}
-                          onClick={() => toggleItem(section.key, idx)}
-                          className={`px-2.5 py-1 text-xs rounded-lg border transition ${active && !editMode ? "border-purple-500 bg-purple-950/40 text-purple-200" : "border-neutral-700 text-neutral-300 hover:border-neutral-500"}`}
+
+                {editMode ? (
+                  <div className="p-3 space-y-2">
+                    {section.items.map((item, idx) => {
+                      const ukey = `${section.key}:${idx}`;
+                      const isUploading = uploadingKey === ukey;
+                      return (
+                        <div
+                          key={idx}
+                          className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center rounded-lg border border-neutral-800 bg-[#0c0c0c] p-2"
                         >
-                          {item.hex && <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: item.hex }} />}
-                          {item.name}
-                        </button>
-                        {(item.tags || item.name) && (
-                          <div className="pointer-events-none absolute left-0 bottom-full mb-1 z-30 hidden group-hover:block w-max max-w-[min(320px,70vw)] px-2.5 py-1.5 rounded-lg bg-neutral-950 border border-neutral-600 text-[11px] text-neutral-200 shadow-xl whitespace-pre-wrap break-words">
-                            {item.tags || item.name}
+                          {/* Preview thumbnail + upload */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="relative w-14 h-14 rounded-lg overflow-hidden border border-neutral-700 bg-neutral-900 shrink-0">
+                              {item.image ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={item.image}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[10px] text-neutral-600">
+                                  无图
+                                </div>
+                              )}
+                              {isUploading && (
+                                <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-[10px] text-white">
+                                  …
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                ref={(el) => {
+                                  fileInputRefs.current[ukey] = el;
+                                }}
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) void handlePreviewUpload(section.key, idx, f);
+                                  e.target.value = "";
+                                }}
+                              />
+                              <button
+                                type="button"
+                                disabled={!!uploadingKey}
+                                onClick={() => fileInputRefs.current[ukey]?.click()}
+                                className="text-[10px] px-2 py-0.5 rounded border border-sky-800/60 text-sky-300 hover:bg-sky-950/40 disabled:opacity-40"
+                              >
+                                {item.image ? "换图" : "上传"}
+                              </button>
+                              {item.image && (
+                                <button
+                                  type="button"
+                                  onClick={() => clearPreview(section.key, idx)}
+                                  className="text-[10px] px-2 py-0.5 rounded border border-neutral-700 text-neutral-500 hover:text-rose-400"
+                                >
+                                  清除
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        )}
-                        {editMode && (
-                          <div className="absolute -top-2 -right-1 flex gap-0.5 opacity-0 group-hover:opacity-100">
-                            <button type="button" onClick={() => openEditItem(section.key, idx, item)} className="w-5 h-5 text-[10px] rounded bg-neutral-800 border border-neutral-600 text-neutral-300">✎</button>
-                            <button type="button" onClick={() => deleteItem(section.key, idx)} className="w-5 h-5 text-[10px] rounded bg-neutral-800 border border-rose-800 text-rose-400">×</button>
+
+                          <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] text-neutral-600 block mb-0.5">名称</label>
+                              <input
+                                className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-purple-500 text-neutral-200"
+                                value={item.name}
+                                onChange={(e) =>
+                                  updateItemField(section.key, idx, {
+                                    name: e.target.value,
+                                  })
+                                }
+                                placeholder="blonde hair"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-neutral-600 block mb-0.5">提示词 tags</label>
+                              <input
+                                className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:border-purple-500 text-neutral-200"
+                                value={item.tags}
+                                onChange={(e) =>
+                                  updateItemField(section.key, idx, {
+                                    tags: e.target.value,
+                                  })
+                                }
+                                placeholder="blonde hair, "
+                              />
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {editMode && (
-                    <button type="button" onClick={() => openAddItem(section.key)} className="px-2.5 py-1 text-xs rounded-lg border border-dashed border-amber-700/60 text-amber-400/90">+ 词条</button>
-                  )}
-                </div>
+
+                          <div className="flex items-center gap-1 shrink-0 sm:self-end">
+                            {item.hex && (
+                              <span
+                                className="w-4 h-4 rounded-full border border-neutral-600"
+                                style={{ background: item.hex }}
+                                title={item.hex}
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => deleteItem(section.key, idx)}
+                              className="text-[11px] px-2 py-1 rounded border border-rose-900/50 text-rose-400 hover:bg-rose-950/30"
+                            >
+                              删除
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => addItemInline(section.key)}
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-dashed border-amber-700/60 text-amber-400/90 hover:bg-amber-950/20"
+                    >
+                      + 添加词条
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-3 flex flex-wrap gap-2">
+                    {section.items.map((item, idx) => {
+                      const active = selected[section.key] === idx;
+                      return (
+                        <div key={idx} className="relative group">
+                          <button
+                            type="button"
+                            title={item.tags || item.name}
+                            onClick={() => toggleItem(section.key, idx)}
+                            className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-lg border transition ${
+                              active
+                                ? "border-purple-500 bg-purple-950/40 text-purple-200"
+                                : "border-neutral-700 text-neutral-300 hover:border-neutral-500"
+                            }`}
+                          >
+                            {item.image ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={item.image}
+                                alt=""
+                                className="w-6 h-6 rounded object-cover shrink-0 border border-neutral-700"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : item.hex ? (
+                              <span
+                                className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                                style={{ background: item.hex }}
+                              />
+                            ) : null}
+                            <span className="truncate max-w-[140px]">{item.name}</span>
+                          </button>
+                          {(item.tags || item.name) && (
+                            <div className="pointer-events-none absolute left-0 bottom-full mb-1 z-30 hidden group-hover:block w-max max-w-[min(320px,70vw)] px-2.5 py-1.5 rounded-lg bg-neutral-950 border border-neutral-600 text-[11px] text-neutral-200 shadow-xl whitespace-pre-wrap break-words">
+                              {item.image && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={item.image}
+                                  alt=""
+                                  className="w-16 h-16 rounded object-cover mb-1.5 border border-neutral-700"
+                                  referrerPolicy="no-referrer"
+                                />
+                              )}
+                              {item.tags || item.name}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -608,8 +792,14 @@ export default function GeneratorPage() {
       </main>
       <Footer />
 
-      {itemEditor && <ItemEditorModal editor={itemEditor} onChange={setItemEditor} onClose={() => setItemEditor(null)} onSave={saveItemEditor} />}
-      {sectionEditor && <SectionEditorModal editor={sectionEditor} onChange={setSectionEditor} onClose={() => setSectionEditor(null)} onSave={saveSectionEditor} />}
+      {sectionEditor && (
+        <SectionEditorModal
+          editor={sectionEditor}
+          onChange={setSectionEditor}
+          onClose={() => setSectionEditor(null)}
+          onSave={saveSectionEditor}
+        />
+      )}
 
       {importOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">

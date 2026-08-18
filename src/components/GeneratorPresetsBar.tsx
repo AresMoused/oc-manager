@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
   BUILTIN_CATALOGS,
+  CSV_IMPORT_SAMPLE,
   StoredBuilderPreset,
   createPresetFromData,
   deleteBuilderPreset,
@@ -11,10 +12,9 @@ import {
   loadPresetFromFile,
   loadPresetFromUrl,
   mergeSectionIntoPreset,
-  parseNameColonTextList,
+  parseCsvNamePrompt,
   renameBuilderPreset,
   setActivePresetId,
-  TextListNameMode,
 } from "@/lib/promptBuilder";
 import type { BuilderData } from "@/lib/promptBuilder";
 
@@ -53,14 +53,13 @@ export default function GeneratorPresetsBar({
   const [newPresetUrl, setNewPresetUrl] = useState("");
   const [newPresetName, setNewPresetName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
-  const textFileRef = useRef<HTMLInputElement>(null);
+  const csvFileRef = useRef<HTMLInputElement>(null);
 
-  const [textImportOpen, setTextImportOpen] = useState(false);
-  const [textRaw, setTextRaw] = useState("");
-  const [textNameMode, setTextNameMode] = useState<TextListNameMode>("title");
-  const [textSectionLabel, setTextSectionLabel] = useState("导入分区");
-  const [textSectionKey, setTextSectionKey] = useState("imported");
-  const [textCatalogName, setTextCatalogName] = useState("");
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [csvRaw, setCsvRaw] = useState("");
+  const [csvSectionLabel, setCsvSectionLabel] = useState("导入分区");
+  const [csvSectionKey, setCsvSectionKey] = useState("imported");
+  const [csvCatalogName, setCsvCatalogName] = useState("");
   const [importTarget, setImportTarget] = useState<ImportTarget>("new");
   const [importPresetId, setImportPresetId] = useState("");
   const [mergeMode, setMergeMode] = useState<"append" | "replace">("append");
@@ -186,19 +185,29 @@ export default function GeneratorPresetsBar({
     toast(`已重命名为「${updated.name}」`);
   };
 
-  const openTextImport = () => {
+  const openCsvImport = () => {
     setImportPresetId(selectValue || presets[0]?.id || "");
     setImportTarget(presets.length ? "existing" : "new");
-    setTextImportOpen(true);
+    setCsvImportOpen(true);
   };
 
-  const runTextImport = () => {
+  const downloadSampleCsv = () => {
+    const blob = new Blob([CSV_IMPORT_SAMPLE], {
+      type: "text/csv;charset=utf-8",
+    });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "词库导入范例.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const runCsvImport = () => {
     try {
-      const data = parseNameColonTextList(textRaw, {
-        nameMode: textNameMode,
-        sectionLabel: textSectionLabel.trim() || "导入分区",
-        sectionKey: (textSectionKey.trim() || "imported").replace(/\s+/g, "_"),
-        catalogName: textCatalogName.trim() || "文本导入词库",
+      const data = parseCsvNamePrompt(csvRaw, {
+        sectionLabel: csvSectionLabel.trim() || "导入分区",
+        sectionKey: (csvSectionKey.trim() || "imported").replace(/\s+/g, "_"),
+        catalogName: csvCatalogName.trim() || "CSV 导入词库",
       });
       const section = data.sections[0];
       if (!section) throw new Error("无分区");
@@ -213,16 +222,16 @@ export default function GeneratorPresetsBar({
           replaceItems: mergeMode === "replace",
         });
         refresh(updated.data, updated.id);
-        setTextImportOpen(false);
-        setTextRaw("");
+        setCsvImportOpen(false);
+        setCsvRaw("");
         toast(
           `已${mergeMode === "replace" ? "覆盖" : "合并"} ${section.items.length} 条到「${updated.name}」`
         );
       } else {
-        const preset = createPresetFromData(data.name || "文本导入词库", data);
+        const preset = createPresetFromData(data.name || "CSV 导入词库", data);
         refresh(preset.data, preset.id);
-        setTextImportOpen(false);
-        setTextRaw("");
+        setCsvImportOpen(false);
+        setCsvRaw("");
         toast(`已新建预设并导入 ${section.items.length} 条 → ${preset.name}`);
       }
     } catch (e) {
@@ -317,16 +326,35 @@ export default function GeneratorPresetsBar({
           <div className="flex flex-wrap gap-2">
             <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAddFromFile(f); e.target.value = ""; }} />
             <button type="button" onClick={() => fileRef.current?.click()} className="px-3 py-1.5 text-xs rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800">从 JSON 文件导入</button>
-            <button type="button" onClick={openTextImport} className="px-3 py-1.5 text-xs rounded-lg border border-sky-800 text-sky-300 hover:bg-sky-950/40">从文本列表导入（Name: desc）</button>
+            <button type="button" onClick={openCsvImport} className="px-3 py-1.5 text-xs rounded-lg border border-sky-800 text-sky-300 hover:bg-sky-950/40">从 CSV 导入（名字,提示词）</button>
           </div>
         </div>
       )}
 
-      {textImportOpen && (
+      {csvImportOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-lg bg-[#111] border border-neutral-700 rounded-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold text-white">从文本列表导入词库</h2>
-            <p className="text-xs text-neutral-500">每行一条：<code className="text-neutral-400">名称: 描述</code>。会自动转成 JSON 词条。</p>
+            <h2 className="text-lg font-semibold text-white">从 CSV 导入词库</h2>
+            <p className="text-xs text-neutral-500">
+              每行两条：<code className="text-neutral-300">名字,提示词</code>
+              。第一行可以是表头。提示词含逗号时请用双引号包裹。
+            </p>
+
+            <div className="rounded-lg border border-neutral-800 bg-[#0c0c0c] p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-neutral-400">参考范例</span>
+                <button
+                  type="button"
+                  onClick={downloadSampleCsv}
+                  className="text-[11px] text-sky-400 hover:text-sky-300"
+                >
+                  下载范例 CSV
+                </button>
+              </div>
+              <pre className="text-[11px] font-mono text-neutral-400 whitespace-pre-wrap break-all leading-relaxed">
+                {CSV_IMPORT_SAMPLE}
+              </pre>
+            </div>
 
             <div>
               <label className="text-xs text-neutral-500 block mb-1">导入目标</label>
@@ -357,51 +385,56 @@ export default function GeneratorPresetsBar({
               </div>
             )}
 
-            <div>
-              <label className="text-xs text-neutral-500 block mb-1">条目显示名称</label>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setTextNameMode("title")} className={`flex-1 px-3 py-1.5 text-sm rounded-lg border ${textNameMode === "title" ? "border-purple-500 text-purple-200" : "border-neutral-700 text-neutral-400"}`}>使用文本标题</button>
-                <button type="button" onClick={() => setTextNameMode("id")} className={`flex-1 px-3 py-1.5 text-sm rounded-lg border ${textNameMode === "id" ? "border-purple-500 text-purple-200" : "border-neutral-700 text-neutral-400"}`}>使用 ID（item_001…）</button>
-              </div>
-            </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {importTarget === "new" && (
                 <div className="sm:col-span-2">
                   <label className="text-xs text-neutral-500 block mb-1">新预设名称</label>
-                  <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" value={textCatalogName} onChange={(e) => setTextCatalogName(e.target.value)} placeholder="例如：性感泳装" />
+                  <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" value={csvCatalogName} onChange={(e) => setCsvCatalogName(e.target.value)} placeholder="例如：性感泳装" />
                 </div>
               )}
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">分区名称</label>
-                <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" value={textSectionLabel} onChange={(e) => setTextSectionLabel(e.target.value)} placeholder="导入分区" />
+                <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" value={csvSectionLabel} onChange={(e) => setCsvSectionLabel(e.target.value)} placeholder="导入分区" />
               </div>
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">分区 key</label>
-                <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-purple-500" value={textSectionKey} onChange={(e) => setTextSectionKey(e.target.value)} placeholder="imported" />
+                <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-purple-500" value={csvSectionKey} onChange={(e) => setCsvSectionKey(e.target.value)} placeholder="imported" />
               </div>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-neutral-500">文本内容</label>
+                <label className="text-xs text-neutral-500">CSV 内容</label>
                 <div>
-                  <input ref={textFileRef} type="file" accept=".txt,text/plain" className="hidden" onChange={async (e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    setTextRaw(await f.text());
-                    if (!textCatalogName.trim()) setTextCatalogName(f.name.replace(/\.(txt|text)$/i, ""));
-                    e.target.value = "";
-                  }} />
-                  <button type="button" onClick={() => textFileRef.current?.click()} className="text-[11px] text-sky-400 hover:text-sky-300">从 .txt 文件载入</button>
+                  <input
+                    ref={csvFileRef}
+                    type="file"
+                    accept=".csv,text/csv,text/plain"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      setCsvRaw(await f.text());
+                      if (!csvCatalogName.trim()) {
+                        setCsvCatalogName(f.name.replace(/\.(csv|txt)$/i, ""));
+                      }
+                      e.target.value = "";
+                    }}
+                  />
+                  <button type="button" onClick={() => csvFileRef.current?.click()} className="text-[11px] text-sky-400 hover:text-sky-300">从 .csv 文件载入</button>
                 </div>
               </div>
-              <textarea className="w-full min-h-[160px] bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-purple-500 resize-y" value={textRaw} onChange={(e) => setTextRaw(e.target.value)} placeholder={"The Daring Monokini: A one-piece swimsuit...\nThe String Bikini: A barely-there bikini..."} />
+              <textarea
+                className="w-full min-h-[160px] bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-purple-500 resize-y"
+                value={csvRaw}
+                onChange={(e) => setCsvRaw(e.target.value)}
+                placeholder={'名字,提示词\nblonde hair,"blonde hair, long hair, "'}
+              />
             </div>
 
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setTextImportOpen(false)} className="px-4 py-2 text-sm text-neutral-400">取消</button>
-              <button type="button" onClick={runTextImport} disabled={!textRaw.trim()} className="px-4 py-2 text-sm rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white">转换并导入</button>
+              <button type="button" onClick={() => setCsvImportOpen(false)} className="px-4 py-2 text-sm text-neutral-400">取消</button>
+              <button type="button" onClick={runCsvImport} disabled={!csvRaw.trim()} className="px-4 py-2 text-sm rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white">导入</button>
             </div>
           </div>
         </div>
