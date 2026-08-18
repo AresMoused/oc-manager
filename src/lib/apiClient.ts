@@ -1,11 +1,13 @@
 import type { Character } from "./types";
 import type { WorldMeta } from "./worlds";
 import type { WorldCatalog } from "./worldCatalog";
+import type { LoreMap } from "./worldLore";
 
 export interface AppData {
   characters: Character[];
   worlds: WorldMeta[];
   catalog: WorldCatalog;
+  lore?: LoreMap;
   updatedAt: string;
 }
 
