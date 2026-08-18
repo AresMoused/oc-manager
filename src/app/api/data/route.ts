@@ -9,10 +9,11 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/** GET current user's dataset */
 export async function GET() {
   try {
     const session = await getSession();
-    if (!session) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
     const data = await readUserAppData(session.user.id);
@@ -26,10 +27,15 @@ export async function GET() {
   }
 }
 
+/**
+ * PUT body:
+ * { characters?, worlds?, catalog?, replace?: boolean }
+ * If replace=true, missing fields become empty; otherwise merge/patch provided keys.
+ */
 export async function PUT(req: NextRequest) {
   try {
     const session = await getSession();
-    if (!session) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
     const userId = session.user.id;
@@ -49,7 +55,7 @@ export async function PUT(req: NextRequest) {
     if ("worlds" in body) partial.worlds = body.worlds;
     if ("catalog" in body) partial.catalog = body.catalog;
     if ("lore" in body) partial.lore = body.lore;
-    const data = await patchUserAppData(userId, partial as never);
+    const data = await patchUserAppData(userId, partial);
     return NextResponse.json(data);
   } catch (e) {
     console.error(e);
