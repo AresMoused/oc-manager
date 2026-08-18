@@ -7,8 +7,8 @@ import path from "path";
 import type { Character } from "./types";
 import type { WorldMeta } from "./worlds";
 import type { WorldCatalog } from "./worldCatalog";
-import type { WorldLoreMap } from "./worldLore";
-import { normalizeLoreMap } from "./worldLore";
+import type { WorldLore, WorldLoreMap } from "./worldLore";
+import { getLore, normalizeLore, normalizeLoreMap } from "./worldLore";
 import type { AuthUser } from "./auth";
 import { avatarUrl } from "./auth";
 import {
@@ -32,7 +32,7 @@ export interface AppData {
   characters: Character[];
   worlds: WorldMeta[];
   catalog: WorldCatalog;
-  /** World lore keyed by world id */
+  /** World lore keyed by world name (or legacy world id) */
   lore: WorldLoreMap;
   updatedAt: string;
 }
@@ -176,7 +176,7 @@ export async function writeUserAppData(
     characters: data.characters || [],
     worlds: data.worlds || [],
     catalog: data.catalog || {},
-    lore: data.lore || {},
+    lore: normalizeLoreMap(data.lore),
     updatedAt: new Date().toISOString(),
   };
   await writeJsonStore(
@@ -411,6 +411,7 @@ export async function findShareByWorld(
 export async function readShareContent(share: WorldShare): Promise<{
   world: WorldMeta | null;
   characters: Character[];
+  lore: WorldLore;
 }> {
   const data = await readUserAppData(share.ownerId);
   const world =
@@ -421,13 +422,31 @@ export async function readShareContent(share: WorldShare): Promise<{
   const characters = data.characters.filter(
     (c) => c.world?.trim() === worldName
   );
-  return { world, characters };
+  const loreMap = data.lore || {};
+  let lore = getLore(loreMap, worldName);
+  const empty =
+    !lore.locations.length &&
+    !lore.factions.length &&
+    !lore.rules.length &&
+    !lore.artifacts.length &&
+    !lore.history.length &&
+    !lore.races.length;
+  if (empty && world?.id) lore = getLore(loreMap, world.id);
+  if (
+    empty &&
+    share.worldId &&
+    share.worldId !== world?.id &&
+    share.worldId !== worldName
+  ) {
+    lore = getLore(loreMap, share.worldId);
+  }
+  return { world, characters, lore };
 }
 
 export async function writeShareCharacters(
   share: WorldShare,
   characters: Character[]
-): Promise<{ world: WorldMeta | null; characters: Character[] }> {
+): Promise<{ world: WorldMeta | null; characters: Character[]; lore: WorldLore }> {
   const data = await readUserAppData(share.ownerId);
   const world =
     data.worlds.find((w) => w.id === share.worldId) ||
@@ -442,5 +461,64 @@ export async function writeShareCharacters(
     ...data,
     characters: [...others, ...normalized],
   });
-  return { world: world || null, characters: normalized };
+  return readShareContent(share);
+}
+
+export async function writeShareLore(
+  share: WorldShare,
+  lore: unknown
+): Promise<{ world: WorldMeta | null; characters: Character[]; lore: WorldLore }> {
+  const data = await readUserAppData(share.ownerId);
+  const world =
+    data.worlds.find((w) => w.id === share.worldId) ||
+    data.worlds.find((w) => w.name === share.worldName);
+  const worldName = (world?.name || share.worldName || "").trim();
+  if (!worldName) throw new Error("world name missing");
+  const nextLore = normalizeLore(lore);
+  const loreMap = { ...(data.lore || {}) };
+  loreMap[worldName] = nextLore;
+  if (world?.id && world.id !== worldName && loreMap[world.id]) {
+    delete loreMap[world.id];
+  }
+  await writeUserAppData(share.ownerId, {
+    ...data,
+    lore: loreMap,
+  });
+  const characters = data.characters.filter(
+    (c) => c.world?.trim() === worldName
+  );
+  return { world: world || null, characters, lore: nextLore };
+}
+
+export async function writeShareContent(
+  share: WorldShare,
+  patch: { characters?: Character[]; lore?: unknown }
+): Promise<{ world: WorldMeta | null; characters: Character[]; lore: WorldLore }> {
+  if ("lore" in patch && !("characters" in patch)) {
+    return writeShareLore(share, patch.lore);
+  }
+  if ("characters" in patch && !("lore" in patch)) {
+    return writeShareCharacters(share, patch.characters || []);
+  }
+  const data = await readUserAppData(share.ownerId);
+  const world =
+    data.worlds.find((w) => w.id === share.worldId) ||
+    data.worlds.find((w) => w.name === share.worldName);
+  const worldName = (world?.name || share.worldName || "").trim();
+  if ("characters" in patch && Array.isArray(patch.characters)) {
+    const others = data.characters.filter((c) => c.world?.trim() !== worldName);
+    const characters = patch.characters.map((c) => ({
+      ...c,
+      world: worldName,
+    }));
+    data.characters = [...others, ...characters];
+  }
+  if ("lore" in patch) {
+    const nextLore = normalizeLore(patch.lore);
+    const loreMap = { ...(data.lore || {}) };
+    if (worldName) loreMap[worldName] = nextLore;
+    data.lore = loreMap;
+  }
+  await writeUserAppData(share.ownerId, data);
+  return readShareContent(share);
 }
