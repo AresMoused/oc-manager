@@ -6,6 +6,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import CharacterCard from "@/components/CharacterCard";
 import ShareWorldModal from "@/components/ShareWorldModal";
+import WorldLorePanel from "@/components/WorldLorePanel";
 import { useWorlds } from "@/hooks/useWorlds";
 import { useCharacters } from "@/hooks/useCharacters";
 import {
@@ -14,6 +15,9 @@ import {
   downloadExport,
   createId,
 } from "@/lib/storage";
+import { useAppData } from "@/context/AppDataContext";
+import { getLore } from "@/lib/worldLore";
+import type { LoreHistoryEvent } from "@/lib/worldLore";
 
 export default function WorldPage({
   params,
@@ -29,6 +33,7 @@ export default function WorldPage({
     deleteCharacter,
     replaceAll,
   } = useCharacters();
+  const { lore, setLore } = useAppData();
   const fileRef = useRef<HTMLInputElement>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -154,6 +159,8 @@ export default function WorldPage({
     );
   }
 
+  const worldLore = getLore(lore || {}, world.name);
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar worldColor={world.color} />
@@ -255,6 +262,27 @@ export default function WorldPage({
             ))}
           </div>
         )}
+
+        {/* World lore panels */}
+        <div className="mt-10" id="world-lore">
+          <WorldLorePanel
+            worldName={world.name}
+            lore={worldLore}
+            editable
+            characterNames={worldChars.map((c) => c.name).filter(Boolean)}
+            onChange={(next) => {
+              setLore((prev) => ({
+                ...prev,
+                [world.name]: next,
+              }));
+            }}
+            onSyncHistoryToTimelines={
+              (_events: LoreHistoryEvent[], _previous: LoreHistoryEvent[]) => {
+                /* history → character timeline sync can be extended later */
+              }
+            }
+          />
+        </div>
       </main>
       <Footer />
 
