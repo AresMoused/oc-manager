@@ -540,7 +540,7 @@ export default function GeneratorPage() {
           }}
         />
 
-        <div className="bg-[#111] border border-neutral-800 rounded-xl overflow-hidden">
+        <div className="bg-[#111] border border-neutral-800 rounded-xl overflow-visible">
           <button type="button" onClick={() => setSectionPanelOpen((v) => !v)} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-900/60 transition">
             <div>
               <div className="text-sm font-semibold text-neutral-200">分区开关</div>
@@ -591,7 +591,7 @@ export default function GeneratorPage() {
         ) : (
           <div className="space-y-4">
             {data.sections.filter((section) => editMode || sectionEnabled[section.key] !== false).map((section) => (
-              <div key={section.key} className="bg-[#111] border border-neutral-800 rounded-xl overflow-hidden">
+              <div key={section.key} className="bg-[#111] border border-neutral-800 rounded-xl overflow-visible">
                 <div className="px-4 py-2 border-b border-neutral-800 flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <h3 className="text-sm font-medium text-white truncate">{section.icon ? `${section.icon} ` : ""}{section.label}</h3>
@@ -737,7 +737,7 @@ export default function GeneratorPage() {
                     {section.items.map((item, idx) => {
                       const active = selected[section.key] === idx;
                       return (
-                        <div key={idx} className="relative group">
+                        <div key={idx} className="relative group z-0 hover:z-[9999]">
                           <button
                             type="button"
                             title={item.tags || item.name}
@@ -765,7 +765,7 @@ export default function GeneratorPage() {
                             <span className="truncate max-w-[140px]">{item.name}</span>
                           </button>
                           {(item.tags || item.name) && (
-                            <div className="pointer-events-none absolute left-0 bottom-full mb-1 z-30 hidden group-hover:block w-max max-w-[min(320px,70vw)] px-2.5 py-1.5 rounded-lg bg-neutral-950 border border-neutral-600 text-[11px] text-neutral-200 shadow-xl whitespace-pre-wrap break-words">
+                            <div className="pointer-events-none absolute left-0 bottom-full mb-1 z-[9999] hidden group-hover:block w-max max-w-[min(320px,70vw)] px-2.5 py-1.5 rounded-lg bg-neutral-950 border border-neutral-600 text-[11px] text-neutral-200 shadow-xl whitespace-pre-wrap break-words">
                               {item.image && (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
