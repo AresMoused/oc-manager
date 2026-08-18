@@ -407,11 +407,18 @@ export function pickRandomSelected(
   return sel;
 }
 
-/** Sample CSV for import (name, prompt) */
+/** Sample CSV for import (name, prompt) — UTF-8; download adds BOM for Excel */
 export const CSV_IMPORT_SAMPLE = `名字,提示词
-blonde hair,"blonde hair, long hair, "
-red eyes,"red eyes, glowing eyes, "
-black jacket,"black jacket, leather jacket, "`;
+金发,"blonde hair, long hair, "
+红眼,"red eyes, glowing eyes, "
+黑色夹克,"black jacket, leather jacket, "
+blonde hair,"blonde hair, long hair, "`;
+
+/** Strip UTF-8 BOM if present */
+export function stripBom(text: string): string {
+  if (text.charCodeAt(0) === 0xfeff) return text.slice(1);
+  return text;
+}
 
 /** Parse a single CSV line respecting double-quoted fields */
 function parseCsvLine(line: string): string[] {
@@ -458,7 +465,7 @@ export function parseCsvNamePrompt(
     fixed?: string;
   }
 ): BuilderData {
-  const lines = text
+  const lines = stripBom(text)
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0 && !l.startsWith("#"));
@@ -527,7 +534,7 @@ export function parseNameColonTextList(
   }
 ): BuilderData {
   const nameMode = opts?.nameMode || "title";
-  const lines = text
+  const lines = stripBom(text)
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0 && !l.startsWith("#"));
