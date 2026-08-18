@@ -11,36 +11,41 @@ interface Props {
   size?: number;
 }
 
-async function compressImage(
-  file: File,
-  maxSize = 400,
-  quality = 0.7
-): Promise<string> {
+/** Cover-crop to 896×1152 webp for character card avatars (CDN) */
+async function compressAvatarToWebp(file: File): Promise<File> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(url);
-      let { width, height } = img;
-      if (width > maxSize || height > maxSize) {
-        if (width > height) {
-          height = Math.round((height * maxSize) / width);
-          width = maxSize;
-        } else {
-          width = Math.round((width * maxSize) / height);
-          height = maxSize;
-        }
-      }
+      const targetW = 896;
+      const targetH = 1152;
       const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
+      canvas.width = targetW;
+      canvas.height = targetH;
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         reject(new Error("Canvas not supported"));
         return;
       }
-      ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL("image/jpeg", quality));
+      // Cover crop centered
+      const scale = Math.max(targetW / img.width, targetH / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      const x = (targetW - w) / 2;
+      const y = (targetH - h) / 2;
+      ctx.drawImage(img, x, y, w, h);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("WebP encode failed"));
+            return;
+          }
+          resolve(new File([blob], "avatar.webp", { type: "image/webp" }));
+        },
+        "image/webp",
+        0.85
+      );
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -68,13 +73,19 @@ export default function AvatarUpload({
     if (!file || !onChange) return;
     setCompressing(true);
     try {
+      const webp = await compressAvatarToWebp(file);
       try {
-        const url = await uploadImage(file);
+        const url = await uploadImage(webp);
         onChange(url);
       } catch (uploadErr) {
         console.warn("Server upload failed, fallback to data URL", uploadErr);
-        const compressed = await compressImage(file, 400, 0.7);
-        onChange(compressed);
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("read failed"));
+          reader.readAsDataURL(webp);
+        });
+        onChange(dataUrl);
       }
     } catch (err) {
       console.error(err);
@@ -87,19 +98,17 @@ export default function AvatarUpload({
 
   const applyUrl = () => {
     if (!onChange) return;
-    const trimmed = urlValue.trim();
-    if (trimmed) {
-      onChange(trimmed);
-      setShowUrlInput(false);
-      setUrlValue("");
-    }
+    const v = urlValue.trim();
+    if (v) onChange(v);
+    setUrlValue("");
+    setShowUrlInput(false);
   };
 
   return (
     <div className="flex flex-col items-center gap-2">
       <div
-        className="relative group rounded-lg overflow-hidden bg-[#1a1a1a] border border-neutral-800"
-        style={{ width, height, aspectRatio: "3 / 4" }}
+        className="relative rounded-lg overflow-hidden border border-neutral-700 bg-neutral-900 shrink-0"
+        style={{ width, height }}
       >
         {src ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -108,30 +117,29 @@ export default function AvatarUpload({
             alt={name}
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
           />
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center text-neutral-500">
+          <div className="w-full h-full flex flex-col items-center justify-center text-neutral-600">
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              width="48"
-              height="48"
-              viewBox="0 0 24 24"
+              className="w-10 h-10"
               fill="none"
+              viewBox="0 0 24 24"
               stroke="currentColor"
-              strokeWidth="1.5"
             >
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+              />
             </svg>
             <span className="text-xs mt-2">No avatar</span>
           </div>
         )}
         {compressing && (
           <div className="absolute inset-0 bg-black/70 flex items-center justify-center text-white text-xs">
-            Uploading…
+            Compressing…
           </div>
         )}
       </div>
@@ -187,7 +195,7 @@ export default function AvatarUpload({
             </div>
           )}
           <p className="text-[10px] text-neutral-500 text-center leading-tight">
-            Local files upload to server (/uploads). Or paste Discord/Imgur URL.
+            本地文件会压缩为 896×1152 webp 并上传 CDN。也可粘贴 Discord/Imgur 链接。
           </p>
         </div>
       )}
