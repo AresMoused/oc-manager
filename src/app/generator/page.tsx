@@ -771,7 +771,7 @@ export default function GeneratorPage() {
                                 <img
                                   src={item.image}
                                   alt=""
-                                  className="w-16 h-16 rounded object-cover mb-1.5 border border-neutral-700"
+                                  className="w-64 h-64 rounded object-cover mb-1.5 border border-neutral-700"
                                   referrerPolicy="no-referrer"
                                 />
                               )}
