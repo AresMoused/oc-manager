@@ -12,6 +12,8 @@ import {
 import type { Character } from "@/lib/types";
 import type { WorldMeta } from "@/lib/worlds";
 import type { WorldCatalog } from "@/lib/worldCatalog";
+import type { WorldLoreMap } from "@/lib/worldLore";
+import { normalizeLoreMap } from "@/lib/worldLore";
 import { fetchAppData } from "@/lib/apiClient";
 import { normalizeCharacterList } from "@/lib/storage";
 
@@ -19,6 +21,7 @@ interface AppDataState {
   characters: Character[];
   worlds: WorldMeta[];
   catalog: WorldCatalog;
+  lore: WorldLoreMap;
   loaded: boolean;
   syncError: string | null;
   setCharacters: (
@@ -28,10 +31,12 @@ interface AppDataState {
   setCatalog: (
     next: WorldCatalog | ((prev: WorldCatalog) => WorldCatalog)
   ) => void;
+  setLore: (next: WorldLoreMap | ((prev: WorldLoreMap) => WorldLoreMap)) => void;
   flush: (patch?: {
     characters?: Character[];
     worlds?: WorldMeta[];
     catalog?: WorldCatalog;
+    lore?: WorldLoreMap;
   }) => Promise<void>;
   reload: () => Promise<void>;
 }
@@ -42,12 +47,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [characters, setCharactersState] = useState<Character[]>([]);
   const [worlds, setWorldsState] = useState<WorldMeta[]>([]);
   const [catalog, setCatalogState] = useState<WorldCatalog>({});
+  const [lore, setLoreState] = useState<WorldLoreMap>({});
   const [loaded, setLoaded] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const charsRef = useRef<Character[]>([]);
   const worldsRef = useRef<WorldMeta[]>([]);
   const catalogRef = useRef<WorldCatalog>({});
+  const loreRef = useRef<WorldLoreMap>({});
   const skipSave = useRef(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -60,6 +67,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     catalogRef.current = catalog;
   }, [catalog]);
+  useEffect(() => {
+    loreRef.current = lore;
+  }, [lore]);
 
   const reload = useCallback(async () => {
     try {
@@ -68,9 +78,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       charsRef.current = list;
       worldsRef.current = data.worlds || [];
       catalogRef.current = data.catalog || {};
+      loreRef.current = normalizeLoreMap(
+        (data as { lore?: unknown }).lore
+      );
       setCharactersState(list);
       setWorldsState(data.worlds || []);
       setCatalogState(data.catalog || {});
+      setLoreState(loreRef.current);
       setSyncError(null);
       skipSave.current = true;
     } catch (e) {
@@ -89,8 +103,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       characters?: Character[];
       worlds?: WorldMeta[];
       catalog?: WorldCatalog;
+      lore?: WorldLoreMap;
     }) => {
-      // When patch provides a field (including empty array), use it intentionally.
       const body = {
         characters:
           patch && "characters" in patch
@@ -102,6 +116,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           patch && "catalog" in patch
             ? patch.catalog ?? {}
             : catalogRef.current,
+        lore: patch && "lore" in patch ? patch.lore ?? {} : loreRef.current,
       };
 
       try {
@@ -125,8 +140,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           catalogRef.current = data.catalog;
           setCatalogState(data.catalog);
         }
+        if (data.lore && typeof data.lore === "object") {
+          loreRef.current = normalizeLoreMap(data.lore);
+          setLoreState(loreRef.current);
+        }
         setSyncError(null);
-        skipSave.current = true;
       } catch (e) {
         setSyncError(e instanceof Error ? e.message : "保存失败");
         throw e;
@@ -148,7 +166,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [characters, worlds, catalog, loaded, persist]);
+  }, [characters, worlds, catalog, lore, loaded, persist]);
 
   const setCharacters = useCallback(
     (next: Character[] | ((prev: Character[]) => Character[])) => {
@@ -183,11 +201,23 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const setLore = useCallback(
+    (next: WorldLoreMap | ((prev: WorldLoreMap) => WorldLoreMap)) => {
+      setLoreState((prev) => {
+        const value = typeof next === "function" ? next(prev) : next;
+        loreRef.current = value;
+        return value;
+      });
+    },
+    []
+  );
+
   const flush = useCallback(
     async (patch?: {
       characters?: Character[];
       worlds?: WorldMeta[];
       catalog?: WorldCatalog;
+      lore?: WorldLoreMap;
     }) => {
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
@@ -208,6 +238,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         catalogRef.current = cat;
         setCatalogState(cat);
       }
+      if (patch && "lore" in patch) {
+        const l = patch.lore ?? {};
+        loreRef.current = l;
+        setLoreState(l);
+      }
       await persist(patch);
     },
     [persist]
@@ -219,11 +254,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         characters,
         worlds,
         catalog,
+        lore,
         loaded,
         syncError,
         setCharacters,
         setWorlds,
         setCatalog,
+        setLore,
         flush,
         reload,
       }}
