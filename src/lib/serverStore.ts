@@ -7,6 +7,8 @@ import path from "path";
 import type { Character } from "./types";
 import type { WorldMeta } from "./worlds";
 import type { WorldCatalog } from "./worldCatalog";
+import type { WorldLoreMap } from "./worldLore";
+import { normalizeLoreMap } from "./worldLore";
 import type { AuthUser } from "./auth";
 import { avatarUrl } from "./auth";
 import {
@@ -30,6 +32,8 @@ export interface AppData {
   characters: Character[];
   worlds: WorldMeta[];
   catalog: WorldCatalog;
+  /** World lore keyed by world id */
+  lore: WorldLoreMap;
   updatedAt: string;
 }
 
@@ -63,6 +67,7 @@ const DEFAULT: AppData = {
   characters: [],
   worlds: [],
   catalog: {},
+  lore: {},
   updatedAt: new Date(0).toISOString(),
 };
 
@@ -74,6 +79,7 @@ function normalizeAppData(parsed: Partial<AppData> | null | undefined): AppData 
       parsed?.catalog && typeof parsed.catalog === "object"
         ? parsed.catalog
         : {},
+    lore: normalizeLoreMap(parsed?.lore),
     updatedAt: parsed?.updatedAt || new Date().toISOString(),
   };
 }
@@ -170,6 +176,7 @@ export async function writeUserAppData(
     characters: data.characters || [],
     worlds: data.worlds || [],
     catalog: data.catalog || {},
+    lore: data.lore || {},
     updatedAt: new Date().toISOString(),
   };
   await writeJsonStore(
@@ -182,7 +189,7 @@ export async function writeUserAppData(
 
 export async function patchUserAppData(
   userId: string,
-  partial: Partial<Pick<AppData, "characters" | "worlds" | "catalog">>
+  partial: Partial<Pick<AppData, "characters" | "worlds" | "catalog" | "lore">>
 ): Promise<AppData> {
   const current = await readUserAppData(userId);
   return writeUserAppData(userId, {
@@ -200,6 +207,10 @@ export async function patchUserAppData(
       typeof partial.catalog === "object"
         ? partial.catalog
         : current.catalog,
+    lore:
+      "lore" in partial && partial.lore && typeof partial.lore === "object"
+        ? partial.lore
+        : current.lore || {},
     updatedAt: new Date().toISOString(),
   });
 }
@@ -215,7 +226,7 @@ export async function writeAppData(data: AppData): Promise<AppData> {
 }
 
 export async function patchAppData(
-  partial: Partial<Pick<AppData, "characters" | "worlds" | "catalog">>
+  partial: Partial<Pick<AppData, "characters" | "worlds" | "catalog" | "lore">>
 ): Promise<AppData> {
   const current = await readAppData();
   return writeAppData({
@@ -233,6 +244,10 @@ export async function patchAppData(
       typeof partial.catalog === "object"
         ? partial.catalog
         : current.catalog,
+    lore:
+      "lore" in partial && partial.lore && typeof partial.lore === "object"
+        ? partial.lore
+        : current.lore || {},
     updatedAt: new Date().toISOString(),
   });
 }
