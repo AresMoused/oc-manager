@@ -7,16 +7,19 @@ interface Props {
   character: Character;
   onDelete?: (id: string) => void;
   accentColor?: string;
+  /** Override default /character/:id link (e.g. shared world paths) */
+  href?: string;
 }
 
 export default function CharacterCard({
   character: c,
   onDelete,
   accentColor,
+  href,
 }: Props) {
   return (
     <Link
-      href={`/character/${c.id}`}
+      href={href || `/character/${c.id}`}
       className="group block bg-[#111] border border-neutral-800 rounded-xl overflow-hidden transition-all hover:shadow-lg"
       onMouseEnter={(e) => {
         if (accentColor) e.currentTarget.style.borderColor = accentColor;

@@ -4,7 +4,7 @@ import {
   canEditShare,
   getShare,
   readShareContent,
-  writeShareCharacters,
+  writeShareContent,
 } from "@/lib/serverStore";
 
 export const runtime = "nodejs";
@@ -51,8 +51,22 @@ export async function PUT(
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const body = await req.json();
-  const characters = Array.isArray(body.characters) ? body.characters : [];
-  const content = await writeShareCharacters(share, characters);
+  const hasChars = "characters" in body;
+  const hasLore = "lore" in body;
+  if (!hasChars && !hasLore) {
+    return NextResponse.json(
+      { error: "characters or lore required" },
+      { status: 400 }
+    );
+  }
+  const content = await writeShareContent(share, {
+    ...(hasChars
+      ? {
+          characters: Array.isArray(body.characters) ? body.characters : [],
+        }
+      : {}),
+    ...(hasLore ? { lore: body.lore } : {}),
+  });
   return NextResponse.json({
     share: {
       ...share,
