@@ -57,6 +57,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const loreRef = useRef<WorldLoreMap>({});
   const skipSave = useRef(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Serialize network saves so an older in-flight PUT cannot finish after a newer one. */
+  const saveChain = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     charsRef.current = characters;
@@ -105,46 +107,49 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       catalog?: WorldCatalog;
       lore?: WorldLoreMap;
     }) => {
-      const body = {
-        characters:
-          patch && "characters" in patch
-            ? patch.characters ?? []
-            : charsRef.current,
-        worlds:
-          patch && "worlds" in patch ? patch.worlds ?? [] : worldsRef.current,
-        catalog:
-          patch && "catalog" in patch
-            ? patch.catalog ?? {}
-            : catalogRef.current,
-        lore: patch && "lore" in patch ? patch.lore ?? {} : loreRef.current,
-      };
+      // Queue behind previous saves. Always read the latest refs at execution
+      // time so a deferred older task still writes the newest local snapshot.
+      const run = async () => {
+        const body = {
+          characters:
+            patch && "characters" in patch
+              ? patch.characters ?? []
+              : charsRef.current,
+          worlds:
+            patch && "worlds" in patch
+              ? patch.worlds ?? []
+              : worldsRef.current,
+          catalog:
+            patch && "catalog" in patch
+              ? patch.catalog ?? {}
+              : catalogRef.current,
+          // Prefer live ref when no explicit lore patch — avoids stale empty lore
+          // from a concurrent character-only save overwriting a newer lore edit.
+          lore:
+            patch && "lore" in patch ? patch.lore ?? {} : loreRef.current,
+        };
 
-      try {
         const res = await fetch("/api/data", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error(`Save failed: ${res.status}`);
-        const data = await res.json();
-        if (Array.isArray(data.characters)) {
-          const list = normalizeCharacterList(data.characters);
-          charsRef.current = list;
-          setCharactersState(list);
-        }
-        if (Array.isArray(data.worlds)) {
-          worldsRef.current = data.worlds;
-          setWorldsState(data.worlds);
-        }
-        if (data.catalog && typeof data.catalog === "object") {
-          catalogRef.current = data.catalog;
-          setCatalogState(data.catalog);
-        }
-        if (data.lore && typeof data.lore === "object") {
-          loreRef.current = normalizeLoreMap(data.lore);
-          setLoreState(loreRef.current);
-        }
+        // Intentionally do NOT apply the response back into React state.
+        // Re-hydrating from the server after every debounced save caused the
+        // "add lore entry → UI appears → vanishes → reappears" flicker when an
+        // older in-flight PUT finished after a newer local edit.
+        // Local optimistic state is the source of truth until explicit reload().
+        await res.json().catch(() => null);
         setSyncError(null);
+        skipSave.current = true;
+      };
+
+      const next = saveChain.current.then(run, run);
+      // Keep chain alive even if one save fails
+      saveChain.current = next.catch(() => {});
+      try {
+        await next;
       } catch (e) {
         setSyncError(e instanceof Error ? e.message : "保存失败");
         throw e;
