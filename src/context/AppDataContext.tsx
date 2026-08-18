@@ -12,7 +12,7 @@ import {
 import type { Character } from "@/lib/types";
 import type { WorldMeta } from "@/lib/worlds";
 import type { WorldCatalog } from "@/lib/worldCatalog";
-import type { WorldLoreMap } from "@/lib/worldLore";
+import type { LoreMap } from "@/lib/worldLore";
 import { normalizeLoreMap } from "@/lib/worldLore";
 import { fetchAppData } from "@/lib/apiClient";
 import { normalizeCharacterList } from "@/lib/storage";
@@ -21,7 +21,7 @@ interface AppDataState {
   characters: Character[];
   worlds: WorldMeta[];
   catalog: WorldCatalog;
-  lore: WorldLoreMap;
+  lore: LoreMap;
   loaded: boolean;
   syncError: string | null;
   setCharacters: (
@@ -31,12 +31,13 @@ interface AppDataState {
   setCatalog: (
     next: WorldCatalog | ((prev: WorldCatalog) => WorldCatalog)
   ) => void;
-  setLore: (next: WorldLoreMap | ((prev: WorldLoreMap) => WorldLoreMap)) => void;
+  setLore: (next: LoreMap | ((prev: LoreMap) => LoreMap)) => void;
+  /** Immediate save of current snapshot (create/delete) */
   flush: (patch?: {
     characters?: Character[];
     worlds?: WorldMeta[];
     catalog?: WorldCatalog;
-    lore?: WorldLoreMap;
+    lore?: LoreMap;
   }) => Promise<void>;
   reload: () => Promise<void>;
 }
@@ -47,18 +48,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [characters, setCharactersState] = useState<Character[]>([]);
   const [worlds, setWorldsState] = useState<WorldMeta[]>([]);
   const [catalog, setCatalogState] = useState<WorldCatalog>({});
-  const [lore, setLoreState] = useState<WorldLoreMap>({});
+  const [lore, setLoreState] = useState<LoreMap>({});
   const [loaded, setLoaded] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const charsRef = useRef<Character[]>([]);
   const worldsRef = useRef<WorldMeta[]>([]);
   const catalogRef = useRef<WorldCatalog>({});
-  const loreRef = useRef<WorldLoreMap>({});
-  /** Only skip the auto-save that would fire right after initial load / reload. */
+  const loreRef = useRef<LoreMap>({});
   const skipSave = useRef(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Serialize network saves so older in-flight PUTs cannot finish out of order. */
+  /** Serialize concurrent persists so older responses cannot overwrite newer local state */
   const saveChain = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
@@ -81,13 +81,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       charsRef.current = list;
       worldsRef.current = data.worlds || [];
       catalogRef.current = data.catalog || {};
-      loreRef.current = normalizeLoreMap(
-        (data as { lore?: unknown }).lore
-      );
+      const loreNorm = normalizeLoreMap(data.lore);
+      loreRef.current = loreNorm;
       setCharactersState(list);
       setWorldsState(data.worlds || []);
       setCatalogState(data.catalog || {});
-      setLoreState(loreRef.current);
+      setLoreState(loreNorm);
       setSyncError(null);
       skipSave.current = true;
     } catch (e) {
@@ -106,20 +105,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       characters?: Character[];
       worlds?: WorldMeta[];
       catalog?: WorldCatalog;
-      lore?: WorldLoreMap;
+      lore?: LoreMap;
     }) => {
-      // Queue behind previous saves. Read latest refs at execution time so a
-      // deferred task still writes the newest local snapshot (including lore).
       const run = async () => {
+        // Always read latest refs at the moment this slot in the chain runs
         const body = {
           characters:
             patch && "characters" in patch
               ? patch.characters ?? []
               : charsRef.current,
           worlds:
-            patch && "worlds" in patch
-              ? patch.worlds ?? []
-              : worldsRef.current,
+            patch && "worlds" in patch ? patch.worlds ?? [] : worldsRef.current,
           catalog:
             patch && "catalog" in patch
               ? patch.catalog ?? {}
@@ -128,32 +124,38 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             patch && "lore" in patch ? patch.lore ?? {} : loreRef.current,
         };
 
-        const res = await fetch("/api/data", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) throw new Error(`Save failed: ${res.status}`);
-        // Do NOT re-hydrate React state from the response.
-        // Applying the server payload after every debounced save caused:
-        // "add lore entry → appears → vanishes → reappears" when an older
-        // in-flight PUT completed after a newer local edit.
-        await res.json().catch(() => null);
-        setSyncError(null);
+        try {
+          const res = await fetch("/api/data", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+          // Intentionally do NOT re-hydrate state from the response.
+          // Re-applying server JSON was the main cause of UI flicker:
+          // optimistic local update → older in-flight save returns → state
+          // snaps back → later save restores it ("appear → vanish → reappear").
+          // Local refs already hold the truth we just sent.
+          await res.json().catch(() => null);
+          setSyncError(null);
+        } catch (e) {
+          setSyncError(e instanceof Error ? e.message : "保存失败");
+          throw e;
+        }
       };
 
+      // Queue behind any in-flight save; keep the chain unbroken on errors
       const next = saveChain.current.then(run, run);
-      saveChain.current = next.catch(() => {});
-      try {
-        await next;
-      } catch (e) {
-        setSyncError(e instanceof Error ? e.message : "保存失败");
-        throw e;
-      }
+      saveChain.current = next.then(
+        () => undefined,
+        () => undefined
+      );
+      await next;
     },
     []
   );
 
+  // Debounced auto-save when any slice changes
   useEffect(() => {
     if (!loaded) return;
     if (skipSave.current) {
@@ -203,7 +205,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   );
 
   const setLore = useCallback(
-    (next: WorldLoreMap | ((prev: WorldLoreMap) => WorldLoreMap)) => {
+    (next: LoreMap | ((prev: LoreMap) => LoreMap)) => {
       setLoreState((prev) => {
         const value = typeof next === "function" ? next(prev) : next;
         loreRef.current = value;
@@ -218,7 +220,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       characters?: Character[];
       worlds?: WorldMeta[];
       catalog?: WorldCatalog;
-      lore?: WorldLoreMap;
+      lore?: LoreMap;
     }) => {
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
