@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 
 interface Props {
   label: string;
@@ -10,6 +11,8 @@ interface Props {
   onCreateOption?: (value: string) => void;
   placeholder?: string;
   editable?: boolean;
+  /** When not editable, show as link if href provided */
+  linkHref?: string | null;
 }
 
 /**
@@ -23,6 +26,7 @@ export default function OptionSelect({
   onCreateOption,
   placeholder = "",
   editable = true,
+  linkHref,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(value);
@@ -47,7 +51,16 @@ export default function OptionSelect({
     return (
       <div className="flex gap-2 items-center">
         <span className="w-14 text-neutral-500 shrink-0">{label}:</span>
-        <span className="text-neutral-200">{value || "—"}</span>
+        {value && linkHref ? (
+          <Link
+            href={linkHref}
+            className="text-purple-300 hover:text-purple-200 hover:underline"
+          >
+            {value}
+          </Link>
+        ) : (
+          <span className="text-neutral-200">{value || "—"}</span>
+        )}
       </div>
     );
   }
@@ -93,20 +106,22 @@ export default function OptionSelect({
             }
           }}
           onBlur={() => {
-            setTimeout(() => {
-              if (query !== value) commit(query);
-            }, 150);
+            if (query.trim() !== value) {
+              setTimeout(() => {
+                if (!ref.current?.contains(document.activeElement)) {
+                  // keep query
+                }
+              }, 150);
+            }
           }}
         />
         {open && (filtered.length > 0 || canCreate) && (
-          <div className="absolute z-20 left-0 right-0 top-full mt-1 max-h-40 overflow-y-auto bg-[#1a1a1a] border border-neutral-700 rounded-md shadow-xl">
+          <div className="absolute z-30 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto rounded-lg border border-neutral-700 bg-[#111] shadow-xl">
             {filtered.map((o) => (
               <button
                 key={o}
                 type="button"
-                className={`w-full text-left px-2 py-1.5 text-sm hover:bg-purple-900/40 ${
-                  o === value ? "text-purple-300" : "text-neutral-300"
-                }`}
+                className="w-full text-left px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-800"
                 onMouseDown={(e) => {
                   e.preventDefault();
                   commit(o);
@@ -118,13 +133,13 @@ export default function OptionSelect({
             {canCreate && (
               <button
                 type="button"
-                className="w-full text-left px-2 py-1.5 text-sm text-emerald-400 hover:bg-emerald-900/30 border-t border-neutral-800"
+                className="w-full text-left px-3 py-1.5 text-sm text-purple-300 hover:bg-neutral-800 border-t border-neutral-800"
                 onMouseDown={(e) => {
                   e.preventDefault();
                   commit(query);
                 }}
               >
-                + 创建 “{query.trim()}”
+                + 新建「{query.trim()}」
               </button>
             )}
           </div>
