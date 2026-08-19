@@ -27,6 +27,7 @@ export default function GeneratorPage() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
   const [pending, setPending] = useState<{id:string;label:string;listId:string;submitterName:string}[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [upLabel, setUpLabel] = useState("");
@@ -68,6 +69,7 @@ export default function GeneratorPage() {
         const me = await fetch("/api/auth/me");
         if (me.ok) {
           const j = await me.json();
+          setLoggedIn(!!j.user);
           setIsAdmin(!!j.user?.isAdmin);
           if (j.user?.isAdmin) {
             const pr = await fetch("/api/lexicon/pending");
@@ -162,12 +164,34 @@ export default function GeneratorPage() {
             </div>
           )}
         </div>
-        {isAdmin && pending.length > 0 && (
-          <div className="border border-amber-900/50 rounded-xl p-3 space-y-2">
-            <div className="text-sm text-amber-200">待审核</div>
-            {pending.map(p => (
-              <div key={p.id} className="flex gap-2 text-xs items-center">
-                <span>{p.label}</span>
+        {loggedIn && !isAdmin && (
+          <p className="text-[11px] text-neutral-600">当前账号不是管理员。请在 Vercel 设置 ADMIN_USER_IDS 为你的 Discord 用户 ID 后重新部署。</p>
+        )}
+        {isAdmin && (
+          <div className="border border-amber-900/50 rounded-xl p-4 space-y-3 bg-[#111]">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold text-amber-200">词库管理（管理员）</div>
+                <div className="text-[11px] text-neutral-500">删除公共列表、审核投稿、把当前启动状态写成站点默认</div>
+              </div>
+              <button type="button" className="text-[11px] px-2.5 py-1 rounded border border-amber-800 text-amber-200"
+                onClick={async () => {
+                  const res = await fetch("/api/lexicon/manage", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "set-default", enabledListIds: enabledIds.filter((id) => !id.startsWith("local/")) }),
+                  });
+                  const j = await res.json();
+                  toastMsg(res.ok ? (j.message || "已保存默认") : (j.error || "失败"));
+                }}>把当前启动设为站点默认</button>
+            </div>
+            <div className="text-xs text-neutral-400">待审核 {pending.length} 条</div>
+            {pending.length === 0 ? (
+              <p className="text-[11px] text-neutral-600">暂无待审投稿</p>
+            ) : pending.map(p => (
+              <div key={p.id} className="flex flex-wrap gap-2 text-xs items-center">
+                <span className="text-neutral-200">{p.label} · {p.listId}</span>
+                <span className="text-neutral-500">by {p.submitterName}</span>
                 <button className="text-emerald-300 border border-emerald-700 px-2 rounded" onClick={async () => {
                   await fetch("/api/lexicon/review", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({id:p.id, action:"approve"}) });
                   setPending(x => x.filter(i => i.id !== p.id)); toastMsg("已通过");
@@ -178,6 +202,38 @@ export default function GeneratorPage() {
                 }}>拒绝</button>
               </div>
             ))}
+            <div className="pt-2 border-t border-neutral-800 space-y-1">
+              <div className="text-xs text-neutral-400">公共列表（删除后所有人不可见）</div>
+              <div className="flex flex-wrap gap-2">
+                {index?.categories.flatMap((c) => c.lists).map((li) => (
+                  <button key={li.id} type="button"
+                    className="text-[11px] px-2 py-0.5 rounded border border-rose-900/50 text-rose-400"
+                    onClick={async () => {
+                      if (!window.confirm(`从 CDN 删除「${li.label}」？`)) return;
+                      const res = await fetch("/api/lexicon/manage", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "delete", listId: li.id }),
+                      });
+                      const j = await res.json();
+                      if (!res.ok) { toastMsg(j.error || j.message || "删除失败"); return; }
+                      toastMsg(j.message || "已删除");
+                      setIndex((prev) => {
+                        if (!prev) return prev;
+                        return {
+                          ...prev,
+                          categories: prev.categories
+                            .map((c) => ({ ...c, lists: c.lists.filter((x) => x.id !== li.id) }))
+                            .filter((c) => c.lists.length > 0),
+                        };
+                      });
+                      const next = enabledIds.filter((x) => x !== li.id);
+                      setEnabledIds(next);
+                      await reload(next, fixed);
+                    }}>删除 {li.label}</button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
         {sections.length === 0 ? (
