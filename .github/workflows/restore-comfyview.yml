@@ -13,17 +13,67 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: feature/vercel-r2
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download fixed ComfyView
+      - name: Restore ComfyView from vercel-preview and adapt to lexicon
         run: |
-          curl -fsSL https://paste.rs/d0vY4 -o src/components/ComfyView.tsx
+          set -euo pipefail
+          git fetch origin vercel-preview
+          git show origin/vercel-preview:src/components/ComfyView.tsx > src/components/ComfyView.tsx
+          python3 << 'PY'
+          from pathlib import Path
+          import re
+          p = Path("src/components/ComfyView.tsx")
+          t = p.read_text()
+          t2 = re.sub(
+              r'import \{\s*BuilderData,\s*composePrompt,\s*filterEnabledSections,\s*getActivePreset,\s*loadCachedBuilder,\s*normalizeBuilderData,\s*pickRandomSelected,\s*saveCachedBuilder,\s*\} from "@/lib/promptBuilder";',
+              'import type { BuilderData } from "@/lib/promptBuilder";\nimport { loadLexiconBuilder, rollRandomCharacter as rollLexicon } from "@/lib/comfyLexicon";',
+              t,
+              count=1,
+              flags=re.S,
+          )
+          t2 = re.sub(
+              r'async function bootBuilder\(\) \{.*?\}\s*bootBuilder\(\)\.finally\(\(\) => setReady\(true\)\);\s*const reloadBuilder = \(\) => \{.*?\};',
+              'loadLexiconBuilder().then((s) => setBuilder(s)).finally(() => setReady(true));\n    const reloadBuilder = () => { void loadLexiconBuilder().then((s) => { if (s) setBuilder(s); }); };',
+              t2,
+              count=1,
+              flags=re.S,
+          )
+          t2 = re.sub(
+              r'const rollRandomCharacter = useCallback\(\(data: BuilderData \| null\): string \| null => \{.*?\}, \[\]\);',
+              'const rollRandomCharacter = useCallback((data: BuilderData | null): string | null => rollLexicon(data), []);',
+              t2,
+              count=1,
+              flags=re.S,
+          )
+          t2 = t2.replace(
+              'showToast("提示词库为空，请先在「角色外观生成器」同步/配置");',
+              'showToast("词库为空：请先打开「角色外观生成器」并启动列表");',
+          )
+          t2 = re.sub(
+              r'const sectionCount = builder\s*\?\s*filterEnabledSections\(builder\)\.sections\.length\s*:\s*0;',
+              'const sectionCount = builder?.sections?.length ?? 0;',
+              t2,
+              count=1,
+          )
+          t2 = t2.replace(
+              '使用「角色外观生成器」提示词库',
+              '使用「角色外观生成器」已启用的 CDN 词库',
+          )
+          if 'loadLexiconBuilder' not in t2:
+              raise SystemExit('adaptation failed: loadLexiconBuilder missing')
+          if 'filterEnabledSections' in t2:
+              raise SystemExit('adaptation failed: filterEnabledSections still present')
+          p.write_text(t2)
+          print('adapted', len(t2), 'chars', t2.count(chr(10))+1, 'lines')
+          PY
           wc -c src/components/ComfyView.tsx
-          grep -c filterEnabledSections src/components/ComfyView.tsx
+          grep -n 'loadLexiconBuilder\|comfyLexicon\|filterEnabled' src/components/ComfyView.tsx | head
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add src/components/ComfyView.tsx
           git diff --cached --stat
-          git commit -m "fix: 抽卡姬随机角色使用外观生成器已启用分区词库" || echo "no changes"
+          git commit -m "fix(comfy): restore full 抽卡姬 + adapt to CDN lexicon runtime" || echo "no changes"
           git push origin feature/vercel-r2
