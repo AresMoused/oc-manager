@@ -4,13 +4,21 @@ import { isAdminUser } from "@/lib/admin";
 import {
   deletePublicList,
   setDefaultEnabledIds,
+  updateListMeta,
+  updateListContent,
+  reorderCategories,
 } from "@/lib/lexiconServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * POST { action: "delete" | "set-default", listId?, enabledListIds? }
+ * POST actions:
+ * - delete: { listId }
+ * - set-default: { enabledListIds }
+ * - update-meta: { listId, label?, categoryId?, categoryLabel?, icon?, desc? }
+ * - update-content: { listId, items: [{name,tags,...}], label? }
+ * - reorder: { categories: [{id,label,lists:[{id,label,...}]}] }
  */
 export async function POST(req: NextRequest) {
   try {
@@ -19,7 +27,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
     const body = await req.json();
-    if (body.action === "delete") {
+    const action = String(body.action || "");
+
+    if (action === "delete") {
       const listId = String(body.listId || "").trim();
       if (!listId) {
         return NextResponse.json({ error: "missing listId" }, { status: 400 });
@@ -28,13 +38,54 @@ export async function POST(req: NextRequest) {
       if (!result.ok) return NextResponse.json(result, { status: 404 });
       return NextResponse.json(result);
     }
-    if (body.action === "set-default") {
+
+    if (action === "set-default") {
       const ids = Array.isArray(body.enabledListIds)
         ? body.enabledListIds.map((x: unknown) => String(x))
         : [];
       await setDefaultEnabledIds(ids);
-      return NextResponse.json({ ok: true, message: "已更新站点默认启动列表" });
+      return NextResponse.json({ ok: true, message: "\u5df2\u66f4\u65b0\u7ad9\u70b9\u9ed8\u8ba4\u542f\u52a8\u5217\u8868" });
     }
+
+    if (action === "update-meta") {
+      const listId = String(body.listId || "").trim();
+      if (!listId) {
+        return NextResponse.json({ error: "missing listId" }, { status: 400 });
+      }
+      const result = await updateListMeta({
+        listId,
+        label: body.label,
+        categoryId: body.categoryId,
+        categoryLabel: body.categoryLabel,
+        icon: body.icon,
+        desc: body.desc,
+      });
+      if (!result.ok) return NextResponse.json(result, { status: 404 });
+      return NextResponse.json(result);
+    }
+
+    if (action === "update-content") {
+      const listId = String(body.listId || "").trim();
+      if (!listId) {
+        return NextResponse.json({ error: "missing listId" }, { status: 400 });
+      }
+      if (!Array.isArray(body.items)) {
+        return NextResponse.json({ error: "missing items" }, { status: 400 });
+      }
+      const result = await updateListContent(listId, body.items, body.label);
+      if (!result.ok) return NextResponse.json(result, { status: 400 });
+      return NextResponse.json(result);
+    }
+
+    if (action === "reorder") {
+      if (!Array.isArray(body.categories)) {
+        return NextResponse.json({ error: "missing categories" }, { status: 400 });
+      }
+      const result = await reorderCategories(body.categories);
+      if (!result.ok) return NextResponse.json(result, { status: 400 });
+      return NextResponse.json(result);
+    }
+
     return NextResponse.json({ error: "unknown action" }, { status: 400 });
   } catch (e) {
     console.error(e);
