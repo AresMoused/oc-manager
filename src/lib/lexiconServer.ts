@@ -513,6 +513,82 @@ export async function reorderCategories(
   return { ok: true, message: "已更新排序", index };
 }
 
+/**
+ * Admin: publish a list immediately (skip pending queue).
+ */
+export async function publishListDirect(opts: {
+  categoryId: string;
+  categoryLabel?: string;
+  label: string;
+  items: LexiconItem[];
+  icon?: string;
+  desc?: string;
+  listId?: string;
+}): Promise<{ ok: boolean; message: string; listId?: string; index?: LexiconIndex }> {
+  const categoryId =
+    String(opts.categoryId || "user")
+      .trim()
+      .replace(/[^\w\u4e00-\u9fff\-]/g, "_")
+      .slice(0, 64) || "user";
+  const label = String(opts.label || "").trim();
+  if (!label) return { ok: false, message: "缺少列表名称" };
+  const cleaned = (opts.items || [])
+    .map((it) => ({
+      name: String(it.name || "").trim(),
+      tags: String(it.tags || "").trim() || String(it.name || "").trim(),
+      ...(it.hex ? { hex: String(it.hex) } : {}),
+      ...(it.image ? { image: String(it.image) } : {}),
+    }))
+    .filter((it) => it.name);
+  if (!cleaned.length) return { ok: false, message: "词条为空" };
+
+  const slug =
+    String(opts.listId || label)
+      .toLowerCase()
+      .replace(/[^\w\u4e00-\u9fff\-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 48) || "list";
+  const listId = opts.listId?.includes("/")
+    ? opts.listId.replace(/^\/+/, "").replace(/\.\./g, "")
+    : `${categoryId}/${slug}`;
+
+  const content: LexiconListContent = {
+    id: listId,
+    label,
+    icon: opts.icon,
+    desc: opts.desc,
+    items: cleaned,
+    source: "cdn",
+  };
+
+  const index = await getLexiconIndex();
+  let cat = index.categories.find((c) => c.id === categoryId);
+  if (!cat) {
+    cat = {
+      id: categoryId,
+      label: opts.categoryLabel?.trim() || categoryId,
+      lists: [],
+    };
+    index.categories.push(cat);
+  } else if (opts.categoryLabel?.trim()) {
+    cat.label = opts.categoryLabel.trim();
+  }
+  const meta: LexiconListMeta = {
+    id: listId,
+    label,
+    path: `lists/${listId}.json`,
+    icon: opts.icon,
+    desc: opts.desc,
+  };
+  const existing = cat.lists.findIndex((l) => l.id === listId);
+  if (existing >= 0) cat.lists[existing] = meta;
+  else cat.lists.push(meta);
+
+  await writeListContent(listId, content);
+  await writeIndex(index);
+  return { ok: true, message: "已直接发布到公共词库", listId, index };
+}
+
 export async function bootstrapLexiconToR2IfEmpty(): Promise<void> {
   if (!isR2Configured()) return;
   const existing = await r2GetJson<LexiconIndex>(R2_INDEX);
