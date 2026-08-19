@@ -1,0 +1,13 @@
+{
+  "id": "body/breast_size",
+  "label": "胸围",
+  "icon": "Br",
+  "desc": "胸围。",
+  "items": [
+    { "name": "flat chest", "tags": "flat chest, " },
+    { "name": "small breasts", "tags": "small breasts, " },
+    { "name": "medium breasts", "tags": "medium breasts, " },
+    { "name": "large breasts", "tags": "large breasts, " },
+    { "name": "huge breasts", "tags": "huge breasts, " }
+  ]
+}

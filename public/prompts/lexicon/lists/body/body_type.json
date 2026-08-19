@@ -1,0 +1,14 @@
+{
+  "id": "body/body_type",
+  "label": "体型",
+  "icon": "Bd",
+  "desc": "体型。",
+  "items": [
+    { "name": "slim", "tags": "slim, " },
+    { "name": "athletic", "tags": "athletic, " },
+    { "name": "curvy", "tags": "curvy, " },
+    { "name": "petite", "tags": "petite, " },
+    { "name": "tall", "tags": "tall, " },
+    { "name": "muscular", "tags": "muscular, " }
+  ]
+}
