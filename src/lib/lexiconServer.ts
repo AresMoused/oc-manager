@@ -335,6 +335,184 @@ export async function setDefaultEnabledIds(ids: string[]): Promise<void> {
   );
 }
 
+async function writeListContent(
+  listId: string,
+  content: LexiconListContent
+): Promise<void> {
+  const safe = listId.replace(/^\/+/, "").replace(/\.\./g, "");
+  if (isR2Configured()) {
+    await r2PutJson(`lexicon/lists/${safe}.json`, content);
+    return;
+  }
+  const full = path.join(SEED_DIR, "lists", `${safe}.json`);
+  await fs.mkdir(path.dirname(full), { recursive: true });
+  await fs.writeFile(full, JSON.stringify(content, null, 2), "utf8");
+}
+
+export async function updateListMeta(opts: {
+  listId: string;
+  label?: string;
+  categoryId?: string;
+  categoryLabel?: string;
+  icon?: string;
+  desc?: string;
+}): Promise<{ ok: boolean; message: string; index?: LexiconIndex }> {
+  const safe = opts.listId.replace(/^\/+/, "").replace(/\.\./g, "");
+  const index = await getLexiconIndex();
+  let foundMeta: LexiconListMeta | null = null;
+  let fromCat: LexiconCategory | null = null;
+  for (const cat of index.categories) {
+    const li = cat.lists.find((l) => l.id === safe);
+    if (li) {
+      foundMeta = li;
+      fromCat = cat;
+      break;
+    }
+  }
+  if (!foundMeta || !fromCat) {
+    return { ok: false, message: "找不到该列表" };
+  }
+
+  if (opts.label !== undefined) foundMeta.label = String(opts.label).trim() || foundMeta.label;
+  if (opts.icon !== undefined) foundMeta.icon = opts.icon;
+  if (opts.desc !== undefined) foundMeta.desc = opts.desc;
+
+  const targetCatId = opts.categoryId?.trim();
+  if (targetCatId && targetCatId !== fromCat.id) {
+    fromCat.lists = fromCat.lists.filter((l) => l.id !== safe);
+    let target = index.categories.find((c) => c.id === targetCatId);
+    if (!target) {
+      target = {
+        id: targetCatId,
+        label: opts.categoryLabel?.trim() || targetCatId,
+        lists: [],
+      };
+      index.categories.push(target);
+    } else if (opts.categoryLabel?.trim()) {
+      target.label = opts.categoryLabel.trim();
+    }
+    target.lists.push(foundMeta);
+    index.categories = index.categories.filter((c) => c.lists.length > 0);
+  } else if (opts.categoryLabel?.trim()) {
+    fromCat.label = opts.categoryLabel.trim();
+  }
+
+  await writeIndex(index);
+
+  const content = await getLexiconList(safe);
+  if (content) {
+    content.label = foundMeta.label;
+    if (opts.icon !== undefined) content.icon = opts.icon;
+    if (opts.desc !== undefined) content.desc = opts.desc;
+    content.source = "cdn";
+    await writeListContent(safe, content);
+  }
+
+  return { ok: true, message: "已更新列表信息", index };
+}
+
+export async function updateListContent(
+  listId: string,
+  items: LexiconItem[],
+  label?: string
+): Promise<{ ok: boolean; message: string }> {
+  const safe = listId.replace(/^\/+/, "").replace(/\.\./g, "");
+  if (!Array.isArray(items) || items.length === 0) {
+    return { ok: false, message: "内容不能为空" };
+  }
+  const cleaned = items
+    .map((it) => ({
+      name: String(it.name || "").trim(),
+      tags: String(it.tags || "").trim() || String(it.name || "").trim(),
+      ...(it.hex ? { hex: String(it.hex) } : {}),
+      ...(it.image ? { image: String(it.image) } : {}),
+    }))
+    .filter((it) => it.name);
+  if (!cleaned.length) return { ok: false, message: "没有有效条目" };
+
+  const existing = await getLexiconList(safe);
+  const index = await getLexiconIndex();
+  let metaLabel = existing?.label || safe;
+  for (const cat of index.categories) {
+    const m = cat.lists.find((l) => l.id === safe);
+    if (m) {
+      metaLabel = m.label;
+      if (label?.trim()) {
+        m.label = label.trim();
+        metaLabel = m.label;
+      }
+      break;
+    }
+  }
+  if (label?.trim()) await writeIndex(index);
+
+  const content: LexiconListContent = {
+    id: safe,
+    label: label?.trim() || metaLabel,
+    icon: existing?.icon,
+    desc: existing?.desc,
+    items: cleaned,
+    source: "cdn",
+  };
+  await writeListContent(safe, content);
+  return { ok: true, message: "已更新列表内容" };
+}
+
+export async function reorderCategories(
+  categories: LexiconCategory[]
+): Promise<{ ok: boolean; message: string; index?: LexiconIndex }> {
+  if (!Array.isArray(categories) || categories.length === 0) {
+    return { ok: false, message: "无效的分类数据" };
+  }
+  const current = await getLexiconIndex();
+  const known = new Map<string, LexiconListMeta>();
+  for (const cat of current.categories) {
+    for (const li of cat.lists) known.set(li.id, li);
+  }
+  const nextCats: LexiconCategory[] = [];
+  const seen = new Set<string>();
+  for (const cat of categories) {
+    const id = String(cat.id || "").trim();
+    if (!id) continue;
+    const lists: LexiconListMeta[] = [];
+    for (const li of cat.lists || []) {
+      const lid = String(li.id || "").trim();
+      if (!lid || seen.has(lid) || !known.has(lid)) continue;
+      seen.add(lid);
+      const base = known.get(lid)!;
+      lists.push({
+        ...base,
+        label: li.label?.trim() || base.label,
+        icon: li.icon ?? base.icon,
+        desc: li.desc ?? base.desc,
+      });
+    }
+    if (lists.length) {
+      nextCats.push({
+        id,
+        label: String(cat.label || id).trim(),
+        lists,
+      });
+    }
+  }
+  for (const cat of current.categories) {
+    const orphan = cat.lists.filter((l) => !seen.has(l.id));
+    if (!orphan.length) continue;
+    let target = nextCats.find((c) => c.id === cat.id);
+    if (!target) {
+      target = { id: cat.id, label: cat.label, lists: [] };
+      nextCats.push(target);
+    }
+    target.lists.push(...orphan);
+  }
+  const index: LexiconIndex = {
+    ...current,
+    categories: nextCats,
+  };
+  await writeIndex(index);
+  return { ok: true, message: "已更新排序", index };
+}
+
 export async function bootstrapLexiconToR2IfEmpty(): Promise<void> {
   if (!isR2Configured()) return;
   const existing = await r2GetJson<LexiconIndex>(R2_INDEX);
