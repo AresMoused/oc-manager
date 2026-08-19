@@ -1,0 +1,28 @@
+{
+  "id": "hair/hairstyle",
+  "label": "发型",
+  "icon": "HrS",
+  "desc": "发型。",
+  "items": [
+    { "name": "very short hair", "tags": "very short hair, " },
+    { "name": "short hair", "tags": "short hair, " },
+    { "name": "medium hair", "tags": "medium hair, " },
+    { "name": "long hair", "tags": "long hair, " },
+    { "name": "very long hair", "tags": "very long hair, " },
+    { "name": "ponytail", "tags": "ponytail, " },
+    { "name": "high ponytail", "tags": "high ponytail, " },
+    { "name": "low ponytail", "tags": "low ponytail, " },
+    { "name": "twin tails", "tags": "twin tails, " },
+    { "name": "side ponytail", "tags": "side ponytail, " },
+    { "name": "braid", "tags": "braid, " },
+    { "name": "twin braids", "tags": "twin braids, " },
+    { "name": "bun", "tags": "bun, " },
+    { "name": "double bun", "tags": "double bun, " },
+    { "name": "bob cut", "tags": "bob cut, " },
+    { "name": "hime cut", "tags": "hime cut, " },
+    { "name": "messy hair", "tags": "messy hair, " },
+    { "name": "wavy hair", "tags": "wavy hair, " },
+    { "name": "straight hair", "tags": "straight hair, " },
+    { "name": "curly hair", "tags": "curly hair, " }
+  ]
+}

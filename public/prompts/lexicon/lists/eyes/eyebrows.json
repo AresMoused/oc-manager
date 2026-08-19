@@ -1,0 +1,13 @@
+{
+  "id": "eyes/eyebrows",
+  "label": "眉毛",
+  "icon": "Brw",
+  "desc": "眉毛。",
+  "items": [
+    { "name": "无", "tags": "", "hex": "" },
+    { "name": "thick eyebrows", "tags": "thick eyebrows, ", "hex": "" },
+    { "name": "thin eyebrows", "tags": "thin eyebrows, ", "hex": "" },
+    { "name": "arched eyebrows", "tags": "arched eyebrows, ", "hex": "" },
+    { "name": "straight eyebrows", "tags": "straight eyebrows, ", "hex": "" }
+  ]
+}

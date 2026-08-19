@@ -1,0 +1,20 @@
+{
+  "id": "eyes/eye_color",
+  "label": "眼色",
+  "icon": "EyC",
+  "desc": "眼睛颜色。",
+  "items": [
+    { "name": "black eyes", "tags": "black eyes, ", "hex": "#1A1A1A" },
+    { "name": "brown eyes", "tags": "brown eyes, ", "hex": "#6B4A2E" },
+    { "name": "light brown eyes", "tags": "light brown eyes, ", "hex": "#9A7350" },
+    { "name": "blue eyes", "tags": "blue eyes, ", "hex": "#4A78C0" },
+    { "name": "green eyes", "tags": "green eyes, ", "hex": "#5AA060" },
+    { "name": "red eyes", "tags": "red eyes, ", "hex": "#C0392B" },
+    { "name": "orange eyes", "tags": "orange eyes, ", "hex": "#E07B30" },
+    { "name": "pink eyes", "tags": "pink eyes, ", "hex": "#F0A0C0" },
+    { "name": "purple eyes", "tags": "purple eyes, ", "hex": "#8A6AB0" },
+    { "name": "grey eyes", "tags": "grey eyes, ", "hex": "#9AA0A6" },
+    { "name": "yellow eyes", "tags": "yellow eyes, ", "hex": "#E6C870" },
+    { "name": "white eyes", "tags": "white eyes, ", "hex": "#F0F0F0" }
+  ]
+}

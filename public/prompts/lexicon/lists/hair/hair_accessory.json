@@ -1,0 +1,15 @@
+{
+  "id": "hair/hair_accessory",
+  "label": "发饰",
+  "icon": "Pin",
+  "desc": "发饰。选「无」跳过。",
+  "items": [
+    { "name": "无", "tags": "", "hex": "" },
+    { "name": "hairpin", "tags": "hairpin, ", "hex": "" },
+    { "name": "hair clip", "tags": "hair clip, ", "hex": "" },
+    { "name": "hair ribbon", "tags": "hair ribbon, ", "hex": "" },
+    { "name": "hair bow", "tags": "hair bow, ", "hex": "" },
+    { "name": "scrunchie", "tags": "scrunchie, ", "hex": "" },
+    { "name": "flower hair clip", "tags": "flower hair clip, ", "hex": "" }
+  ]
+}
