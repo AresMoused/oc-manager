@@ -198,6 +198,22 @@ function contentCacheSet(id: string, content: LexiconListContent) {
   }
 }
 
+/** Drop cached list content (after admin edit) so next load hits API */
+export function invalidateLexiconContentCache(listId?: string) {
+  if (typeof window === "undefined") return;
+  try {
+    if (!listId) {
+      localStorage.removeItem(CONTENT_CACHE_KEY);
+      return;
+    }
+    const c = contentCacheGet();
+    delete c[listId];
+    localStorage.setItem(CONTENT_CACHE_KEY, JSON.stringify(c));
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function fetchLexiconCatalog(): Promise<{
   index: LexiconIndex;
   defaultEnabled: string[];
