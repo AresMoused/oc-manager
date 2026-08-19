@@ -277,6 +277,64 @@ export async function reviewPending(
   return { ok: true, message: "已发布到词库" };
 }
 
+async function writeIndex(index: LexiconIndex): Promise<void> {
+  if (isR2Configured()) {
+    await r2PutJson(R2_INDEX, index);
+    return;
+  }
+  await fs.writeFile(
+    path.join(SEED_DIR, "index.json"),
+    JSON.stringify(index, null, 2),
+    "utf8"
+  );
+}
+
+export async function deletePublicList(
+  listId: string
+): Promise<{ ok: boolean; message: string }> {
+  const safe = listId.replace(/^\/+/, "").replace(/\.\./g, "");
+  const index = await getLexiconIndex();
+  let found = false;
+  for (const cat of index.categories) {
+    const before = cat.lists.length;
+    cat.lists = cat.lists.filter((l) => l.id !== safe);
+    if (cat.lists.length !== before) found = true;
+  }
+  index.categories = index.categories.filter((c) => c.lists.length > 0);
+  if (!found) return { ok: false, message: "找不到该列表" };
+  await writeIndex(index);
+  if (isR2Configured()) {
+    try {
+      await r2Delete(`lexicon/lists/${safe}.json`);
+    } catch {
+      /* ignore */
+    }
+  } else {
+    try {
+      await fs.unlink(path.join(SEED_DIR, "lists", `${safe}.json`));
+    } catch {
+      /* ignore */
+    }
+  }
+  const def = await getDefaultEnabledIds();
+  const next = def.filter((id) => id !== safe);
+  if (next.length !== def.length) await setDefaultEnabledIds(next);
+  return { ok: true, message: "已从公共词库删除" };
+}
+
+export async function setDefaultEnabledIds(ids: string[]): Promise<void> {
+  const payload = { enabledListIds: ids };
+  if (isR2Configured()) {
+    await r2PutJson(R2_DEFAULT, payload);
+    return;
+  }
+  await fs.writeFile(
+    path.join(SEED_DIR, "default-enabled.json"),
+    JSON.stringify(payload, null, 2),
+    "utf8"
+  );
+}
+
 export async function bootstrapLexiconToR2IfEmpty(): Promise<void> {
   if (!isR2Configured()) return;
   const existing = await r2GetJson<LexiconIndex>(R2_INDEX);
