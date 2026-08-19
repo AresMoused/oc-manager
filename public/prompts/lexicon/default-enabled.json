@@ -1,0 +1,11 @@
+{
+  "enabledListIds": [
+    "hair/hair_color",
+    "eyes/eye_color",
+    "hair/hairstyle",
+    "hair/hair_accessory",
+    "eyes/eyebrows",
+    "body/breast_size",
+    "body/body_type"
+  ]
+}

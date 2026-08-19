@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "fixed": "1girl, ",
+  "categories": [
+    {
+      "id": "hair",
+      "label": "头发",
+      "lists": [
+        {
+          "id": "hair/hair_color",
+          "label": "发色",
+          "path": "lists/hair/hair_color.json",
+          "icon": "HrC",
+          "desc": "发色。基本色 + 明/暗修饰符。"
+        },
+        {
+          "id": "hair/hairstyle",
+          "label": "发型",
+          "path": "lists/hair/hairstyle.json",
+          "icon": "HrS",
+          "desc": "发型。"
+        },
+        {
+          "id": "hair/hair_accessory",
+          "label": "发饰",
+          "path": "lists/hair/hair_accessory.json",
+          "icon": "Pin",
+          "desc": "发饰。选「无」跳过。"
+        }
+      ]
+    },
+    {
+      "id": "eyes",
+      "label": "眼睛",
+      "lists": [
+        {
+          "id": "eyes/eye_color",
+          "label": "眼色",
+          "path": "lists/eyes/eye_color.json",
+          "icon": "EyC",
+          "desc": "眼睛颜色。"
+        },
+        {
+          "id": "eyes/eyebrows",
+          "label": "眉毛",
+          "path": "lists/eyes/eyebrows.json",
+          "icon": "Brw",
+          "desc": "眉毛。"
+        }
+      ]
+    },
+    {
+      "id": "body",
+      "label": "身材",
+      "lists": [
+        {
+          "id": "body/breast_size",
+          "label": "胸部大小",
+          "path": "lists/body/breast_size.json",
+          "icon": "Bst",
+          "desc": "Danbooru 标准等级。"
+        },
+        {
+          "id": "body/body_type",
+          "label": "体型",
+          "path": "lists/body/body_type.json",
+          "icon": "Bdy",
+          "desc": "整体体型。"
+        }
+      ]
+    }
+  ]
+}
