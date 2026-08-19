@@ -90,25 +90,41 @@ export default function GeneratorAdminPanel(props: {
           <div className="border border-neutral-800 rounded-lg p-3 space-y-2">
             <div className="text-xs text-amber-200/90 font-medium">管理员直接发布（跳过审核）</div>
             <input className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm" placeholder="列表名称" value={upLabel} onChange={(e) => setUpLabel(e.target.value)} />
-            <select className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm text-neutral-200" value={upCat || index?.categories[0]?.id || "user"} onChange={(e) => setUpCat(e.target.value)}>
+            <input
+              className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm"
+              list="lexicon-admin-category-suggestions"
+              placeholder="分类名称（输入新名称即自动创建）"
+              value={upCat}
+              onChange={(e) => setUpCat(e.target.value)}
+            />
+            <datalist id="lexicon-admin-category-suggestions">
               {(index?.categories || []).map((c) => (
-                <option key={c.id} value={c.id}>{c.label}</option>
+                <option key={c.id} value={c.label} />
               ))}
-              {!index?.categories?.some((c) => c.id === "user") && <option value="user">用户投稿</option>}
-            </select>
+            </datalist>
+            <div className="text-[10px] text-neutral-500">输入已有分类名会加入该分类；输入新名称会自动创建分类。</div>
             <div className="text-[10px] text-neutral-500 font-mono">格式：名称: tags（每行一条）例：黑色头发: black hair,</div>
             <textarea className="w-full min-h-[90px] bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs font-mono" placeholder={"黑色头发: black hair,\n银色头发: silver hair,"} value={upRaw} onChange={(e) => setUpRaw(e.target.value)} />
             <button type="button" disabled={adminBusy} className="text-[11px] px-2.5 py-1 rounded bg-emerald-900/40 border border-emerald-800 text-emerald-200 disabled:opacity-40" onClick={async () => {
               const items = parseItemsRaw(upRaw);
               if (!upLabel.trim() || !items.length) return toastMsg("请填写名称和词条");
-              const catId = upCat || index?.categories[0]?.id || "user";
-              const catMeta = index?.categories.find((c) => c.id === catId);
+              const catName = upCat.trim();
+              if (!catName) return toastMsg("请填写分类名称");
+              const catMeta = index?.categories.find(
+                (c) => c.id === catName || c.label === catName || c.label.toLowerCase() === catName.toLowerCase()
+              );
               setAdminBusy(true);
               try {
                 const res = await fetch("/api/lexicon/manage", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: "publish-direct", categoryId: catId, categoryLabel: catMeta?.label || catId, label: upLabel.trim(), items }),
+                  body: JSON.stringify({
+                    action: "publish-direct",
+                    categoryId: catMeta?.id || catName,
+                    categoryLabel: catMeta?.label || catName,
+                    label: upLabel.trim(),
+                    items,
+                  }),
                 });
                 const j = await res.json();
                 if (!res.ok) { toastMsg(j.error || j.message || "发布失败"); return; }
@@ -206,10 +222,13 @@ export default function GeneratorAdminPanel(props: {
           <div className="w-full max-w-md bg-[#111] border border-neutral-700 rounded-xl p-4 space-y-2">
             <h2 className="text-white font-semibold">改名 / 改分类</h2>
             <input className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm" value={editMeta.label} onChange={(e) => setEditMeta({ ...editMeta, label: e.target.value })} placeholder="显示名称" />
-            <div className="grid grid-cols-2 gap-2">
-              <input className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm" value={editMeta.categoryId} onChange={(e) => setEditMeta({ ...editMeta, categoryId: e.target.value })} placeholder="分类 id" />
-              <input className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm" value={editMeta.categoryLabel} onChange={(e) => setEditMeta({ ...editMeta, categoryLabel: e.target.value })} placeholder="分类名" />
-            </div>
+            <input
+              className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm"
+              list="lexicon-admin-category-suggestions"
+              value={editMeta.categoryLabel}
+              onChange={(e) => setEditMeta({ ...editMeta, categoryLabel: e.target.value, categoryId: e.target.value })}
+              placeholder="分类名称（输入新名称即自动创建）"
+            />
             <div className="flex justify-end gap-2">
               <button type="button" className="text-neutral-400 text-sm" onClick={() => setEditMeta(null)}>取消</button>
               <button type="button" disabled={adminBusy} className="bg-purple-600 text-white text-sm px-3 py-1 rounded" onClick={async () => {

@@ -289,6 +289,45 @@ async function writeIndex(index: LexiconIndex): Promise<void> {
   );
 }
 
+function slugifyCatId(name: string): string {
+  return (
+    String(name || "")
+      .trim()
+      .replace(/[^\w\u4e00-\u9fff\-]/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 64) || "cat"
+  );
+}
+
+/** Find category by id or display name; create it if missing. */
+function resolveOrCreateCategory(
+  index: LexiconIndex,
+  nameOrId: string,
+  label?: string
+): LexiconCategory {
+  const raw = String(nameOrId || "").trim();
+  const display = String(label || raw).trim() || raw;
+  const needle = raw.toLowerCase();
+  const displayNeedle = display.toLowerCase();
+
+  const existing = index.categories.find(
+    (c) =>
+      c.id === raw ||
+      c.id.toLowerCase() === needle ||
+      c.label.toLowerCase() === needle ||
+      c.label.toLowerCase() === displayNeedle
+  );
+  if (existing) return existing;
+
+  const id = slugifyCatId(raw || display);
+  const bySlug = index.categories.find((c) => c.id === id);
+  if (bySlug) return bySlug;
+
+  const cat: LexiconCategory = { id, label: display, lists: [] };
+  index.categories.push(cat);
+  return cat;
+}
+
 export async function deletePublicList(
   listId: string
 ): Promise<{ ok: boolean; message: string }> {
@@ -377,22 +416,20 @@ export async function updateListMeta(opts: {
   if (opts.icon !== undefined) foundMeta.icon = opts.icon;
   if (opts.desc !== undefined) foundMeta.desc = opts.desc;
 
-  const targetCatId = opts.categoryId?.trim();
-  if (targetCatId && targetCatId !== fromCat.id) {
-    fromCat.lists = fromCat.lists.filter((l) => l.id !== safe);
-    let target = index.categories.find((c) => c.id === targetCatId);
-    if (!target) {
-      target = {
-        id: targetCatId,
-        label: opts.categoryLabel?.trim() || targetCatId,
-        lists: [],
-      };
-      index.categories.push(target);
+  const targetName = opts.categoryId?.trim() || opts.categoryLabel?.trim();
+  if (targetName) {
+    const target = resolveOrCreateCategory(
+      index,
+      opts.categoryId?.trim() || targetName,
+      opts.categoryLabel
+    );
+    if (target.id !== fromCat.id) {
+      fromCat.lists = fromCat.lists.filter((l) => l.id !== safe);
+      target.lists.push(foundMeta);
+      index.categories = index.categories.filter((c) => c.lists.length > 0);
     } else if (opts.categoryLabel?.trim()) {
-      target.label = opts.categoryLabel.trim();
+      fromCat.label = opts.categoryLabel.trim();
     }
-    target.lists.push(foundMeta);
-    index.categories = index.categories.filter((c) => c.lists.length > 0);
   } else if (opts.categoryLabel?.trim()) {
     fromCat.label = opts.categoryLabel.trim();
   }
@@ -525,11 +562,8 @@ export async function publishListDirect(opts: {
   desc?: string;
   listId?: string;
 }): Promise<{ ok: boolean; message: string; listId?: string; index?: LexiconIndex }> {
-  const categoryId =
-    String(opts.categoryId || "user")
-      .trim()
-      .replace(/[^\w\u4e00-\u9fff\-]/g, "_")
-      .slice(0, 64) || "user";
+  const categoryName = String(opts.categoryLabel || opts.categoryId || "").trim();
+  if (!categoryName) return { ok: false, message: "缺少分类名称" };
   const label = String(opts.label || "").trim();
   if (!label) return { ok: false, message: "缺少列表名称" };
   const cleaned = (opts.items || [])
@@ -541,6 +575,10 @@ export async function publishListDirect(opts: {
     }))
     .filter((it) => it.name);
   if (!cleaned.length) return { ok: false, message: "词条为空" };
+
+  const index = await getLexiconIndex();
+  const cat = resolveOrCreateCategory(index, opts.categoryId || categoryName, categoryName);
+  const categoryId = cat.id;
 
   const slug =
     String(opts.listId || label)
@@ -561,18 +599,6 @@ export async function publishListDirect(opts: {
     source: "cdn",
   };
 
-  const index = await getLexiconIndex();
-  let cat = index.categories.find((c) => c.id === categoryId);
-  if (!cat) {
-    cat = {
-      id: categoryId,
-      label: opts.categoryLabel?.trim() || categoryId,
-      lists: [],
-    };
-    index.categories.push(cat);
-  } else if (opts.categoryLabel?.trim()) {
-    cat.label = opts.categoryLabel.trim();
-  }
   const meta: LexiconListMeta = {
     id: listId,
     label,
