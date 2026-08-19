@@ -1,0 +1,33 @@
+{
+  "id": "hair/hair_color",
+  "label": "发色",
+  "icon": "HrC",
+  "desc": "发色。基本色 + 明/暗修饰符。",
+  "items": [
+    {
+      "name": "black hair",
+      "tags": "black hair, ",
+      "hex": "#1A1A1A"
+    },
+    {
+      "name": "dark brown hair",
+      "tags": "dark brown hair, ",
+      "hex": "#4A3220"
+    },
+    {
+      "name": "brown hair",
+      "tags": "brown hair, ",
+      "hex": "#6B4A2E"
+    },
+    {
+      "name": "light brown hair",
+      "tags": "light brown hair, ",
+      "hex": "#9A7350"
+    },
+    {
+      "name": "blonde hair",
+      "tags": "blonde hair, ",
+      "hex": "#E6C870"
+    }
+  ]
+}
