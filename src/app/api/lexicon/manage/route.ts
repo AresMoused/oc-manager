@@ -7,6 +7,7 @@ import {
   updateListMeta,
   updateListContent,
   reorderCategories,
+  publishListDirect,
 } from "@/lib/lexiconServer";
 
 export const runtime = "nodejs";
@@ -19,6 +20,7 @@ export const dynamic = "force-dynamic";
  * - update-meta: { listId, label?, categoryId?, categoryLabel?, icon?, desc? }
  * - update-content: { listId, items: [{name,tags,...}], label? }
  * - reorder: { categories: [{id,label,lists:[{id,label,...}]}] }
+ * - publish-direct: { categoryId, categoryLabel?, label, items, icon?, desc? }
  */
 export async function POST(req: NextRequest) {
   try {
@@ -44,7 +46,7 @@ export async function POST(req: NextRequest) {
         ? body.enabledListIds.map((x: unknown) => String(x))
         : [];
       await setDefaultEnabledIds(ids);
-      return NextResponse.json({ ok: true, message: "\u5df2\u66f4\u65b0\u7ad9\u70b9\u9ed8\u8ba4\u542f\u52a8\u5217\u8868" });
+      return NextResponse.json({ ok: true, message: "已更新站点默认启动列表" });
     }
 
     if (action === "update-meta") {
@@ -82,6 +84,20 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "missing categories" }, { status: 400 });
       }
       const result = await reorderCategories(body.categories);
+      if (!result.ok) return NextResponse.json(result, { status: 400 });
+      return NextResponse.json(result);
+    }
+
+    if (action === "publish-direct") {
+      const result = await publishListDirect({
+        categoryId: body.categoryId,
+        categoryLabel: body.categoryLabel,
+        label: body.label,
+        items: Array.isArray(body.items) ? body.items : [],
+        icon: body.icon,
+        desc: body.desc,
+        listId: body.listId,
+      });
       if (!result.ok) return NextResponse.json(result, { status: 400 });
       return NextResponse.json(result);
     }
