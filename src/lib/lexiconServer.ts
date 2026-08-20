@@ -550,6 +550,25 @@ export async function reorderCategories(
   return { ok: true, message: "已更新排序", index };
 }
 
+export async function renameCategory(
+  categoryId: string,
+  label: string
+): Promise<{ ok: boolean; message: string; index?: LexiconIndex }> {
+  const id = String(categoryId || "").trim();
+  const nextLabel = String(label || "").trim();
+  if (!id) return { ok: false, message: "缺少分类" };
+  if (!nextLabel) return { ok: false, message: "分类名称不能为空" };
+  const index = await getLexiconIndex();
+  const cat = index.categories.find((c) => c.id === id);
+  if (!cat) return { ok: false, message: "找不到该分类" };
+  if (cat.label === nextLabel) {
+    return { ok: true, message: "分类名称未变化", index };
+  }
+  cat.label = nextLabel;
+  await writeIndex(index);
+  return { ok: true, message: "已更新分类名称", index };
+}
+
 /**
  * Admin: publish a list immediately (skip pending queue).
  */

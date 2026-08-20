@@ -38,6 +38,7 @@ export default function GeneratorAdminPanel(props: {
   const [upRaw, setUpRaw] = useState("");
   const [editRaw, setEditRaw] = useState<{ listId: string; label: string; raw: string } | null>(null);
   const [editMeta, setEditMeta] = useState<{ listId: string; label: string; categoryId: string; categoryLabel: string } | null>(null);
+  const [editCat, setEditCat] = useState<{ id: string; label: string } | null>(null);
 
   const applyIndex = async (next: LexiconIndex) => {
     setIndex(next);
@@ -74,6 +75,49 @@ export default function GeneratorAdminPanel(props: {
       await saveReorder(categories);
       return;
     }
+  };
+
+  const moveCategory = async (categoryId: string, dir: -1 | 1) => {
+    if (!index) return;
+    const categories = index.categories.map((c) => ({ ...c, lists: [...c.lists] }));
+    const i = categories.findIndex((c) => c.id === categoryId);
+    if (i < 0) return;
+    const j = i + dir;
+    if (j < 0 || j >= categories.length) return;
+    const tmp = categories[i]!;
+    categories[i] = categories[j]!;
+    categories[j] = tmp;
+    await saveReorder(categories);
+  };
+
+  const saveCategoryName = async () => {
+    if (!editCat) return;
+    const label = editCat.label.trim();
+    if (!label) return toastMsg("分类名称不能为空");
+    setAdminBusy(true);
+    try {
+      const res = await fetch("/api/lexicon/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "rename-category", categoryId: editCat.id, label }),
+      });
+      const j = await res.json();
+      if (!res.ok) { toastMsg(j.error || j.message || "改名失败"); return; }
+      if (j.index) await applyIndex(j.index);
+      else {
+        setIndex((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            categories: prev.categories.map((c) =>
+              c.id === editCat.id ? { ...c, label } : c
+            ),
+          };
+        });
+      }
+      toastMsg(j.message || "已更新分类名称");
+      setEditCat(null);
+    } finally { setAdminBusy(false); }
   };
 
   return (
@@ -173,9 +217,34 @@ export default function GeneratorAdminPanel(props: {
 
           <div className="space-y-2">
             <div className="text-xs text-neutral-400">公共列表</div>
-            {(index?.categories || []).map((cat) => (
+            <div className="text-[10px] text-neutral-600">分类可上下排序、改名；列表可在分类内排序。</div>
+            {(index?.categories || []).map((cat, catIdx) => (
               <div key={cat.id} className="border border-neutral-800 rounded-lg p-2 space-y-1">
-                <div className="text-xs text-neutral-200 font-medium">{cat.label}</div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button type="button" disabled={adminBusy || catIdx === 0} className="px-1.5 py-0.5 rounded border border-neutral-700 text-neutral-400 disabled:opacity-30 text-[11px]" onClick={() => void moveCategory(cat.id, -1)}>↑</button>
+                  <button type="button" disabled={adminBusy || catIdx === (index?.categories.length || 0) - 1} className="px-1.5 py-0.5 rounded border border-neutral-700 text-neutral-400 disabled:opacity-30 text-[11px]" onClick={() => void moveCategory(cat.id, 1)}>↓</button>
+                  {editCat?.id === cat.id ? (
+                    <>
+                      <input
+                        className="flex-1 min-w-[8rem] bg-neutral-900 border border-amber-700 rounded px-2 py-0.5 text-xs text-neutral-100"
+                        value={editCat.label}
+                        autoFocus
+                        onChange={(e) => setEditCat({ ...editCat, label: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); void saveCategoryName(); }
+                          if (e.key === "Escape") setEditCat(null);
+                        }}
+                      />
+                      <button type="button" disabled={adminBusy} className="px-1.5 py-0.5 rounded border border-emerald-800 text-emerald-300 text-[11px] disabled:opacity-40" onClick={() => void saveCategoryName()}>保存</button>
+                      <button type="button" className="px-1.5 py-0.5 rounded border border-neutral-700 text-neutral-400 text-[11px]" onClick={() => setEditCat(null)}>取消</button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-xs text-neutral-200 font-medium flex-1 min-w-[4rem]">{cat.label}</span>
+                      <button type="button" className="px-1.5 py-0.5 rounded border border-sky-800 text-sky-300 text-[11px]" onClick={() => setEditCat({ id: cat.id, label: cat.label })}>改名</button>
+                    </>
+                  )}
+                </div>
                 {cat.lists.map((li, liIdx) => (
                   <div key={li.id} className="flex flex-wrap items-center gap-1.5 pl-2 text-[11px]">
                     <span className="text-neutral-300 min-w-[4rem]">{li.label}</span>

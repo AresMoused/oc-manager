@@ -7,6 +7,7 @@ import {
   updateListMeta,
   updateListContent,
   reorderCategories,
+  renameCategory,
   publishListDirect,
 } from "@/lib/lexiconServer";
 
@@ -20,6 +21,7 @@ export const dynamic = "force-dynamic";
  * - update-meta: { listId, label?, categoryId?, categoryLabel?, icon?, desc? }
  * - update-content: { listId, items: [{name,tags,...}], label? }
  * - reorder: { categories: [{id,label,lists:[{id,label,...}]}] }
+ * - rename-category: { categoryId, label }
  * - publish-direct: { categoryId, categoryLabel?, label, items, icon?, desc? }
  */
 export async function POST(req: NextRequest) {
@@ -84,6 +86,17 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "missing categories" }, { status: 400 });
       }
       const result = await reorderCategories(body.categories);
+      if (!result.ok) return NextResponse.json(result, { status: 400 });
+      return NextResponse.json(result);
+    }
+
+    if (action === "rename-category") {
+      const categoryId = String(body.categoryId || "").trim();
+      const label = String(body.label || "").trim();
+      if (!categoryId) {
+        return NextResponse.json({ error: "missing categoryId" }, { status: 400 });
+      }
+      const result = await renameCategory(categoryId, label);
       if (!result.ok) return NextResponse.json(result, { status: 400 });
       return NextResponse.json(result);
     }
