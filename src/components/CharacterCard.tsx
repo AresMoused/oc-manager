@@ -46,12 +46,12 @@ export default function CharacterCard({
           <p className="text-xs text-neutral-400 truncate">
             {[c.race, c.identity].filter(Boolean).join(" · ")}
           </p>
-          {c.world && (
+          {c.residence && (
             <p
               className="text-[10px] mt-0.5 truncate"
               style={{ color: accentColor || "#a78bfa" }}
             >
-              {c.world}
+              {c.residence}
             </p>
           )}
         </div>

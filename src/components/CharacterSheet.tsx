@@ -158,7 +158,7 @@ export default function CharacterSheet({
         <div className="space-y-3">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
             <div className="lg:col-span-3">
-              <Panel title="头像 / Avatar" height={h}>
+              <Panel title="头像" height={h}>
                 <div className="p-3 flex justify-center items-center h-full">
                   <AvatarUpload
                     src={c.avatar}
@@ -173,7 +173,7 @@ export default function CharacterSheet({
             </div>
 
             <div className="lg:col-span-4">
-              <Panel title="基础信息 / Basic Info" height={h}>
+              <Panel title="基础信息" height={h}>
                 <div className="p-3 space-y-2 text-sm">
                   <div className="flex gap-2 items-center pb-1 mb-1 border-b border-neutral-800">
                     <span className="w-14 text-neutral-500 shrink-0">世界:</span>
@@ -302,7 +302,7 @@ export default function CharacterSheet({
 
             <div className="lg:col-span-5">
               <Panel
-                title="特质分析 / Trait Analysis"
+                title="特质分析"
                 height={h}
                 actions={
                   editable
@@ -332,7 +332,7 @@ export default function CharacterSheet({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
             <div className="lg:col-span-4">
               <Panel
-                title="情绪评估 / Emotional Assessment"
+                title="情绪评估"
                 height={h}
                 actions={
                   editable
@@ -359,53 +359,22 @@ export default function CharacterSheet({
             </div>
 
             <div className="lg:col-span-4">
-              <Panel title="战斗风格 / Combat Style" height={h}>
-                <div className="p-2 flex flex-col items-center gap-2 h-full">
+              <Panel title="战斗风格" height={h}>
+                <div className="p-2 flex flex-col items-center justify-center h-full">
                   <RadarChart
                     data={c.combat}
-                    size={Math.min(200, panelHeight - 120)}
+                    size={Math.min(280, panelHeight - 36)}
                     onChange={
                       editable ? (key, v) => updateCombat(key, v) : undefined
                     }
                   />
-                  <div className="w-full grid grid-cols-2 gap-x-3 gap-y-2 text-xs px-1">
-                    {(
-                      [
-                        ["经验", "experience"],
-                        ["协作", "collaboration"],
-                        ["冲突", "conflict"],
-                        ["智取", "intelligence"],
-                        ["应变", "adaptability"],
-                      ] as const
-                    ).map(([label, key]) => (
-                      <div key={key} className="flex items-center gap-1.5">
-                        <span className="w-7 text-neutral-500 shrink-0">
-                          {label}
-                        </span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={c.combat[key]}
-                          disabled={!editable}
-                          onChange={(e) =>
-                            updateCombat(key, Number(e.target.value))
-                          }
-                          className="combat-slider flex-1"
-                        />
-                        <span className="w-6 text-right tabular-nums text-neutral-400">
-                          {c.combat[key]}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               </Panel>
             </div>
 
             <div className="lg:col-span-4">
               <Panel
-                title="幸福指数 / Happiness Index"
+                title="幸福指数"
                 height={h}
                 actions={
                   editable
@@ -434,7 +403,7 @@ export default function CharacterSheet({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
             <div className="lg:col-span-4">
               <Panel
-                title="个人喜好 / Preferences"
+                title="个人喜好"
                 height={h}
                 actions={
                   editable ? (
@@ -526,7 +495,7 @@ export default function CharacterSheet({
 
             <div className="lg:col-span-3">
               <Panel
-                title="对外表现 / Outward"
+                title="对外表现"
                 height={h}
                 actions={
                   editable
@@ -552,7 +521,7 @@ export default function CharacterSheet({
             </div>
 
             <div className="lg:col-span-5">
-              <Panel title="故事经历 / Story Experience" height={h}>
+              <Panel title="故事经历" height={h}>
                 <div className="p-3 h-full">
                   {editable ? (
                     <textarea

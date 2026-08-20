@@ -8,7 +8,6 @@ import Timeline from "@/components/Timeline";
 import RelationshipsPanel from "@/components/RelationshipsPanel";
 import Gallery from "@/components/Gallery";
 import PromptBank from "@/components/PromptBank";
-import WorldSelect from "@/components/WorldSelect";
 import { useCharacters } from "@/hooks/useCharacters";
 import { useWorldCatalog } from "@/hooks/useWorldCatalog";
 import { useWorlds } from "@/hooks/useWorlds";
@@ -99,22 +98,6 @@ export default function CharacterPage({
             <Link href={backHref} className="text-neutral-500 hover:text-white text-sm">
               {backLabel}
             </Link>
-            {worldMeta && (
-              <span
-                className="text-[10px] px-2 py-0.5 rounded-full text-white/90"
-                style={{ backgroundColor: worldMeta.color }}
-              >
-                {worldMeta.name}
-              </span>
-            )}
-            <div className="w-40 sm:w-52">
-              <WorldSelect
-                value={character.world || ""}
-                worlds={worlds}
-                onChange={(w) => updateCharacter(id, { world: w })}
-                onCreateWorld={createWorld}
-              />
-            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -191,7 +174,7 @@ export default function CharacterPage({
               }}
               className="px-3 py-1.5 text-xs text-rose-400 border border-rose-900/50 rounded-lg hover:bg-rose-950/30 transition"
             >
-              Delete
+              删除
             </button>
           </div>
         </div>
@@ -199,10 +182,10 @@ export default function CharacterPage({
         <div className="flex gap-1 mb-4 border-b border-neutral-800 overflow-x-auto">
           {(
             [
-              ["sheet", "Character Sheet"],
-              ["gallery", "Gallery"],
-              ["timeline", "Timeline"],
-              ["relations", "Relationships"],
+              ["sheet", "角色卡"],
+              ["gallery", "图库"],
+              ["timeline", "时间线"],
+              ["relations", "关系"],
             ] as const
           ).map(([key, label]) => (
             <button

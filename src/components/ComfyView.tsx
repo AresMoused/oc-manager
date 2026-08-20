@@ -48,7 +48,7 @@ export default function ComfyView() {
 
   const [batchCount, setBatchCount] = useState(1);
   const [builder, setBuilder] = useState<BuilderData | null>(null);
-  const [randomEnabled, setRandomEnabled] = useState(true);
+  const [randomEnabled, setRandomEnabled] = useState(false);
   const [randomLocked, setRandomLocked] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
