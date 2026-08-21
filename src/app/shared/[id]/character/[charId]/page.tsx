@@ -234,7 +234,7 @@ export default function SharedCharacterPage({
                   : "border-neutral-700 text-neutral-300 hover:bg-neutral-800"
               }`}
             >
-              {editMode ? "编辑模式" : "阅读模式"}
+              {editMode ? "完成" : "编辑卡面"}
             </button>
           )}
         </div>

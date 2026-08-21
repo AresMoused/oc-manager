@@ -5,8 +5,12 @@ import {
   Character,
   PreferenceItem,
   BipolarSliderItem,
-  BipolarDotItem,
-  DotItem,
+  SheetModule,
+  SheetModuleType,
+  RadarAxis,
+  normalizeModules,
+  legacyFieldsFromModules,
+  createSheetModule,
 } from "@/lib/types";
 import SectionHeader from "./SectionHeader";
 import RadarChart from "./RadarChart";
@@ -14,12 +18,7 @@ import AvatarUpload from "./AvatarUpload";
 import OptionSelect from "./OptionSelect";
 import WorldSelect from "./WorldSelect";
 import { OptionField } from "@/lib/worldCatalog";
-import {
-  TraitsList,
-  EmotionsList,
-  DotItemsList,
-  addBtn,
-} from "./DynamicMetrics";
+import { TraitsList, addBtn } from "./DynamicMetrics";
 
 interface Props {
   character: Character;
@@ -40,7 +39,7 @@ function Panel({
   height,
   actions,
 }: {
-  title: string;
+  title: ReactNode;
   children: ReactNode;
   height: number;
   actions?: ReactNode;
@@ -55,6 +54,28 @@ function Panel({
         {children}
       </div>
     </div>
+  );
+}
+
+function chromeBtn(
+  label: string,
+  onClick: () => void,
+  title?: string,
+  danger?: boolean
+) {
+  return (
+    <button
+      type="button"
+      title={title || label}
+      onClick={onClick}
+      className={`h-5 min-w-[20px] px-1.5 rounded text-[10px] leading-none ${
+        danger
+          ? "bg-rose-500/20 hover:bg-rose-500/40 text-rose-200"
+          : "bg-white/15 hover:bg-white/30 text-white"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -97,8 +118,36 @@ export default function CharacterSheet({
     onChange({ [key]: value });
   };
 
-  const updateCombat = (key: keyof Character["combat"], value: number) => {
-    onChange({ combat: { ...c.combat, [key]: value } });
+  const modules: SheetModule[] = Array.isArray(c.modules)
+    ? c.modules
+    : normalizeModules(undefined, {
+        traits: c.traits,
+        combat: c.combat,
+        preferences: c.preferences,
+      });
+
+  const commitModules = (next: SheetModule[]) => {
+    onChange({
+      modules: next,
+      ...legacyFieldsFromModules(next, {
+        traits: c.traits,
+        combat: c.combat,
+        preferences: c.preferences,
+      }),
+    });
+  };
+
+  const replaceModule = (id: string, next: SheetModule) => {
+    commitModules(modules.map((m) => (m.id === id ? next : m)));
+  };
+
+  const moveModule = (id: string, dir: -1 | 1) => {
+    const i = modules.findIndex((m) => m.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= modules.length) return;
+    const next = [...modules];
+    [next[i], next[j]] = [next[j], next[i]];
+    commitModules(next);
   };
 
   const h = panelHeight;
@@ -106,6 +155,230 @@ export default function CharacterSheet({
     100,
     Math.min(Math.floor(panelHeight * 0.72), panelHeight - 72)
   );
+
+  const moduleTitle = (m: SheetModule): ReactNode =>
+    editable ? (
+      <input
+        className="bg-transparent text-sm font-semibold text-white outline-none min-w-[4rem] max-w-[12rem]"
+        value={m.title}
+        onChange={(e) => replaceModule(m.id, { ...m, title: e.target.value } as SheetModule)}
+      />
+    ) : (
+      m.title
+    );
+
+  const moduleActions = (m: SheetModule): ReactNode => {
+    if (!editable) return undefined;
+    let add: ReactNode = null;
+    if (m.type === "sliders") {
+      add = addBtn(() =>
+        replaceModule(m.id, {
+          ...m,
+          items: [
+            ...m.items,
+            {
+              id: crypto.randomUUID(),
+              leftLabel: "左侧",
+              rightLabel: "右侧",
+              value: 50,
+            } as BipolarSliderItem,
+          ],
+        })
+      );
+    } else if (m.type === "text-list") {
+      add = addBtn(() =>
+        replaceModule(m.id, {
+          ...m,
+          items: [
+            ...m.items,
+            { id: crypto.randomUUID(), title: "新条目", content: "" } as PreferenceItem,
+          ],
+        })
+      );
+    } else if (m.type === "radar" && m.axes.length < 8) {
+      add = addBtn(() =>
+        replaceModule(m.id, {
+          ...m,
+          axes: [
+            ...m.axes,
+            { id: crypto.randomUUID(), label: "新轴", value: 50 } as RadarAxis,
+          ],
+        })
+      );
+    }
+    return (
+      <>
+        {add}
+        {chromeBtn(
+          m.width === "full" ? "半宽" : "全宽",
+          () =>
+            replaceModule(m.id, {
+              ...m,
+              width: m.width === "full" ? "half" : "full",
+            } as SheetModule)
+        )}
+        {chromeBtn("↑", () => moveModule(m.id, -1), "上移")}
+        {chromeBtn("↓", () => moveModule(m.id, 1), "下移")}
+        {chromeBtn("×", () => commitModules(modules.filter((x) => x.id !== m.id)), "删除模块", true)}
+      </>
+    );
+  };
+
+  const renderModuleBody = (m: SheetModule) => {
+    if (m.type === "sliders") {
+      return (
+        <TraitsList
+          items={m.items}
+          editable={editable}
+          onChange={(next) => replaceModule(m.id, { ...m, items: next })}
+        />
+      );
+    }
+    if (m.type === "radar") {
+      return (
+        <div className="p-2 flex flex-col items-center justify-center min-h-full">
+          <RadarChart
+            axes={m.axes}
+            size={Math.min(280, panelHeight - (editable ? 88 : 36))}
+            onChange={
+              editable
+                ? (id, v) =>
+                    replaceModule(m.id, {
+                      ...m,
+                      axes: m.axes.map((a) => (a.id === id ? { ...a, value: v } : a)),
+                    })
+                : undefined
+            }
+          />
+          {editable && (
+            <div className="w-full px-2 pb-2 space-y-1">
+              {m.axes.map((ax) => (
+                <div key={ax.id} className="flex items-center gap-2">
+                  <input
+                    className="flex-1 bg-transparent border-b border-neutral-700 text-xs text-neutral-300 outline-none"
+                    value={ax.label}
+                    onChange={(e) =>
+                      replaceModule(m.id, {
+                        ...m,
+                        axes: m.axes.map((a) =>
+                          a.id === ax.id ? { ...a, label: e.target.value } : a
+                        ),
+                      })
+                    }
+                  />
+                  <span className="text-[10px] text-neutral-500 w-8 text-right tabular-nums">
+                    {ax.value}
+                  </span>
+                  {m.axes.length > 3 && (
+                    <button
+                      type="button"
+                      className="text-neutral-600 hover:text-rose-400 text-xs"
+                      onClick={() =>
+                        replaceModule(m.id, {
+                          ...m,
+                          axes: m.axes.filter((a) => a.id !== ax.id),
+                        })
+                      }
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (m.type === "text-list") {
+      return (
+        <div className="p-3 space-y-3">
+          {m.items.map((pref) => (
+            <div
+              key={pref.id}
+              className="relative group text-sm border-b border-neutral-800 pb-2 last:border-0"
+            >
+              {editable ? (
+                <>
+                  <input
+                    className="w-full bg-transparent text-purple-400 font-medium outline-none mb-1"
+                    value={pref.title}
+                    onChange={(e) =>
+                      replaceModule(m.id, {
+                        ...m,
+                        items: m.items.map((p) =>
+                          p.id === pref.id ? { ...p, title: e.target.value } : p
+                        ),
+                      })
+                    }
+                  />
+                  <textarea
+                    className="w-full bg-transparent text-neutral-400 text-xs outline-none resize-none min-h-[48px]"
+                    value={pref.content}
+                    onChange={(e) =>
+                      replaceModule(m.id, {
+                        ...m,
+                        items: m.items.map((p) =>
+                          p.id === pref.id ? { ...p, content: e.target.value } : p
+                        ),
+                      })
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      replaceModule(m.id, {
+                        ...m,
+                        items: m.items.filter((p) => p.id !== pref.id),
+                      })
+                    }
+                    className="absolute top-0 right-0 text-neutral-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 text-xs px-1"
+                  >
+                    ×
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="text-purple-400 mb-1 font-medium">
+                    {pref.title}
+                  </div>
+                  <p className="text-neutral-400 leading-relaxed">
+                    {pref.content || "—"}
+                  </p>
+                </>
+              )}
+            </div>
+          ))}
+          {m.items.length === 0 && (
+            <p className="text-xs text-neutral-600">暂无条目</p>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div className="p-3 h-full">
+        {editable ? (
+          <textarea
+            className="w-full h-full min-h-[160px] bg-[#0a0a0a] border border-neutral-700 rounded p-3 text-sm text-neutral-300 outline-none focus:border-purple-500 leading-relaxed resize-none"
+            value={m.body}
+            onChange={(e) => replaceModule(m.id, { ...m, body: e.target.value })}
+            placeholder="在此填写内容…"
+          />
+        ) : (
+          <div className="text-sm text-neutral-300 leading-relaxed whitespace-pre-wrap">
+            {m.body || "—"}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const addTemplates: { type: SheetModuleType; label: string }[] = [
+    { type: "sliders", label: "滑块" },
+    { type: "radar", label: "雷达图" },
+    { type: "text-list", label: "文本列表" },
+    { type: "text-long", label: "长文本" },
+  ];
 
   return (
     <div className="space-y-3">
@@ -301,226 +574,6 @@ export default function CharacterSheet({
             </div>
 
             <div className="lg:col-span-5">
-              <Panel
-                title="特质分析"
-                height={h}
-                actions={
-                  editable
-                    ? addBtn(() =>
-                        update("traits", [
-                          ...(c.traits || []),
-                          {
-                            id: crypto.randomUUID(),
-                            leftLabel: "左侧",
-                            rightLabel: "右侧",
-                            value: 50,
-                          } as BipolarSliderItem,
-                        ])
-                      )
-                    : undefined
-                }
-              >
-                <TraitsList
-                  items={c.traits || []}
-                  editable={editable}
-                  onChange={(next) => update("traits", next)}
-                />
-              </Panel>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
-            <div className="lg:col-span-4">
-              <Panel
-                title="情绪评估"
-                height={h}
-                actions={
-                  editable
-                    ? addBtn(() =>
-                        update("emotions", [
-                          ...(c.emotions || []),
-                          {
-                            id: crypto.randomUUID(),
-                            leftLabel: "左",
-                            rightLabel: "右",
-                            value: 3,
-                          } as BipolarDotItem,
-                        ])
-                      )
-                    : undefined
-                }
-              >
-                <EmotionsList
-                  items={c.emotions || []}
-                  editable={editable}
-                  onChange={(next) => update("emotions", next)}
-                />
-              </Panel>
-            </div>
-
-            <div className="lg:col-span-4">
-              <Panel title="战斗风格" height={h}>
-                <div className="p-2 flex flex-col items-center justify-center h-full">
-                  <RadarChart
-                    data={c.combat}
-                    size={Math.min(280, panelHeight - 36)}
-                    onChange={
-                      editable ? (key, v) => updateCombat(key, v) : undefined
-                    }
-                  />
-                </div>
-              </Panel>
-            </div>
-
-            <div className="lg:col-span-4">
-              <Panel
-                title="幸福指数"
-                height={h}
-                actions={
-                  editable
-                    ? addBtn(() =>
-                        update("happiness", [
-                          ...(c.happiness || []),
-                          {
-                            id: crypto.randomUUID(),
-                            label: "新项",
-                            value: 3,
-                          } as DotItem,
-                        ])
-                      )
-                    : undefined
-                }
-              >
-                <DotItemsList
-                  items={c.happiness || []}
-                  editable={editable}
-                  onChange={(next) => update("happiness", next)}
-                />
-              </Panel>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
-            <div className="lg:col-span-4">
-              <Panel
-                title="个人喜好"
-                height={h}
-                actions={
-                  editable ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        update("preferences", [
-                          ...(c.preferences || []),
-                          {
-                            id: crypto.randomUUID(),
-                            title: "新喜好",
-                            content: "",
-                          },
-                        ])
-                      }
-                      className="text-neutral-400 hover:text-white text-sm px-1"
-                    >
-                      +
-                    </button>
-                  ) : undefined
-                }
-              >
-                <div className="p-3 space-y-3">
-                  {(c.preferences || []).map((pref) => (
-                    <div
-                      key={pref.id}
-                      className="relative group text-sm border-b border-neutral-800 pb-2 last:border-0"
-                    >
-                      {editable ? (
-                        <>
-                          <input
-                            className="w-full bg-transparent text-purple-400 font-medium outline-none mb-1"
-                            value={pref.title}
-                            onChange={(e) =>
-                              update(
-                                "preferences",
-                                (c.preferences || []).map((p) =>
-                                  p.id === pref.id
-                                    ? { ...p, title: e.target.value }
-                                    : p
-                                )
-                              )
-                            }
-                          />
-                          <textarea
-                            className="w-full bg-transparent text-neutral-400 text-xs outline-none resize-none min-h-[48px]"
-                            value={pref.content}
-                            onChange={(e) =>
-                              update(
-                                "preferences",
-                                (c.preferences || []).map((p) =>
-                                  p.id === pref.id
-                                    ? { ...p, content: e.target.value }
-                                    : p
-                                )
-                              )
-                            }
-                          />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              update(
-                                "preferences",
-                                (c.preferences || []).filter(
-                                  (p) => p.id !== pref.id
-                                )
-                              )
-                            }
-                            className="absolute top-0 right-0 text-neutral-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 text-xs px-1"
-                          >
-                            ×
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <div className="text-purple-400 mb-1 font-medium">
-                            {pref.title}
-                          </div>
-                          <p className="text-neutral-400 leading-relaxed">
-                            {pref.content || "—"}
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </Panel>
-            </div>
-
-            <div className="lg:col-span-3">
-              <Panel
-                title="对外表现"
-                height={h}
-                actions={
-                  editable
-                    ? addBtn(() =>
-                        update("outward", [
-                          ...(c.outward || []),
-                          {
-                            id: crypto.randomUUID(),
-                            label: "新项",
-                            value: 3,
-                          } as DotItem,
-                        ])
-                      )
-                    : undefined
-                }
-              >
-                <DotItemsList
-                  items={c.outward || []}
-                  editable={editable}
-                  onChange={(next) => update("outward", next)}
-                />
-              </Panel>
-            </div>
-
-            <div className="lg:col-span-5">
               <Panel title="故事经历" height={h}>
                 <div className="p-3 h-full">
                   {editable ? (
@@ -528,17 +581,50 @@ export default function CharacterSheet({
                       className="w-full h-full min-h-[160px] bg-[#0a0a0a] border border-neutral-700 rounded p-3 text-sm text-neutral-300 outline-none focus:border-purple-500 leading-relaxed resize-none"
                       value={c.story}
                       onChange={(e) => update("story", e.target.value)}
-                      placeholder="Write the character's backstory here..."
+                      placeholder="在此填写角色的故事经历…"
                     />
                   ) : (
                     <div className="text-sm text-neutral-300 leading-relaxed whitespace-pre-wrap">
-                      {c.story || "No story yet."}
+                      {c.story || "暂无故事经历"}
                     </div>
                   )}
                 </div>
               </Panel>
             </div>
           </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+            {modules.map((m) => (
+              <div
+                key={m.id}
+                className={m.width === "full" ? "lg:col-span-12" : "lg:col-span-6"}
+              >
+                <Panel
+                  title={moduleTitle(m)}
+                  height={h}
+                  actions={moduleActions(m)}
+                >
+                  {renderModuleBody(m)}
+                </Panel>
+              </div>
+            ))}
+          </div>
+
+          {editable && (
+            <div className="flex flex-wrap items-center gap-2 px-1 py-2 border border-dashed border-neutral-800 rounded-lg">
+              <span className="text-xs text-neutral-500">添加模块</span>
+              {addTemplates.map((t) => (
+                <button
+                  key={t.type}
+                  type="button"
+                  onClick={() => commitModules([...modules, createSheetModule(t.type)])}
+                  className="px-2.5 py-1 text-xs rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800 hover:text-white transition"
+                >
+                  + {t.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

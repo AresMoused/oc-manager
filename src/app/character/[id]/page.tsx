@@ -40,6 +40,7 @@ export default function CharacterPage({
   } = useCharacters();
 
   const [retryCount, setRetryCount] = useState(0);
+  const [editMode, setEditMode] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -88,6 +89,7 @@ export default function CharacterPage({
   const worldMeta = getWorldByName(character.world || "");
   const backHref = worldMeta ? `/world/${worldMeta.id}` : "/";
   const backLabel = worldMeta ? `← ${worldMeta.name}` : "← Worlds";
+  const editable = editMode;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -100,6 +102,17 @@ export default function CharacterPage({
             </Link>
           </div>
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setEditMode((v) => !v)}
+              className={`px-3 py-1.5 text-xs border rounded-lg transition ${
+                editMode
+                  ? "border-amber-700/60 text-amber-300 hover:bg-amber-950/30"
+                  : "border-neutral-700 text-neutral-300 hover:bg-neutral-800"
+              }`}
+            >
+              {editMode ? "完成" : "编辑卡面"}
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -154,6 +167,7 @@ export default function CharacterPage({
                     preferences: src.preferences,
                     outward: src.outward,
                     story: src.story,
+                    modules: src.modules,
                     timeline: src.timeline,
                     relationships: src.relationships,
                     gallery: src.gallery,
@@ -206,7 +220,7 @@ export default function CharacterPage({
           <CharacterSheet
             character={character}
             onChange={(updates) => updateCharacter(id, updates)}
-            editable
+            editable={editable}
             worlds={worlds}
             optionsFor={optionsFor}
             onCreateWorld={createWorld}
@@ -218,12 +232,12 @@ export default function CharacterPage({
             <PromptBank
               prompts={character.prompts || []}
               onChange={(prompts) => updateCharacter(id, { prompts })}
-              editable
+              editable={editable}
             />
             <Gallery
               images={character.gallery || []}
               onChange={(gallery) => updateCharacter(id, { gallery })}
-              editable
+              editable={editable}
             />
           </>
         )}
@@ -233,7 +247,7 @@ export default function CharacterPage({
             onAdd={(ev) => addTimelineEvent(id, ev)}
             onUpdate={(eid, u) => updateTimelineEvent(id, eid, u)}
             onDelete={(eid) => deleteTimelineEvent(id, eid)}
-            editable
+            editable={editable}
           />
         )}
         {tab === "relations" && (
@@ -243,7 +257,7 @@ export default function CharacterPage({
             onAdd={(rel) => addRelationship(id, rel)}
             onUpdate={(rid, u) => updateRelationship(id, rid, u)}
             onDelete={(rid) => deleteRelationship(id, rid)}
-            editable
+            editable={editable}
           />
         )}
       </main>

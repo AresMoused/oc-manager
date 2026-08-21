@@ -13,7 +13,8 @@ import {
   parseCharacterJson, saveActivePresetId, saveApiConfig, saveModelParams, savePresets,
 } from "@/lib/aiConfig";
 import {
-  BipolarDotItem, BipolarSliderItem, Character, DotItem, defaultCharacter,
+  BipolarSliderItem, Character, PreferenceItem, defaultCharacter, defaultCombatAxes,
+  defaultModules, SliderModule, RadarModule, TextListModule,
 } from "@/lib/types";
 import { newId, roleLabel, roleColor, parsePresetImport } from "@/lib/aiGenerateHelpers";
 
@@ -112,16 +113,12 @@ export default function AiGenerateView() {
     if (!parsed) return { ...base, name: newCharName.trim() || "AI 角色", story: output };
     const mapBipolar = (arr: unknown, fb: BipolarSliderItem[]) =>
       Array.isArray(arr) ? (arr as BipolarSliderItem[]).map((t) => ({
-        id: t.id || newId(), leftLabel: t.leftLabel || "左", rightLabel: t.rightLabel || "右", value: Number(t.value) || 50,
+        id: t.id || newId(), leftLabel: t.leftLabel || "左", rightLabel: t.rightLabel || "", value: Number(t.value) || 50,
       })) : fb;
-    const mapDots = (arr: unknown, fb: DotItem[]) =>
-      Array.isArray(arr) ? (arr as DotItem[]).map((t) => ({
-        id: t.id || newId(), label: t.label || "项", value: Number(t.value) || 3,
-      })) : fb;
-    const mapEmo = (arr: unknown, fb: BipolarDotItem[]) =>
-      Array.isArray(arr) ? (arr as BipolarDotItem[]).map((t) => ({
-        id: t.id || newId(), leftLabel: t.leftLabel || "左", rightLabel: t.rightLabel || "右", value: Number(t.value) || 3,
-      })) : fb;
+    const mapPrefs = (arr: unknown): PreferenceItem[] =>
+      Array.isArray(arr) ? (arr as PreferenceItem[]).map((t) => ({
+        id: t.id || newId(), title: t.title || "条目", content: t.content || "",
+      })) : [];
     const combat = parsed.combat && typeof parsed.combat === "object" ? {
       experience: Number((parsed.combat as Character["combat"]).experience) || 50,
       collaboration: Number((parsed.combat as Character["combat"]).collaboration) || 50,
@@ -129,6 +126,14 @@ export default function AiGenerateView() {
       intelligence: Number((parsed.combat as Character["combat"]).intelligence) || 50,
       adaptability: Number((parsed.combat as Character["combat"]).adaptability) || 50,
     } : base.combat;
+    const traits = mapBipolar(parsed.traits, base.traits);
+    const preferences = mapPrefs(parsed.preferences);
+    const modules = defaultModules().map((m) => {
+      if (m.type === "sliders") return { ...m, items: traits } as SliderModule;
+      if (m.type === "radar") return { ...m, axes: defaultCombatAxes(combat) } as RadarModule;
+      if (m.type === "text-list") return { ...m, items: preferences } as TextListModule;
+      return m;
+    });
     return {
       ...base,
       name: String(parsed.name || newCharName.trim() || "AI 角色"),
@@ -143,11 +148,13 @@ export default function AiGenerateView() {
       faction: String(parsed.faction || ""),
       birthplace: String(parsed.birthplace || ""),
       story: String(parsed.story || output),
-      traits: mapBipolar(parsed.traits, base.traits),
-      emotions: mapEmo(parsed.emotions, base.emotions),
-      happiness: mapDots(parsed.happiness, base.happiness),
-      outward: mapDots(parsed.outward, base.outward),
+      traits,
       combat,
+      preferences,
+      emotions: [],
+      happiness: [],
+      outward: [],
+      modules,
     };
   }, [output, newCharName]);
 

@@ -1,38 +1,24 @@
 "use client";
 
 import { useRef, useCallback } from "react";
+import type { RadarAxis } from "@/lib/types";
 
 interface Props {
-  data: {
-    experience: number;
-    collaboration: number;
-    conflict: number;
-    intelligence: number;
-    adaptability: number;
-  };
+  axes: RadarAxis[];
   size?: number;
-  onChange?: (key: keyof Props["data"], value: number) => void;
+  onChange?: (id: string, value: number) => void;
 }
 
-const LABELS = [
-  { key: "experience" as const, label: "经验", angle: -90 },
-  { key: "adaptability" as const, label: "应变", angle: -18 },
-  { key: "intelligence" as const, label: "智取", angle: 54 },
-  { key: "conflict" as const, label: "冲突", angle: 126 },
-  { key: "collaboration" as const, label: "协作", angle: 198 },
-];
-
-export default function RadarChart({
-  data,
-  size = 200,
-  onChange,
-}: Props) {
+export default function RadarChart({ axes, size = 200, onChange }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const dragging = useRef<keyof Props["data"] | null>(null);
+  const dragging = useRef<string | null>(null);
 
   const cx = size / 2;
   const cy = size / 2;
   const maxR = size * 0.38;
+  const n = Math.max(3, axes.length);
+
+  const angleOf = (i: number) => -90 + (360 / n) * i;
 
   const getPoint = (value: number, angleDeg: number) => {
     const rad = (angleDeg * Math.PI) / 180;
@@ -43,7 +29,6 @@ export default function RadarChart({
     };
   };
 
-  /** Convert mouse position to a 0–100 value along the axis of a given angle */
   const valueFromPointer = useCallback(
     (clientX: number, clientY: number, angleDeg: number) => {
       if (!svgRef.current) return 50;
@@ -52,9 +37,7 @@ export default function RadarChart({
       const scaleY = size / rect.height;
       const mx = (clientX - rect.left) * scaleX - cx;
       const my = (clientY - rect.top) * scaleY - cy;
-
       const rad = (angleDeg * Math.PI) / 180;
-      // Project mouse vector onto the axis direction
       const proj = mx * Math.cos(rad) + my * Math.sin(rad);
       const clamped = Math.max(0, Math.min(maxR, proj));
       return Math.round((clamped / maxR) * 100);
@@ -62,38 +45,43 @@ export default function RadarChart({
     [size, cx, cy, maxR]
   );
 
-  const handlePointerDown = (key: keyof Props["data"], angle: number) => (e: React.PointerEvent) => {
-    if (!onChange) return;
-    e.preventDefault();
-    e.stopPropagation();
-    dragging.current = key;
-    (e.target as Element).setPointerCapture?.(e.pointerId);
+  const handlePointerDown =
+    (id: string, angle: number) => (e: React.PointerEvent) => {
+      if (!onChange) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragging.current = id;
+      (e.target as Element).setPointerCapture?.(e.pointerId);
 
-    const onMove = (ev: PointerEvent) => {
-      if (!dragging.current) return;
-      const val = valueFromPointer(ev.clientX, ev.clientY, angle);
-      onChange(dragging.current, val);
+      const onMove = (ev: PointerEvent) => {
+        if (!dragging.current) return;
+        const val = valueFromPointer(ev.clientX, ev.clientY, angle);
+        onChange(dragging.current, val);
+      };
+      const onUp = () => {
+        dragging.current = null;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
     };
-    const onUp = () => {
-      dragging.current = null;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  };
 
-  const points = LABELS.map((l) => {
-    const p = getPoint(data[l.key], l.angle);
-    return `${p.x},${p.y}`;
-  }).join(" ");
-
-  const grids = [20, 40, 60, 80, 100].map((pct) => {
-    return LABELS.map((l) => {
-      const p = getPoint(pct, l.angle);
+  const points = axes
+    .map((ax, i) => {
+      const p = getPoint(ax.value, angleOf(i));
       return `${p.x},${p.y}`;
-    }).join(" ");
-  });
+    })
+    .join(" ");
+
+  const grids = [20, 40, 60, 80, 100].map((pct) =>
+    axes
+      .map((_, i) => {
+        const p = getPoint(pct, angleOf(i));
+        return `${p.x},${p.y}`;
+      })
+      .join(" ")
+  );
 
   return (
     <div className="relative flex items-center justify-center select-none">
@@ -104,7 +92,6 @@ export default function RadarChart({
         viewBox={`0 0 ${size} ${size}`}
         className={onChange ? "cursor-default" : ""}
       >
-        {/* Grid */}
         {grids.map((pts, i) => (
           <polygon
             key={i}
@@ -114,12 +101,11 @@ export default function RadarChart({
             strokeWidth={1}
           />
         ))}
-        {/* Axes */}
-        {LABELS.map((l) => {
-          const p = getPoint(100, l.angle);
+        {axes.map((ax, i) => {
+          const p = getPoint(100, angleOf(i));
           return (
             <line
-              key={l.key}
+              key={ax.id}
               x1={cx}
               y1={cy}
               x2={p.x}
@@ -129,20 +115,18 @@ export default function RadarChart({
             />
           );
         })}
-        {/* Data polygon */}
         <polygon
           points={points}
           fill="rgba(168, 85, 247, 0.25)"
           stroke="#a855f7"
           strokeWidth={2}
         />
-        {/* Data points + values */}
-        {LABELS.map((l) => {
-          const p = getPoint(data[l.key], l.angle);
-          const labelP = getPoint(118, l.angle);
+        {axes.map((ax, i) => {
+          const angle = angleOf(i);
+          const p = getPoint(ax.value, angle);
+          const labelP = getPoint(118, angle);
           return (
-            <g key={l.key}>
-              {/* Larger invisible hit area for easier dragging */}
+            <g key={ax.id}>
               {onChange && (
                 <circle
                   cx={p.x}
@@ -150,7 +134,7 @@ export default function RadarChart({
                   r={14}
                   fill="transparent"
                   className="cursor-grab active:cursor-grabbing"
-                  onPointerDown={handlePointerDown(l.key, l.angle)}
+                  onPointerDown={handlePointerDown(ax.id, angle)}
                 />
               )}
               <circle
@@ -170,7 +154,7 @@ export default function RadarChart({
                 fill="#a3a3a3"
                 style={{ fontSize: 10 }}
               >
-                {l.label}
+                {ax.label}
               </text>
               <text
                 x={p.x}
@@ -180,7 +164,7 @@ export default function RadarChart({
                 style={{ fontSize: 10, fontWeight: 600 }}
                 className="pointer-events-none"
               >
-                {data[l.key]}
+                {ax.value}
               </text>
             </g>
           );

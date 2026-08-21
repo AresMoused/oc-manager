@@ -5,11 +5,27 @@ import {
   migrateEmotions,
   migrateHappiness,
   migrateOutward,
+  normalizeModules,
+  legacyFieldsFromModules,
 } from "./types";
 
 const STORAGE_KEY = "oc-manager-characters-v1";
 
 export function normalizeCharacter(c: Character): Character {
+  const traits = migrateTraits(c.traits);
+  const preferences = migratePreferences(c.preferences);
+  const combat = c.combat || {
+    experience: 50,
+    collaboration: 50,
+    conflict: 50,
+    intelligence: 50,
+    adaptability: 50,
+  };
+  const modules = normalizeModules(
+    (c as { modules?: unknown }).modules,
+    { traits, combat, preferences }
+  );
+  const legacy = legacyFieldsFromModules(modules, { traits, combat, preferences });
   return {
     ...c,
     world: c.world ?? "",
@@ -19,11 +35,14 @@ export function normalizeCharacter(c: Character): Character {
     prompts: Array.isArray((c as { prompts?: unknown }).prompts)
       ? ((c as { prompts: Character["prompts"] }).prompts)
       : [],
-    preferences: migratePreferences(c.preferences),
-    traits: migrateTraits(c.traits),
+    preferences: legacy.preferences,
+    traits: legacy.traits,
+    combat: legacy.combat,
     emotions: migrateEmotions(c.emotions),
     happiness: migrateHappiness(c.happiness),
     outward: migrateOutward(c.outward),
+    modules,
+    story: c.story ?? "",
   };
 }
 

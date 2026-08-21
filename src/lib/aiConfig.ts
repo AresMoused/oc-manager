@@ -68,7 +68,7 @@ export function defaultCharacterPreset(): ContextPreset {
         role: "system",
         name: "System",
         content:
-          "你是一位专业的 TRPG / 原创角色（OC）设定助手。用户会描述角色概念，你需要输出完整的角色卡 JSON。只输出 JSON，不要 markdown 代码块以外的解释。字段：name, gender, age, race, height, weight, affiliation, identity, residence, faction, birthplace, story, traits(数组{leftLabel,rightLabel,value:0-100}), emotions(数组{leftLabel,rightLabel,value:0-5}), happiness(数组{label,value:0-5}), outward(数组{label,value:0-5}), combat({experience,collaboration,conflict,intelligence,adaptability} 0-100)。中文填写。",
+          "你是一位专业的 TRPG / 原创角色（OC）设定助手。用户会描述角色概念，你需要输出完整的角色卡 JSON。只输出 JSON，不要 markdown 代码块以外的解释。字段：name, gender, age, race, height, weight, affiliation, identity, residence, faction, birthplace, story, traits(数组{leftLabel,rightLabel,value:0-100}，rightLabel可空), preferences(数组{title,content}), combat({experience,collaboration,conflict,intelligence,adaptability} 0-100)。中文填写。",
         enabled: true,
       },
       {
