@@ -26,7 +26,7 @@ export default function Footer() {
               <span className="text-purple-400 font-medium">AresMoused</span>
             </p>
             <p className="text-neutral-600">
-              © {new Date().getFullYear()} AresMoused. All rights reserved.
+              © {new Date().getFullYear()} AresMoused. Apache License 2.0.
             </p>
           </div>
         </div>
