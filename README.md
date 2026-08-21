@@ -1,6 +1,6 @@
 # OC Manager
 
-Original Character Manager for TRPGs (DnD / CoC / Cyberpunk).
+面向 TRPG / 原创角色（OC）的角色与世界管理器，覆盖 DnD、CoC、赛博朋克等设定。
 
 **Created by [AresMoused](https://civitai.red/user/AresMoused)**
 
@@ -8,24 +8,109 @@ Original Character Manager for TRPGs (DnD / CoC / Cyberpunk).
 - Discord: https://discord.gg/Adu5nCDKxH
 - Civitai: https://civitai.red/user/AresMoused
 
-## Features
+使用 Discord 登录。数据按账号隔离，可在世界之间组织角色，并分享给同服务器的伙伴。
 
-- Character sheets with trait analysis, combat radar, happiness index
-- Timeline & relationship maps
-- Image gallery (Discord CDN URLs)
-- World-scoped option catalogs (gender, race, affiliation, birthplace)
-- LocalStorage + JSON import/export
+---
 
-## Getting Started
+## 功能介绍
+
+### 世界与角色
+
+- 以「世界」为单位收纳角色卡，首页可新建、改名、配色、删除世界。
+- 进入世界后可创建角色、浏览角色卡网格（显示姓名、种族、身份、**现住地**）。
+- 每个世界有独立的选项目录：性别、种族、阵营、现住地、派系、出生地，可在填写时即时新增。
+
+### 角色卡（模块化）
+
+打开角色卡默认是 **唯读**。有编辑权的人点右上角 **编辑卡面** 后才能改内容和结构。分享区同样如此。
+
+**固定在最上面（不可删除）：**
+
+| 区块 | 说明 |
+| --- | --- |
+| 头像 | 上传或更换立绘 |
+| 基础信息 | 世界、姓名、性别、种族、年龄、身高、体重、阵营、身份、现住地、派系、出生地 |
+| 故事经历 | 长文本背景故事 |
+
+**下面是可编排模块。** 编辑卡面时，顶部会显示青蓝色的「＋ 添加模块」栏。每块都可以改名、↑↓ 排序、半宽 / 全宽、删除。
+
+| 模板 | 控件 | 默认用途 |
+| --- | --- | --- |
+| 滑块 | 左右标签 + 连续滑条（右标签可空） | 特质分析 |
+| 雷达图 | 3–8 轴可改名、加减轴 | 战斗风格（经验 / 协作 / 冲突 / 智取 / 应变） |
+| 文本列表 | 多条「标题 + 正文」 | 个人喜好 |
+| 长文本 | 整块正文 | 能力设定、秘密、台词等 |
+
+- 新建角色自带三块：特质分析、战斗风格、个人喜好。
+- 旧角色会自动迁成这三块；原来的「情绪评估 / 幸福指数 / 对外表现」不再显示，但导出 JSON 里仍保留。
+- 缩放、分区高度可调，仅影响自己的浏览，不写入角色数据。
+
+角色页还有独立标签：**图库**、**时间线**、**关系**。
+
+- **图库**：图片与提示词库。
+- **时间线**：按日期记录事件。
+- **关系**：与同世界其他角色的关系图与备注。
+
+### 世界观设定
+
+世界页可撰写世界观条目，例如地点、派系、规则、神器、历史、种族等，供这个世界的角色共同引用。
+
+### 分享区
+
+- 世界主人可以把整个世界分享到 **分享区**。
+- 权限两种：**全员唯读**，或指定 **编辑者**。
+- 有编辑权的人打开分享角色卡也是先唯读，再点 **编辑卡面**；写入的是主人那边的数据。
+- 登录用户都能浏览已分享的世界。
+
+### 角色外观生成器（词库）
+
+按分类浏览公共词库列表，用「启动分区」开关决定哪些列表参与随机与拼装。
+
+- 只有启用的列表会出现在底部拼装区，并用于随机。
+- 可以保存启用状态为预设；也支持自己的私有列表。
+- 抽卡姬的随机角色提示词会读取这里启用的列表。
+
+**管理员**（环境变量 `ADMIN_USER_IDS`）可以：
+
+- 直接上传公共列表（自动带上登录用户信息；分类名可直接输入，不存在则自动创建）
+- 改列表名字、分类、内容、顺序
+- 管理公共分类的排序与改名
+- 审核他人提交到 CDN 的列表
+
+### 抽卡姬
+
+对接 Comfy 工作流的出图页。可配置工作流、抽卡参数。角色提示词里的「随机角色」默认关闭；打开后会按外观生成器当前启用的词库随机一条。
+
+### AI 生成角色
+
+用自定义 API / 模型预设，根据文字（可附图）生成角色卡 JSON，预览后再导入到指定世界。生成结果会填进默认的三块模块（特质滑块、战斗雷达、个人喜好）以及基础信息和故事。
+
+### 导入导出
+
+- 单张角色卡、按世界打包、全库备份，均为 JSON。
+- 导入单卡时保留当前世界，避免把角色挪到别的设定里。
+
+---
+
+## 开始使用
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000
+打开 http://localhost:3000
 
-Place `logo.png` in `/public` for the favicon (navbar logo is bundled).
+把 `logo.png` 放到 `/public` 作为 favicon（导航栏 logo 已内置）。
+
+登录与存储相关说明：
+
+- Discord 登录：见 [`docs-discord-auth.md`](docs-discord-auth.md)
+- Vercel + Cloudflare R2：见 [`docs-vercel-r2.md`](docs-vercel-r2.md)
+
+生产环境必须配置 R2（Vercel 无持久磁盘）。管理员 Discord 用户 ID 写在 Vercel 环境变量 `ADMIN_USER_IDS`（逗号分隔）。
+
+---
 
 ## License
 
