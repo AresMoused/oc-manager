@@ -429,6 +429,24 @@ export default function CharacterSheet({
         }}
       >
         <div className="space-y-3">
+          {editable && (
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 rounded-lg border-2 border-cyan-400/80 bg-cyan-950/40 shadow-[0_0_16px_rgba(34,211,238,0.18)]">
+              <span className="text-sm font-semibold text-cyan-300 tracking-wide">
+                ＋ 添加模块
+              </span>
+              {addTemplates.map((t) => (
+                <button
+                  key={t.type}
+                  type="button"
+                  onClick={() => commitModules([...modules, createSheetModule(t.type)])}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-cyan-400/70 bg-cyan-500/15 text-cyan-100 hover:bg-cyan-400/30 hover:border-cyan-300 hover:text-white transition"
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
             <div className="lg:col-span-3">
               <Panel title="头像" height={h}>
@@ -609,22 +627,6 @@ export default function CharacterSheet({
               </div>
             ))}
           </div>
-
-          {editable && (
-            <div className="flex flex-wrap items-center gap-2 px-1 py-2 border border-dashed border-neutral-800 rounded-lg">
-              <span className="text-xs text-neutral-500">添加模块</span>
-              {addTemplates.map((t) => (
-                <button
-                  key={t.type}
-                  type="button"
-                  onClick={() => commitModules([...modules, createSheetModule(t.type)])}
-                  className="px-2.5 py-1 text-xs rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800 hover:text-white transition"
-                >
-                  + {t.label}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </div>
