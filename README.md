@@ -19,10 +19,14 @@
 - 以「世界」为单位收纳角色卡，首页可新建、改名、配色、删除世界。
 - 进入世界后可创建角色、浏览角色卡网格（显示姓名、种族、身份、**现住地**）。
 - 每个世界有独立的选项目录：性别、种族、阵营、现住地、派系、出生地，可在填写时即时新增。
+<img width="2602" height="2138" alt="image" src="https://github.com/user-attachments/assets/70e9505b-7860-4a1d-9449-6724b252433c" />
+
 
 ### 角色卡（模块化）
 
 打开角色卡默认是 **唯读**。有编辑权的人点右上角 **编辑卡面** 后才能改内容和结构。分享区同样如此。
+<img width="2586" height="2148" alt="image" src="https://github.com/user-attachments/assets/77420def-a8c8-4c26-a21c-8e3be3a2138d" />
+
 
 **固定在最上面（不可删除）：**
 
@@ -61,6 +65,8 @@
 - 权限两种：**全员唯读**，或指定 **编辑者**。
 - 有编辑权的人打开分享角色卡也是先唯读，再点 **编辑卡面**；写入的是主人那边的数据。
 - 登录用户都能浏览已分享的世界。
+<img width="2598" height="778" alt="image" src="https://github.com/user-attachments/assets/a8ea4e08-ca76-44ab-8e6b-cdb58b055a41" />
+
 
 ### 角色外观生成器（词库）
 
@@ -69,6 +75,8 @@
 - 只有启用的列表会出现在底部拼装区，并用于随机。
 - 可以保存启用状态为预设；也支持自己的私有列表。
 - 抽卡姬的随机角色提示词会读取这里启用的列表。
+<img width="2582" height="2130" alt="image" src="https://github.com/user-attachments/assets/6c5f1058-e53e-4f7a-9dfa-aedd8e010406" />
+
 
 **管理员**（环境变量 `ADMIN_USER_IDS`）可以：
 
@@ -80,6 +88,9 @@
 ### 抽卡姬
 
 对接 Comfy 工作流的出图页。可配置工作流、抽卡参数。角色提示词里的「随机角色」默认关闭；打开后会按外观生成器当前启用的词库随机一条。
+<img width="1311" height="1070" alt="Screenshot 2026-08-21 at 4 33 37 PM" src="https://github.com/user-attachments/assets/8ea01e6a-193b-4f10-8d97-edf4773ed424" />
+<img width="2606" height="2138" alt="image" src="https://github.com/user-attachments/assets/946730ee-040a-4554-bdee-3c21ef426031" />
+
 
 ### AI 生成角色（暂时预设还没写好，用的人自己注意）
 
