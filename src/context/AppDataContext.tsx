@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { Character } from "@/lib/types";
 import type { WorldMeta } from "@/lib/worlds";
+import { normalizeWorld } from "@/lib/worlds";
 import type { WorldCatalog } from "@/lib/worldCatalog";
 import type { LoreMap } from "@/lib/worldLore";
 import { normalizeLoreMap } from "@/lib/worldLore";
@@ -78,13 +79,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       const data = await fetchAppData();
       const list = normalizeCharacterList(data.characters);
+      const worldsNorm = (data.worlds || []).map(normalizeWorld);
       charsRef.current = list;
-      worldsRef.current = data.worlds || [];
+      worldsRef.current = worldsNorm;
       catalogRef.current = data.catalog || {};
       const loreNorm = normalizeLoreMap(data.lore);
       loreRef.current = loreNorm;
       setCharactersState(list);
-      setWorldsState(data.worlds || []);
+      setWorldsState(worldsNorm);
       setCatalogState(data.catalog || {});
       setLoreState(loreNorm);
       setSyncError(null);

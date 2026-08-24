@@ -18,6 +18,8 @@ import {
 import { useAppData } from "@/context/AppDataContext";
 import { getLore } from "@/lib/worldLore";
 import type { LoreHistoryEvent } from "@/lib/worldLore";
+import { WORLD_SYSTEMS, worldSystemLabel } from "@/lib/worlds";
+import { defaultDndPlay, wrapPlay } from "@/systems/dnd5e/schema";
 
 export default function WorldPage({
   params,
@@ -25,7 +27,7 @@ export default function WorldPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { getWorld, loaded: worldsLoaded } = useWorlds();
+  const { getWorld, updateWorld, loaded: worldsLoaded } = useWorlds();
   const {
     characters,
     loaded: charsLoaded,
@@ -37,6 +39,7 @@ export default function WorldPage({
   const fileRef = useRef<HTMLInputElement>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newRole, setNewRole] = useState<"pc" | "npc">("pc");
   const [creatingBusy, setCreatingBusy] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [isShared, setIsShared] = useState(false);
@@ -76,9 +79,12 @@ export default function WorldPage({
       await addCharacter({
         name: newName.trim(),
         world: world.name,
+        sheetRole: newRole,
+        play: world.system === "dnd5e" ? wrapPlay(defaultDndPlay()) : undefined,
       });
       setCreating(false);
       setNewName("");
+      setNewRole("pc");
     } catch (e) {
       alert(e instanceof Error ? e.message : "创建失败，请重试");
     } finally {
@@ -179,10 +185,34 @@ export default function WorldPage({
             />
             <h1 className="text-2xl font-bold text-white">{world.name}</h1>
             <span className="text-xs text-neutral-500 bg-neutral-800 px-2 py-0.5 rounded">
+              {worldSystemLabel(world.system)}
+            </span>
+            <span className="text-xs text-neutral-500 bg-neutral-800 px-2 py-0.5 rounded">
               {worldChars.length} characters
             </span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <select
+              className="px-2 py-1.5 text-sm bg-neutral-900 border border-neutral-700 rounded-lg text-neutral-300"
+              value={world.system || "generic"}
+              onChange={(e) =>
+                updateWorld(world.id, {
+                  system: e.target.value as typeof world.system,
+                })
+              }
+            >
+              {WORLD_SYSTEMS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            <Link
+              href={`/world/${id}/dm`}
+              className="px-3 py-1.5 text-sm rounded-lg bg-amber-700 hover:bg-amber-600 text-white font-medium"
+            >
+              DM
+            </Link>
             <Link
               href={`/world/${id}/relationships`}
               className="px-3 py-1.5 text-sm border rounded-lg transition"
@@ -311,6 +341,24 @@ export default function WorldPage({
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
             />
+            <div className="flex gap-3 text-sm text-neutral-300">
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  checked={newRole === "pc"}
+                  onChange={() => setNewRole("pc")}
+                />
+                玩家
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  checked={newRole === "npc"}
+                  onChange={() => setNewRole("npc")}
+                />
+                NPC
+              </label>
+            </div>
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => {

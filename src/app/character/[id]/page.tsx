@@ -12,6 +12,9 @@ import { useCharacters } from "@/hooks/useCharacters";
 import { useWorldCatalog } from "@/hooks/useWorldCatalog";
 import { useWorlds } from "@/hooks/useWorlds";
 import Footer from "@/components/Footer";
+import { CheckHost } from "@/systems/check/CheckHost";
+import DndRuleSheet from "@/systems/dnd5e/DndRuleSheet";
+import { defaultDndPlay, wrapPlay } from "@/systems/dnd5e/schema";
 import {
   exportSingleCharacter,
   importCharacterPayload,
@@ -52,7 +55,7 @@ export default function CharacterPage({
   const { getWorldByName } = useWorlds();
 
   const [tab, setTab] = useState<
-    "sheet" | "timeline" | "relations" | "gallery"
+    "sheet" | "timeline" | "relations" | "gallery" | "rules"
   >("sheet");
   const character = getCharacter(id);
 
@@ -87,11 +90,13 @@ export default function CharacterPage({
   }
 
   const worldMeta = getWorldByName(character.world || "");
+  const isDnd = worldMeta?.system === "dnd5e";
   const backHref = worldMeta ? `/world/${worldMeta.id}` : "/";
   const backLabel = worldMeta ? `← ${worldMeta.name}` : "← Worlds";
   const editable = editMode;
 
   return (
+    <CheckHost>
     <div className="min-h-screen flex flex-col">
       <Navbar worldColor={worldMeta?.color} />
       <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-6">
@@ -197,10 +202,11 @@ export default function CharacterPage({
           {(
             [
               ["sheet", "角色卡"],
+              ...(isDnd ? ([["rules", "规则卡"]] as ["rules", string][]) : []),
               ["gallery", "图库"],
               ["timeline", "时间线"],
               ["relations", "关系"],
-            ] as const
+            ] as [typeof tab, string][]
           ).map(([key, label]) => (
             <button
               key={key}
@@ -225,6 +231,14 @@ export default function CharacterPage({
             optionsFor={optionsFor}
             onCreateWorld={createWorld}
             onAddOption={addFieldOption}
+          />
+        )}
+        {tab === "rules" && isDnd && (
+          <DndRuleSheet
+            character={character}
+            editable={editable}
+            onChange={(play) => updateCharacter(id, { play: play || wrapPlay(defaultDndPlay()) })}
+            onMeta={(p) => updateCharacter(id, p)}
           />
         )}
         {tab === "gallery" && (
@@ -263,5 +277,6 @@ export default function CharacterPage({
       </main>
       <Footer />
     </div>
+    </CheckHost>
   );
 }

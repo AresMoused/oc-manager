@@ -7,7 +7,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useWorlds } from "@/hooks/useWorlds";
 import { useCharacters } from "@/hooks/useCharacters";
-import { WORLD_COLOR_PALETTE } from "@/lib/worlds";
+import { WORLD_COLOR_PALETTE, WORLD_SYSTEMS, worldSystemLabel, type WorldSystem } from "@/lib/worlds";
 import {
   exportFullDatabase,
   importFullDatabase,
@@ -27,9 +27,11 @@ export default function WorldsHomePage() {
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
   const [color, setColor] = useState(WORLD_COLOR_PALETTE[0]);
+  const [system, setSystem] = useState<WorldSystem>("generic");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editColor, setEditColor] = useState("");
+  const [editSystem, setEditSystem] = useState<WorldSystem>("generic");
 
   const worldNames = useMemo(
     () => new Set(worlds.map((w) => w.name.trim()).filter(Boolean)),
@@ -50,20 +52,26 @@ export default function WorldsHomePage() {
 
   const handleCreate = () => {
     if (!name.trim()) return;
-    addWorld(name.trim(), color);
+    addWorld(name.trim(), color, system);
     setName("");
+    setSystem("generic");
     setShowCreate(false);
   };
 
-  const startEdit = (id: string, n: string, c: string) => {
+  const startEdit = (id: string, n: string, c: string, s?: WorldSystem) => {
     setEditingId(id);
     setEditName(n);
     setEditColor(c);
+    setEditSystem(s || "generic");
   };
 
   const saveEdit = () => {
     if (!editingId || !editName.trim()) return;
-    updateWorld(editingId, { name: editName.trim(), color: editColor });
+    updateWorld(editingId, {
+      name: editName.trim(),
+      color: editColor,
+      system: editSystem,
+    });
     setEditingId(null);
   };
 
@@ -187,8 +195,7 @@ export default function WorldsHomePage() {
                         </h3>
                       </div>
                       <p className="text-xs text-neutral-500">
-                        {countInWorld(w.name)} character
-                        {countInWorld(w.name) !== 1 ? "s" : ""}
+                        {countInWorld(w.name)} 角色 · {worldSystemLabel(w.system)}
                       </p>
                     </button>
                     <div className="px-5 pb-4 flex gap-2 opacity-0 group-hover:opacity-100 transition">
@@ -196,11 +203,21 @@ export default function WorldsHomePage() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          startEdit(w.id, w.name, w.color);
+                          startEdit(w.id, w.name, w.color, w.system);
                         }}
                         className="text-xs text-neutral-400 hover:text-white px-2 py-1 rounded border border-neutral-700"
                       >
                         Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/world/${w.id}/dm`);
+                        }}
+                        className="text-xs text-amber-300 hover:text-white px-2 py-1 rounded border border-amber-800"
+                      >
+                        DM
                       </button>
                       <button
                         type="button"
@@ -341,6 +358,20 @@ export default function WorldsHomePage() {
                 ))}
               </div>
             </div>
+            <div>
+              <label className="text-xs text-neutral-500 block mb-1">世界类型</label>
+              <select
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-200"
+                value={system}
+                onChange={(e) => setSystem(e.target.value as WorldSystem)}
+              >
+                {WORLD_SYSTEMS.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
@@ -391,6 +422,20 @@ export default function WorldsHomePage() {
                   />
                 ))}
               </div>
+            </div>
+            <div>
+              <label className="text-xs text-neutral-500 block mb-1">世界类型</label>
+              <select
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-200"
+                value={editSystem}
+                onChange={(e) => setEditSystem(e.target.value as WorldSystem)}
+              >
+                {WORLD_SYSTEMS.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button

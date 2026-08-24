@@ -31,12 +31,14 @@ export function useWorlds() {
   );
 
   const addWorld = useCallback(
-    (name: string, color?: string) => {
+    (name: string, color?: string, system?: WorldMeta["system"]) => {
       const now = new Date().toISOString();
       const w: WorldMeta = {
         id: createWorldId(),
         name: name.trim(),
         color: color || WORLD_COLOR_PALETTE[0],
+        system: system || "generic",
+        dmRoster: [],
         createdAt: now,
         updatedAt: now,
       };
@@ -50,7 +52,10 @@ export function useWorlds() {
   );
 
   const updateWorld = useCallback(
-    (id: string, updates: Partial<Pick<WorldMeta, "name" | "color">>) => {
+    (
+      id: string,
+      updates: Partial<Pick<WorldMeta, "name" | "color" | "system" | "dmRoster">>
+    ) => {
       setWorlds((prev) =>
         prev.map((w) =>
           w.id === id

@@ -29,6 +29,9 @@ export function normalizeCharacter(c: Character): Character {
   return {
     ...c,
     world: c.world ?? "",
+    sheetRole: (c as { sheetRole?: string }).sheetRole === "npc" ? "npc" : "pc",
+    playerName: String((c as { playerName?: string }).playerName ?? ""),
+    play: (c as { play?: Character["play"] }).play,
     residence: (c as { residence?: string }).residence ?? "",
     faction: (c as { faction?: string }).faction ?? "",
     gallery: Array.isArray(c.gallery) ? c.gallery : [],

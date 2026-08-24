@@ -10,6 +10,9 @@ import RelationshipsPanel from "@/components/RelationshipsPanel";
 import Gallery from "@/components/Gallery";
 import PromptBank from "@/components/PromptBank";
 import type { Character, GalleryImage, StoredPrompt } from "@/lib/types";
+import { CheckHost } from "@/systems/check/CheckHost";
+import DndRuleSheet from "@/systems/dnd5e/DndRuleSheet";
+import { defaultDndPlay, wrapPlay } from "@/systems/dnd5e/schema";
 
 interface ShareMeta {
   id: string;
@@ -23,7 +26,7 @@ interface ShareMeta {
   isOwner: boolean;
 }
 
-type Tab = "sheet" | "timeline" | "relations" | "gallery" | "prompts";
+type Tab = "sheet" | "timeline" | "relations" | "gallery" | "prompts" | "rules";
 
 export default function SharedCharacterPage({
   params,
@@ -175,6 +178,9 @@ export default function SharedCharacterPage({
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "sheet", label: "角色卡" },
+    ...(character.play?.system === "dnd5e"
+      ? [{ id: "rules" as const, label: "规则卡" }]
+      : []),
     { id: "timeline", label: "时间线" },
     { id: "relations", label: "关系" },
     { id: "gallery", label: "图库" },
@@ -187,6 +193,7 @@ export default function SharedCharacterPage({
       : `id-${Date.now()}`;
 
   return (
+    <CheckHost>
     <div className="min-h-screen flex flex-col">
       <Navbar worldColor={share.worldColor} />
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
@@ -261,6 +268,16 @@ export default function SharedCharacterPage({
             character={character}
             onChange={updateCharacter}
             editable={editable}
+          />
+        )}
+        {tab === "rules" && (
+          <DndRuleSheet
+            character={character}
+            editable={editable}
+            onChange={(play) =>
+              updateCharacter({ play: play || wrapPlay(defaultDndPlay()) })
+            }
+            onMeta={(p) => updateCharacter(p)}
           />
         )}
         {tab === "timeline" && (
@@ -342,5 +359,6 @@ export default function SharedCharacterPage({
       </main>
       <Footer />
     </div>
+    </CheckHost>
   );
 }

@@ -118,6 +118,11 @@ export interface Character {
   birthplace: string;
   avatar: string;
   world: string;
+  /** pc = 玩家角色, npc = NPC */
+  sheetRole: "pc" | "npc";
+  playerName: string;
+  /** Opaque rules-system payload. Core code does not parse `data`. */
+  play?: { system: string; version: number; data: unknown };
   traits: BipolarSliderItem[];
   emotions: BipolarDotItem[];
   combat: {
@@ -442,6 +447,9 @@ export const defaultCharacter = (): Omit<
   birthplace: "",
   avatar: "",
   world: "",
+  sheetRole: "pc",
+  playerName: "",
+  play: undefined,
   traits: defaultTraits(),
   emotions: [],
   combat: defaultCombat(),
