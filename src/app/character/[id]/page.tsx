@@ -237,6 +237,7 @@ export default function CharacterPage({
           <DndRuleSheet
             character={character}
             editable={editable}
+            canWrite
             onChange={(play) => updateCharacter(id, { play: play || wrapPlay(defaultDndPlay()) })}
             onMeta={(p) => updateCharacter(id, p)}
           />

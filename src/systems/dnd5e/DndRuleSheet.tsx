@@ -5,8 +5,12 @@ import type { Character } from "@/lib/types";
 import { FreeDiceButton, useOpenCheck } from "@/systems/check/CheckHost";
 import {
   ABILITIES,
+  CONDITION_PRESETS,
+  DEFAULT_PANEL_ORDER,
   DEFAULT_PANEL_WIDTH,
   EMPTY_PROF,
+  PANEL_TITLE,
+  RESOURCE_PRESETS,
   SKILLS,
   SPELL_LEVEL_LABELS,
   SPELL_SCHOOLS,
@@ -14,8 +18,11 @@ import {
   armorClass,
   carryingCap,
   currentWeight,
+  emptyCondition,
+  emptyResource,
   emptySpell,
   parseDndPlay,
+  passiveSkill,
   proficiencyBonus,
   saveBonus,
   signed,
@@ -27,10 +34,12 @@ import {
   weaponDamageBonus,
   wrapPlay,
   type AbilityId,
+  type DndCondition,
   type DndFeature,
   type DndItem,
   type DndPlayData,
   type DndProfSource,
+  type DndResource,
   type DndSpell,
   type DndWeapon,
   type PanelId,
@@ -45,19 +54,24 @@ export default function DndRuleSheet({
   onChange,
   onMeta,
   editable,
+  canWrite: canWriteProp,
 }: {
   character: Character;
   onChange: (play: Character["play"]) => void;
   onMeta?: (p: Partial<Character>) => void;
   editable: boolean;
+  canWrite?: boolean;
 }) {
   const open = useOpenCheck();
   const d = parseDndPlay(character.play?.data);
   const commit = (next: DndPlayData) => onChange(wrapPlay(next));
   const patch = (p: Partial<DndPlayData>) => commit({ ...d, ...p });
+  const layoutEdit = editable;
+  const canWrite = canWriteProp ?? editable;
   const lv = totalLevel(d);
   const pb = proficiencyBonus(lv);
   const ac = armorClass(d);
+  const order = d.panelOrder?.length ? d.panelOrder : DEFAULT_PANEL_ORDER;
   const widthOf = (id: PanelId): PanelWidth =>
     d.panelWidth?.[id] || DEFAULT_PANEL_WIDTH[id];
   const toggleWidth = (id: PanelId) =>
@@ -68,44 +82,38 @@ export default function DndRuleSheet({
         [id]: widthOf(id) === "full" ? "half" : "full",
       },
     });
+  const movePanel = (id: PanelId, dir: -1 | 1) => {
+    const i = order.indexOf(id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= order.length) return;
+    const next = [...order];
+    [next[i], next[j]] = [next[j], next[i]];
+    patch({ panelOrder: next });
+  };
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        {!editable && <FreeDiceButton />}
-        <label className="text-xs text-neutral-400 flex items-center gap-2">
-          身份
-          <select
-            disabled={!editable}
-            className={inp}
-            value={character.sheetRole || "pc"}
-            onChange={(e) =>
-              onMeta?.({ sheetRole: e.target.value === "npc" ? "npc" : "pc" })
-            }
-          >
-            <option value="pc">玩家</option>
-            <option value="npc">NPC</option>
-          </select>
-        </label>
-        {character.sheetRole !== "npc" && (
-          <input
-            disabled={!editable}
-            className={inp}
-            placeholder="玩家名"
-            value={character.playerName || ""}
-            onChange={(e) => onMeta?.({ playerName: e.target.value })}
-          />
-        )}
-      </div>
+  const wrapPanel = (id: PanelId, extra: ReactNode | undefined, body: ReactNode) => (
+    <Panel
+      key={id}
+      title={PANEL_TITLE[id]}
+      width={widthOf(id)}
+      editable={layoutEdit}
+      onWidth={() => toggleWidth(id)}
+      onMoveUp={() => movePanel(id, -1)}
+      onMoveDown={() => movePanel(id, 1)}
+      canMoveUp={order.indexOf(id) > 0}
+      canMoveDown={order.indexOf(id) < order.length - 1}
+      extra={extra}
+    >
+      {body}
+    </Panel>
+  );
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Panel
-          title="等级"
-          width={widthOf("level")}
-          editable={editable}
-          onWidth={() => toggleWidth("level")}
-          extra={<span className="text-xs text-neutral-500">总等级 {lv}</span>}
-        >
+  const renderPanel = (id: PanelId) => {
+    switch (id) {
+      case "level":
+        return wrapPanel(
+          id,
+          <span className="text-xs text-neutral-500">总等级 {lv}</span>,
           <div className="space-y-2">
             {d.classes.map((cl, i) => (
               <div key={i} className="flex gap-1 items-center">
@@ -113,7 +121,7 @@ export default function DndRuleSheet({
                   {["Ⅰ", "Ⅱ", "Ⅲ", "Ⅳ", "Ⅴ"][i] || i + 1}
                 </span>
                 <input
-                  disabled={!editable}
+                  disabled={!layoutEdit}
                   className={`${inp} flex-1`}
                   placeholder="职业"
                   value={cl.name}
@@ -127,7 +135,7 @@ export default function DndRuleSheet({
                 <label className="text-[10px] text-neutral-500 flex items-center gap-1">
                   等级
                   <input
-                    disabled={!editable}
+                    disabled={!layoutEdit}
                     type="number"
                     min={1}
                     className={`${inp} w-14`}
@@ -140,13 +148,13 @@ export default function DndRuleSheet({
                     }}
                   />
                 </label>
-                {editable && d.classes.length > 1 && (
+                {layoutEdit && d.classes.length > 1 && (
                   <Del onClick={() => patch({ classes: d.classes.filter((_, j) => j !== i) })} />
                 )}
               </div>
             ))}
             <div className="flex flex-wrap items-center gap-2">
-              {editable && d.classes.length < 5 && (
+              {layoutEdit && d.classes.length < 5 && (
                 <button
                   type="button"
                   className="text-xs text-cyan-300"
@@ -160,20 +168,18 @@ export default function DndRuleSheet({
               <Num
                 label="经验"
                 value={d.xp}
-                editable={editable}
+                editable={layoutEdit}
                 onChange={(xp) => patch({ xp })}
               />
               <span className="text-xs text-neutral-400">熟练 {signed(pb)}</span>
             </div>
           </div>
-        </Panel>
+        );
 
-        <Panel
-          title="属性 / 豁免"
-          width={widthOf("abilities")}
-          editable={editable}
-          onWidth={() => toggleWidth("abilities")}
-        >
+      case "abilities":
+        return wrapPanel(
+          id,
+          undefined,
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {ABILITIES.map((a) => (
               <div
@@ -182,7 +188,7 @@ export default function DndRuleSheet({
               >
                 <span className="w-8 text-xs text-neutral-400">{a.label}</span>
                 <input
-                  disabled={!editable}
+                  disabled={!layoutEdit}
                   type="number"
                   className="w-12 bg-transparent border-b border-neutral-700 text-center"
                   value={d.abilities[a.id]}
@@ -196,7 +202,7 @@ export default function DndRuleSheet({
                   }
                 />
                 <Roll
-                  editable={editable}
+                  hide={layoutEdit}
                   className="text-rose-400 font-bold w-8"
                   onClick={() =>
                     open({
@@ -210,7 +216,7 @@ export default function DndRuleSheet({
                 <label className="text-[10px] text-neutral-500 flex items-center gap-1">
                   <input
                     type="checkbox"
-                    disabled={!editable}
+                    disabled={!layoutEdit}
                     checked={!!d.saveProf[a.id]}
                     onChange={(e) =>
                       patch({
@@ -221,7 +227,7 @@ export default function DndRuleSheet({
                   熟练
                 </label>
                 <Roll
-                  editable={editable}
+                  hide={layoutEdit}
                   className="text-cyan-300 text-xs"
                   onClick={() =>
                     open({
@@ -235,292 +241,501 @@ export default function DndRuleSheet({
               </div>
             ))}
           </div>
-        </Panel>
+        );
 
-        <Panel
-          title="技能"
-          width={widthOf("skills")}
-          editable={editable}
-          onWidth={() => toggleWidth("skills")}
-        >
-          <div className="grid sm:grid-cols-2 gap-1">
-            {SKILLS.map((s) => {
-              const st = d.skills[s.id];
-              return (
-                <div key={s.id} className="flex items-center gap-2 text-sm px-1">
-                  <Roll
-                    editable={editable}
-                    className="w-14 text-left font-mono text-cyan-300"
-                    onClick={() =>
-                      open({
-                        title: s.label,
-                        baseBonus: skillBonus(d, s.id),
-                        presetAdv: st?.adv === "none" ? "none" : st?.adv,
-                      })
-                    }
-                  >
-                    {signed(skillBonus(d, s.id))}
-                  </Roll>
-                  <span className="flex-1 truncate">{s.label}</span>
-                  <label className="text-[10px] text-neutral-500">
-                    <input
-                      type="checkbox"
-                      disabled={!editable}
-                      checked={!!st?.proficient}
-                      onChange={(e) =>
-                        patch({
-                          skills: {
-                            ...d.skills,
-                            [s.id]: { ...st, proficient: e.target.checked },
-                          },
+      case "skills":
+        return wrapPanel(
+          id,
+          undefined,
+          <>
+            <div className="grid sm:grid-cols-2 gap-1">
+              {SKILLS.map((s) => {
+                const st = d.skills[s.id];
+                return (
+                  <div key={s.id} className="flex items-center gap-2 text-sm px-1">
+                    <Roll
+                      hide={layoutEdit}
+                      className="w-14 text-left font-mono text-cyan-300"
+                      onClick={() =>
+                        open({
+                          title: s.label,
+                          baseBonus: skillBonus(d, s.id),
+                          presetAdv: st?.adv === "none" ? "none" : st?.adv,
                         })
                       }
-                    />{" "}
-                    熟练
-                  </label>
+                    >
+                      {signed(skillBonus(d, s.id))}
+                    </Roll>
+                    <span className="flex-1 truncate">{s.label}</span>
+                    <label className="text-[10px] text-neutral-500">
+                      <input
+                        type="checkbox"
+                        disabled={!layoutEdit}
+                        checked={!!st?.proficient}
+                        onChange={(e) =>
+                          patch({
+                            skills: {
+                              ...d.skills,
+                              [s.id]: { ...st, proficient: e.target.checked },
+                            },
+                          })
+                        }
+                      />{" "}
+                      熟练
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-2 space-y-0.5">
+              {[
+                ["被动感知【察言观色】", passiveSkill(d, "insight")],
+                ["被动感知【察觉】", passiveSkill(d, "perception")],
+                ["被动智力【调查】", passiveSkill(d, "investigation")],
+              ].map(([lab, n]) => (
+                <div
+                  key={String(lab)}
+                  className="flex items-center gap-2 bg-neutral-950 rounded px-2 py-1 text-xs"
+                >
+                  <span className="font-mono text-cyan-300 w-8">{n}</span>
+                  <span className="text-neutral-300">{lab}</span>
                 </div>
-              );
-            })}
-          </div>
-        </Panel>
+              ))}
+              <div className="flex items-center gap-2 bg-neutral-950 rounded px-2 py-1 text-xs">
+                <span className="font-mono text-cyan-300 w-8">{signed(pb)}</span>
+                <span className="text-neutral-300">熟练加值</span>
+              </div>
+            </div>
+          </>
+        );
 
-        <Panel
-          title="生存"
-          width={widthOf("survival")}
-          editable={editable}
-          onWidth={() => toggleWidth("survival")}
-        >
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-            <Num label="当前 HP" value={d.hpCurrent} editable={editable} onChange={(hpCurrent) => patch({ hpCurrent })} />
-            <Num label="最大 HP" value={d.hpMax} editable={editable} onChange={(hpMax) => patch({ hpMax })} />
-            <Num label="临时 HP" value={d.hpTemp} editable={editable} onChange={(hpTemp) => patch({ hpTemp })} />
-            <div className="text-xs text-neutral-400 flex items-center">AC {ac}</div>
-            <Num label="护甲基数" value={d.armorBase} editable={editable} onChange={(armorBase) => patch({ armorBase })} />
-            <Num label="盾" value={d.shield} editable={editable} onChange={(shield) => patch({ shield })} />
-            <Num label="步行" value={d.speedWalk} editable={editable} onChange={(speedWalk) => patch({ speedWalk })} />
-            <Num label="游泳" value={d.speedSwim} editable={editable} onChange={(speedSwim) => patch({ speedSwim })} />
-            <Num label="飞行" value={d.speedFly} editable={editable} onChange={(speedFly) => patch({ speedFly })} />
-            <Num label="攀爬" value={d.speedClimb} editable={editable} onChange={(speedClimb) => patch({ speedClimb })} />
-          </div>
-          <div className="flex flex-wrap gap-3 mt-2">
-            <Roll
-              editable={editable}
-              className="text-xs text-cyan-300"
-              onClick={() =>
-                open({
-                  title: "先攻",
-                  baseBonus: abilityMod(d.abilities.dex),
-                  breakdown: "d20 + 敏捷",
-                })
-              }
-            >
-              先攻 {signed(abilityMod(d.abilities.dex))}
-            </Roll>
-            <Roll
-              editable={editable}
-              className="text-xs text-rose-300"
-              onClick={() =>
-                open({
-                  title: "死亡豁免",
-                  baseBonus: 0,
-                  kind: "death",
-                  defaultDc: 10,
-                })
-              }
-            >
-              死亡豁免
-            </Roll>
-          </div>
-        </Panel>
-
-        <Panel
-          title="攻击"
-          width={widthOf("attacks")}
-          editable={editable}
-          onWidth={() => toggleWidth("attacks")}
-        >
-          {d.weapons.map((w) => (
-            <WeaponRow
-              key={w.id}
-              w={w}
-              data={d}
-              editable={editable}
-              onChange={(nw) =>
-                patch({ weapons: d.weapons.map((x) => (x.id === w.id ? nw : x)) })
-              }
-              onRemove={() =>
-                patch({ weapons: d.weapons.filter((x) => x.id !== w.id) })
-              }
-            />
-          ))}
-          {editable && (
-            <button
-              type="button"
-              className="text-xs text-cyan-300 mt-1"
-              onClick={() =>
-                patch({
-                  weapons: [
-                    ...d.weapons,
-                    {
-                      id: crypto.randomUUID(),
-                      name: "新武器",
-                      ability: "str",
-                      proficient: true,
-                      finesse: false,
-                      ranged: false,
-                      magic: 0,
-                      dmgCount: 1,
-                      dmgFaces: 8,
-                      dmgBonus: 0,
-                      dmgType: "挥砍",
-                      range: "5",
-                      notes: "",
-                      weight: 0,
-                    },
-                  ],
-                })
-              }
-            >
-              + 武器
-            </button>
-          )}
-        </Panel>
-
-        <Panel
-          title="装备"
-          width={widthOf("gear")}
-          editable={editable}
-          onWidth={() => toggleWidth("gear")}
-        >
-          <div className="grid grid-cols-3 gap-2 text-sm">
-            <Num label="金 GP" value={d.gp} editable={editable} onChange={(gp) => patch({ gp })} />
-            <Num label="银 SP" value={d.sp} editable={editable} onChange={(sp) => patch({ sp })} />
-            <Num label="铜 CP" value={d.cp} editable={editable} onChange={(cp) => patch({ cp })} />
-          </div>
-          <p className="text-xs text-neutral-500 my-2">
-            负重 {currentWeight(d).toFixed(1)} / {carryingCap(d)} 磅
-          </p>
-          <div className="grid grid-cols-[1fr_3.5rem_4.5rem_1fr_auto] gap-1 text-[10px] text-neutral-500 px-1">
-            <span>物品名称</span>
-            <span>数量</span>
-            <span>重量(磅)</span>
-            <span>备注</span>
-            <span />
-          </div>
-          {d.items.map((it) => (
-            <ItemRow
-              key={it.id}
-              it={it}
-              editable={editable}
-              onChange={(n) =>
-                patch({ items: d.items.map((x) => (x.id === it.id ? n : x)) })
-              }
-              onRemove={() =>
-                patch({ items: d.items.filter((x) => x.id !== it.id) })
-              }
-            />
-          ))}
-          {editable && (
-            <button
-              type="button"
-              className="text-xs text-cyan-300 mt-1"
-              onClick={() =>
-                patch({
-                  items: [
-                    ...d.items,
-                    {
-                      id: crypto.randomUUID(),
-                      name: "",
-                      qty: 1,
-                      weight: 0,
-                      equipped: false,
-                      notes: "",
-                    },
-                  ],
-                })
-              }
-            >
-              + 物品
-            </button>
-          )}
-        </Panel>
-
-        <Panel
-          title="法术"
-          width={widthOf("spells")}
-          editable={editable}
-          onWidth={() => toggleWidth("spells")}
-          extra={
-            <label className="text-xs text-neutral-400">
+      case "survival":
+        return wrapPanel(
+          id,
+          undefined,
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+              <Num
+                label="当前 HP"
+                value={d.hpCurrent}
+                editable={canWrite}
+                onChange={(hpCurrent) => patch({ hpCurrent })}
+              />
+              <Num
+                label="最大 HP"
+                value={d.hpMax}
+                editable={canWrite}
+                onChange={(hpMax) => patch({ hpMax })}
+              />
+              <Num
+                label="临时 HP"
+                value={d.hpTemp}
+                editable={canWrite}
+                onChange={(hpTemp) => patch({ hpTemp })}
+              />
+              <div className="text-xs text-neutral-400 flex items-center">AC {ac}</div>
+              <Num
+                label="护甲基数"
+                value={d.armorBase}
+                editable={canWrite}
+                onChange={(armorBase) => patch({ armorBase })}
+              />
+              <Num
+                label="盾"
+                value={d.shield}
+                editable={canWrite}
+                onChange={(shield) => patch({ shield })}
+              />
+              <Num
+                label="步行"
+                value={d.speedWalk}
+                editable={canWrite}
+                onChange={(speedWalk) => patch({ speedWalk })}
+              />
+              <Num
+                label="游泳"
+                value={d.speedSwim}
+                editable={canWrite}
+                onChange={(speedSwim) => patch({ speedSwim })}
+              />
+              <Num
+                label="飞行"
+                value={d.speedFly}
+                editable={canWrite}
+                onChange={(speedFly) => patch({ speedFly })}
+              />
+              <Num
+                label="攀爬"
+                value={d.speedClimb}
+                editable={canWrite}
+                onChange={(speedClimb) => patch({ speedClimb })}
+              />
+            </div>
+            <label className="text-[10px] text-neutral-500 inline-block">
+              生命骰
               <input
-                type="checkbox"
-                disabled={!editable}
-                checked={d.spellcastingOn}
-                onChange={(e) => patch({ spellcastingOn: e.target.checked })}
-              />{" "}
-              启用
+                disabled={!canWrite}
+                className={`${inp} w-24 ml-1`}
+                value={d.hitDice}
+                onChange={(e) => patch({ hitDice: e.target.value })}
+              />
             </label>
-          }
-        >
-          {d.spellcastingOn && (
+            <div className="rounded border border-neutral-800 p-2 space-y-1.5">
+              <div className="text-[11px] text-neutral-300">~死亡豁免~</div>
+              <DeathMarks
+                label="成功（≥10）"
+                values={d.deathSuccess}
+                canWrite={canWrite}
+                onChange={(deathSuccess) => patch({ deathSuccess })}
+              />
+              <DeathMarks
+                label="失败（<10）"
+                values={d.deathFail}
+                canWrite={canWrite}
+                onChange={(deathFail) => patch({ deathFail })}
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] text-neutral-400">资源</span>
+                {canWrite && (
+                  <button
+                    type="button"
+                    className="text-[10px] text-cyan-300"
+                    onClick={() =>
+                      patch({ resources: [...d.resources, emptyResource()] })
+                    }
+                  >
+                    + 资源
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {d.resources.map((r) => (
+                  <ResourceCard
+                    key={r.id}
+                    r={r}
+                    canWrite={canWrite}
+                    hideDice={layoutEdit}
+                    onChange={(n) =>
+                      patch({
+                        resources: d.resources.map((x) => (x.id === r.id ? n : x)),
+                      })
+                    }
+                    onRemove={() =>
+                      patch({ resources: d.resources.filter((x) => x.id !== r.id) })
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Roll
+                hide={layoutEdit}
+                className="text-xs text-cyan-300"
+                onClick={() =>
+                  open({
+                    title: "先攻",
+                    baseBonus: abilityMod(d.abilities.dex),
+                    breakdown: "d20 + 敏捷",
+                  })
+                }
+              >
+                先攻 {signed(abilityMod(d.abilities.dex))}
+              </Roll>
+              <Roll
+                hide={layoutEdit}
+                className="text-xs text-rose-300"
+                onClick={() =>
+                  open({
+                    title: "死亡豁免",
+                    baseBonus: 0,
+                    kind: "death",
+                    defaultDc: 10,
+                  })
+                }
+              >
+                掷死亡豁免
+              </Roll>
+            </div>
+          </div>
+        );
+
+      case "conditions":
+        return wrapPanel(
+          id,
+          undefined,
+          <div className="space-y-2">
+            {d.conditions.map((c) => (
+              <ConditionRow
+                key={c.id}
+                c={c}
+                canWrite={canWrite}
+                onChange={(n) =>
+                  patch({
+                    conditions: d.conditions.map((x) => (x.id === c.id ? n : x)),
+                  })
+                }
+                onRemove={() =>
+                  patch({ conditions: d.conditions.filter((x) => x.id !== c.id) })
+                }
+              />
+            ))}
+            {canWrite && (
+              <div className="flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  className="text-xs text-cyan-300"
+                  onClick={() =>
+                    patch({ conditions: [...d.conditions, emptyCondition()] })
+                  }
+                >
+                  + 状态
+                </button>
+                {CONDITION_PRESETS.filter(
+                  (name) => !d.conditions.some((c) => c.name === name)
+                ).map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-neutral-700 text-neutral-400 hover:text-white"
+                    onClick={() =>
+                      patch({ conditions: [...d.conditions, emptyCondition(name)] })
+                    }
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {!d.conditions.length && !canWrite && (
+              <p className="text-xs text-neutral-600">无特殊状态</p>
+            )}
+          </div>
+        );
+
+      case "attacks":
+        return wrapPanel(
+          id,
+          undefined,
+          <>
+            {d.weapons.map((w) => (
+              <WeaponRow
+                key={w.id}
+                w={w}
+                data={d}
+                layoutEdit={layoutEdit}
+                canWrite={canWrite}
+                onChange={(nw) =>
+                  patch({ weapons: d.weapons.map((x) => (x.id === w.id ? nw : x)) })
+                }
+                onRemove={() =>
+                  patch({ weapons: d.weapons.filter((x) => x.id !== w.id) })
+                }
+              />
+            ))}
+            {layoutEdit && (
+              <button
+                type="button"
+                className="text-xs text-cyan-300 mt-1"
+                onClick={() =>
+                  patch({
+                    weapons: [
+                      ...d.weapons,
+                      {
+                        id: crypto.randomUUID(),
+                        name: "新武器",
+                        ability: "str",
+                        proficient: true,
+                        finesse: false,
+                        ranged: false,
+                        magic: 0,
+                        dmgCount: 1,
+                        dmgFaces: 8,
+                        dmgBonus: 0,
+                        dmgType: "挥砍",
+                        range: "5",
+                        notes: "",
+                        weight: 0,
+                      },
+                    ],
+                  })
+                }
+              >
+                + 武器
+              </button>
+            )}
+          </>
+        );
+
+      case "gear":
+        return wrapPanel(
+          id,
+          undefined,
+          <>
+            <div className="grid grid-cols-3 gap-2 text-sm">
+              <Num label="金 GP" value={d.gp} editable={layoutEdit} onChange={(gp) => patch({ gp })} />
+              <Num label="银 SP" value={d.sp} editable={layoutEdit} onChange={(sp) => patch({ sp })} />
+              <Num label="铜 CP" value={d.cp} editable={layoutEdit} onChange={(cp) => patch({ cp })} />
+            </div>
+            <p className="text-xs text-neutral-500 my-2">
+              负重 {currentWeight(d).toFixed(1)} / {carryingCap(d)} 磅
+            </p>
+            <div className="grid grid-cols-[1fr_3.5rem_4.5rem_1fr_auto] gap-1 text-[10px] text-neutral-500 px-1">
+              <span>物品名称</span>
+              <span>数量</span>
+              <span>重量(磅)</span>
+              <span>备注</span>
+              <span />
+            </div>
+            {d.items.map((it) => (
+              <ItemRow
+                key={it.id}
+                it={it}
+                editable={layoutEdit}
+                onChange={(n) =>
+                  patch({ items: d.items.map((x) => (x.id === it.id ? n : x)) })
+                }
+                onRemove={() =>
+                  patch({ items: d.items.filter((x) => x.id !== it.id) })
+                }
+              />
+            ))}
+            {layoutEdit && (
+              <button
+                type="button"
+                className="text-xs text-cyan-300 mt-1"
+                onClick={() =>
+                  patch({
+                    items: [
+                      ...d.items,
+                      {
+                        id: crypto.randomUUID(),
+                        name: "",
+                        qty: 1,
+                        weight: 0,
+                        equipped: false,
+                        notes: "",
+                      },
+                    ],
+                  })
+                }
+              >
+                + 物品
+              </button>
+            )}
+          </>
+        );
+
+      case "spells":
+        return wrapPanel(
+          id,
+          <label className="text-xs text-neutral-400">
+            <input
+              type="checkbox"
+              disabled={!layoutEdit}
+              checked={d.spellcastingOn}
+              onChange={(e) => patch({ spellcastingOn: e.target.checked })}
+            />{" "}
+            启用
+          </label>,
+          d.spellcastingOn ? (
             <SpellBlock
               d={d}
-              editable={editable}
+              layoutEdit={layoutEdit}
+              canWrite={canWrite}
               patch={patch}
             />
-          )}
-        </Panel>
+          ) : null
+        );
 
-        <Panel
-          title="语言 / 熟练"
-          width={widthOf("profs")}
-          editable={editable}
-          onWidth={() => toggleWidth("profs")}
-        >
-          <ProfBlock
-            title="种族"
-            src={d.profs.race}
-            fields={["languages", "skills", "weapons", "tools"]}
-            editable={editable}
-            onChange={(race) => patch({ profs: { ...d.profs, race } })}
-          />
-          <ProfBlock
-            title="职业"
-            src={d.profs.class}
-            fields={["languages", "skills", "weapons", "armor", "tools"]}
-            editable={editable}
-            onChange={(cls) => patch({ profs: { ...d.profs, class: cls } })}
-          />
-          <ProfBlock
-            title="背景"
-            src={d.profs.background}
-            fields={["languages", "skills", "tools"]}
-            editable={editable}
-            onChange={(background) => patch({ profs: { ...d.profs, background } })}
-          />
-        </Panel>
+      case "profs":
+        return wrapPanel(
+          id,
+          undefined,
+          <>
+            <ProfBlock
+              title="种族"
+              src={d.profs.race}
+              fields={["languages", "skills", "weapons", "tools"]}
+              editable={layoutEdit}
+              onChange={(race) => patch({ profs: { ...d.profs, race } })}
+            />
+            <ProfBlock
+              title="职业"
+              src={d.profs.class}
+              fields={["languages", "skills", "weapons", "armor", "tools"]}
+              editable={layoutEdit}
+              onChange={(cls) => patch({ profs: { ...d.profs, class: cls } })}
+            />
+            <ProfBlock
+              title="背景"
+              src={d.profs.background}
+              fields={["languages", "skills", "tools"]}
+              editable={layoutEdit}
+              onChange={(background) => patch({ profs: { ...d.profs, background } })}
+            />
+          </>
+        );
 
-        <Panel
-          title="特征 & 能力"
-          width={widthOf("features")}
-          editable={editable}
-          onWidth={() => toggleWidth("features")}
-        >
-          <FeatureList
-            heading="种族 / 专长 / 背景"
-            items={d.featuresRace}
-            editable={editable}
-            onChange={(featuresRace) => patch({ featuresRace })}
-          />
-          <FeatureList
-            heading="职业能力"
-            items={d.featuresClass}
-            editable={editable}
-            onChange={(featuresClass) =>
-              patch({ featuresClass, features: featuresClass })
+      case "features":
+        return wrapPanel(
+          id,
+          undefined,
+          <>
+            <FeatureList
+              heading="种族 / 专长 / 背景"
+              items={d.featuresRace}
+              editable={layoutEdit}
+              onChange={(featuresRace) => patch({ featuresRace })}
+            />
+            <FeatureList
+              heading="职业能力"
+              items={d.featuresClass}
+              editable={layoutEdit}
+              onChange={(featuresClass) =>
+                patch({ featuresClass, features: featuresClass })
+              }
+            />
+          </>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {!layoutEdit && <FreeDiceButton />}
+        <label className="text-xs text-neutral-400 flex items-center gap-2">
+          身份
+          <select
+            disabled={!layoutEdit}
+            className={inp}
+            value={character.sheetRole || "pc"}
+            onChange={(e) =>
+              onMeta?.({ sheetRole: e.target.value === "npc" ? "npc" : "pc" })
             }
+          >
+            <option value="pc">玩家</option>
+            <option value="npc">NPC</option>
+          </select>
+        </label>
+        {character.sheetRole !== "npc" && (
+          <input
+            disabled={!layoutEdit}
+            className={inp}
+            placeholder="玩家名"
+            value={character.playerName || ""}
+            onChange={(e) => onMeta?.({ playerName: e.target.value })}
           />
-        </Panel>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {order.map((id) => renderPanel(id))}
       </div>
     </div>
   );
@@ -531,6 +746,10 @@ function Panel({
   width,
   editable,
   onWidth,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown,
   extra,
   children,
 }: {
@@ -538,6 +757,10 @@ function Panel({
   width: PanelWidth;
   editable: boolean;
   onWidth: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
   extra?: ReactNode;
   children: ReactNode;
 }) {
@@ -552,13 +775,31 @@ function Panel({
         <div className="flex items-center gap-2">
           {extra}
           {editable && (
-            <button
-              type="button"
-              className="text-[10px] px-1.5 py-0.5 rounded border border-neutral-700 text-neutral-400 hover:text-white"
-              onClick={onWidth}
-            >
-              {width === "full" ? "半宽" : "全宽"}
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={!canMoveUp}
+                className="text-[10px] px-1.5 py-0.5 rounded border border-neutral-700 text-neutral-400 hover:text-white disabled:opacity-30"
+                onClick={onMoveUp}
+              >
+                上移
+              </button>
+              <button
+                type="button"
+                disabled={!canMoveDown}
+                className="text-[10px] px-1.5 py-0.5 rounded border border-neutral-700 text-neutral-400 hover:text-white disabled:opacity-30"
+                onClick={onMoveDown}
+              >
+                下移
+              </button>
+              <button
+                type="button"
+                className="text-[10px] px-1.5 py-0.5 rounded border border-neutral-700 text-neutral-400 hover:text-white"
+                onClick={onWidth}
+              >
+                {width === "full" ? "半宽" : "全宽"}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -568,17 +809,17 @@ function Panel({
 }
 
 function Roll({
-  editable,
+  hide,
   className,
   onClick,
   children,
 }: {
-  editable: boolean;
+  hide: boolean;
   className?: string;
   onClick: () => void;
   children: ReactNode;
 }) {
-  if (editable) return <span className={className}>{children}</span>;
+  if (hide) return <span className={className}>{children}</span>;
   return (
     <button type="button" className={className} onClick={onClick}>
       {children}
@@ -620,6 +861,195 @@ function Num({
         onChange={(e) => onChange(Number(e.target.value) || 0)}
       />
     </label>
+  );
+}
+
+function DeathMarks({
+  label,
+  values,
+  canWrite,
+  onChange,
+}: {
+  label: string;
+  values: boolean[];
+  canWrite: boolean;
+  onChange: (v: boolean[]) => void;
+}) {
+  const v = [0, 1, 2].map((i) => !!values[i]);
+  return (
+    <div className="flex items-center gap-2 text-[11px] text-neutral-400">
+      <span className="w-[5.5rem]">{label}</span>
+      {v.map((on, i) => (
+        <input
+          key={i}
+          type="checkbox"
+          disabled={!canWrite}
+          checked={on}
+          className="accent-rose-400"
+          onChange={(e) => {
+            const next = [...v];
+            next[i] = e.target.checked;
+            onChange(next);
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ResourceCard({
+  r,
+  canWrite,
+  hideDice,
+  onChange,
+  onRemove,
+}: {
+  r: DndResource;
+  canWrite: boolean;
+  hideDice: boolean;
+  onChange: (r: DndResource) => void;
+  onRemove: () => void;
+}) {
+  const open = useOpenCheck();
+  const preset = (RESOURCE_PRESETS as readonly string[]).includes(r.name)
+    ? r.name
+    : "__custom__";
+  const diceMatch = /^(\d+)d(\d+)$/i.exec(r.value.trim());
+
+  return (
+    <div className="border border-neutral-800 rounded p-2 space-y-1">
+      <div className="flex items-center gap-1">
+        {canWrite ? (
+          <select
+            className={`${inp} flex-1`}
+            value={preset}
+            onChange={(e) => {
+              const v = e.target.value;
+              onChange({ ...r, name: v === "__custom__" ? "" : v });
+            }}
+          >
+            {RESOURCE_PRESETS.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+            <option value="__custom__">自定义</option>
+          </select>
+        ) : (
+          <span className="flex-1 text-xs text-neutral-300">{r.name || "资源"}</span>
+        )}
+        {canWrite && <Del onClick={onRemove} />}
+      </div>
+      {canWrite && preset === "__custom__" && (
+        <input
+          className={inp}
+          placeholder="资源名称"
+          value={r.name}
+          onChange={(e) => onChange({ ...r, name: e.target.value })}
+        />
+      )}
+      <div className="flex items-center gap-2">
+        {canWrite ? (
+          <input
+            className={`${inp} flex-1`}
+            placeholder="1d6 / 2"
+            value={r.value}
+            onChange={(e) => onChange({ ...r, value: e.target.value })}
+          />
+        ) : (
+          <span className="flex-1 font-mono text-sm">{r.value || "—"}</span>
+        )}
+        {!hideDice && diceMatch && (
+          <button
+            type="button"
+            className="text-[10px] text-amber-300"
+            onClick={() =>
+              open({
+                title: r.name || "资源",
+                baseBonus: 0,
+                kind: "damage",
+                damageCount: Number(diceMatch[1]) || 1,
+                damageFaces: Number(diceMatch[2]) || 6,
+                damageBonus: 0,
+              })
+            }
+          >
+            掷
+          </button>
+        )}
+      </div>
+      <label className="text-[10px] text-neutral-500 flex items-center gap-1">
+        剩余次数
+        <input
+          disabled={!canWrite}
+          type="number"
+          min={0}
+          className={`${inp} w-14`}
+          value={r.remaining}
+          onChange={(e) => onChange({ ...r, remaining: Number(e.target.value) || 0 })}
+        />
+      </label>
+    </div>
+  );
+}
+
+function ConditionRow({
+  c,
+  canWrite,
+  onChange,
+  onRemove,
+}: {
+  c: DndCondition;
+  canWrite: boolean;
+  onChange: (c: DndCondition) => void;
+  onRemove: () => void;
+}) {
+  const preset = (CONDITION_PRESETS as readonly string[]).includes(c.name)
+    ? c.name
+    : "__custom__";
+  return (
+    <div className="border border-neutral-800 rounded p-2 space-y-1">
+      <div className="flex items-center gap-1">
+        {canWrite ? (
+          <select
+            className={`${inp} flex-1`}
+            value={preset}
+            onChange={(e) => {
+              const v = e.target.value;
+              onChange({ ...c, name: v === "__custom__" ? "" : v });
+            }}
+          >
+            {CONDITION_PRESETS.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+            <option value="__custom__">自定义</option>
+          </select>
+        ) : (
+          <span className="flex-1 text-sm">{c.name || "状态"}</span>
+        )}
+        {canWrite && <Del onClick={onRemove} />}
+      </div>
+      {canWrite && preset === "__custom__" && (
+        <input
+          className={inp}
+          placeholder="状态名称"
+          value={c.name}
+          onChange={(e) => onChange({ ...c, name: e.target.value })}
+        />
+      )}
+      {canWrite ? (
+        <input
+          className={inp}
+          placeholder="备注（来源 / 持续时间）"
+          value={c.notes}
+          onChange={(e) => onChange({ ...c, notes: e.target.value })}
+        />
+      ) : (
+        c.notes && <p className="text-[11px] text-neutral-500">{c.notes}</p>
+      )}
+    </div>
   );
 }
 
@@ -675,13 +1105,15 @@ function ItemRow({
 function WeaponRow({
   w,
   data,
-  editable,
+  layoutEdit,
+  canWrite,
   onChange,
   onRemove,
 }: {
   w: DndWeapon;
   data: DndPlayData;
-  editable: boolean;
+  layoutEdit: boolean;
+  canWrite: boolean;
   onChange: (w: DndWeapon) => void;
   onRemove: () => void;
 }) {
@@ -689,200 +1121,254 @@ function WeaponRow({
   const atk = weaponAttackBonus(data, w);
   const dmgB = weaponDamageBonus(data, w);
 
-  if (editable) {
+  if (!canWrite && !layoutEdit) {
     return (
-      <div className="border border-neutral-800 rounded p-2 space-y-2 text-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            className={`${inp} flex-1 min-w-[100px]`}
-            value={w.name}
-            onChange={(e) => onChange({ ...w, name: e.target.value })}
-            placeholder="武器名称"
-          />
-          <Del onClick={onRemove} />
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <label className="text-[10px] text-neutral-500">
-            属性
-            <select
-              className={`${inp} w-full mt-0.5`}
-              value={w.ability}
-              onChange={(e) => onChange({ ...w, ability: e.target.value as AbilityId })}
-            >
-              {ABILITIES.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-[10px] text-neutral-500">
-            伤害骰
-            <div className="flex gap-1 mt-0.5">
-              <input
-                type="number"
-                min={1}
-                className={`${inp} w-12`}
-                value={w.dmgCount}
-                onChange={(e) => onChange({ ...w, dmgCount: Number(e.target.value) || 1 })}
-              />
-              <span className="self-center text-neutral-500">d</span>
-              <input
-                type="number"
-                min={2}
-                className={`${inp} w-12`}
-                value={w.dmgFaces}
-                onChange={(e) => onChange({ ...w, dmgFaces: Number(e.target.value) || 4 })}
-              />
-            </div>
-          </label>
-          <label className="text-[10px] text-neutral-500">
-            调整值
-            <input
-              type="number"
-              className={`${inp} w-full mt-0.5`}
-              value={w.dmgBonus}
-              onChange={(e) => onChange({ ...w, dmgBonus: Number(e.target.value) || 0 })}
-            />
-          </label>
-          <label className="text-[10px] text-neutral-500">
-            魔法加值
-            <input
-              type="number"
-              className={`${inp} w-full mt-0.5`}
-              value={w.magic}
-              onChange={(e) => onChange({ ...w, magic: Number(e.target.value) || 0 })}
-            />
-          </label>
-          <label className="text-[10px] text-neutral-500">
-            伤害类型
-            <input
-              className={`${inp} w-full mt-0.5`}
-              value={w.dmgType}
-              onChange={(e) => onChange({ ...w, dmgType: e.target.value })}
-              placeholder="穿刺"
-            />
-          </label>
-          <label className="text-[10px] text-neutral-500">
-            距离
-            <input
-              className={`${inp} w-full mt-0.5`}
-              value={w.range}
-              onChange={(e) => onChange({ ...w, range: e.target.value })}
-              placeholder="5"
-            />
-          </label>
-          <label className="text-[10px] text-neutral-500">
-            重量(磅)
-            <input
-              type="number"
-              step="0.1"
-              className={`${inp} w-full mt-0.5`}
-              value={w.weight}
-              onChange={(e) => onChange({ ...w, weight: Number(e.target.value) || 0 })}
-            />
-          </label>
-          <label className="text-[10px] text-neutral-500">
-            备注
-            <input
-              className={`${inp} w-full mt-0.5`}
-              value={w.notes}
-              onChange={(e) => onChange({ ...w, notes: e.target.value })}
-            />
-          </label>
-        </div>
-        <div className="flex flex-wrap gap-3 text-[10px] text-neutral-400">
-          <label className="flex items-center gap-1">
-            <input
-              type="checkbox"
-              checked={w.proficient}
-              onChange={(e) => onChange({ ...w, proficient: e.target.checked })}
-            />
-            熟练
-          </label>
-          <label className="flex items-center gap-1">
-            <input
-              type="checkbox"
-              checked={w.finesse}
-              onChange={(e) => onChange({ ...w, finesse: e.target.checked })}
-            />
-            灵巧
-          </label>
-          <label className="flex items-center gap-1">
-            <input
-              type="checkbox"
-              checked={w.ranged}
-              onChange={(e) => onChange({ ...w, ranged: e.target.checked })}
-            />
-            远程
-          </label>
-          <span className="text-neutral-500">
-            命中 {signed(atk)} · 伤害 {w.dmgCount}d{w.dmgFaces}
-            {signed(dmgB)}
-          </span>
-        </div>
+      <div className="flex flex-wrap items-center gap-2 text-sm border border-neutral-800 rounded p-2">
+        <span className="flex-1 min-w-[80px]">{w.name}</span>
+        <button
+          type="button"
+          className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-200 text-xs"
+          onClick={() =>
+            open({
+              title: `${w.name} 命中`,
+              baseBonus: atk,
+              kind: "attack",
+              dcLabel: "AC",
+            })
+          }
+        >
+          命中 {signed(atk)}
+        </button>
+        <button
+          type="button"
+          className="px-2 py-0.5 rounded bg-amber-950 text-amber-200 text-xs"
+          onClick={() =>
+            open({
+              title: `${w.name} 伤害`,
+              baseBonus: 0,
+              kind: "damage",
+              damageCount: w.dmgCount,
+              damageFaces: w.dmgFaces,
+              damageBonus: dmgB,
+            })
+          }
+        >
+          伤害 {w.dmgCount}d{w.dmgFaces}
+          {signed(dmgB)} {w.dmgType}
+        </button>
+        <span className="text-[10px] text-neutral-500">{w.range}</span>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm border border-neutral-800 rounded p-2">
-      <span className="flex-1 min-w-[80px]">{w.name}</span>
-      <button
-        type="button"
-        className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-200 text-xs"
-        onClick={() =>
-          open({
-            title: `${w.name} 命中`,
-            baseBonus: atk,
-            kind: "attack",
-            dcLabel: "AC",
-          })
-        }
-      >
-        命中 {signed(atk)}
-      </button>
-      <button
-        type="button"
-        className="px-2 py-0.5 rounded bg-amber-950 text-amber-200 text-xs"
-        onClick={() =>
-          open({
-            title: `${w.name} 伤害`,
-            baseBonus: 0,
-            kind: "damage",
-            damageCount: w.dmgCount,
-            damageFaces: w.dmgFaces,
-            damageBonus: dmgB,
-          })
-        }
-      >
-        伤害 {w.dmgCount}d{w.dmgFaces}
-        {signed(dmgB)} {w.dmgType}
-      </button>
-      <span className="text-[10px] text-neutral-500">{w.range}</span>
+    <div className="border border-neutral-800 rounded p-2 space-y-2 text-sm mb-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          disabled={!canWrite}
+          className={`${inp} flex-1 min-w-[100px]`}
+          value={w.name}
+          onChange={(e) => onChange({ ...w, name: e.target.value })}
+          placeholder="武器名称"
+        />
+        {!layoutEdit && (
+          <>
+            <button
+              type="button"
+              className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-200 text-xs"
+              onClick={() =>
+                open({
+                  title: `${w.name} 命中`,
+                  baseBonus: atk,
+                  kind: "attack",
+                  dcLabel: "AC",
+                })
+              }
+            >
+              命中 {signed(atk)}
+            </button>
+            <button
+              type="button"
+              className="px-2 py-0.5 rounded bg-amber-950 text-amber-200 text-xs"
+              onClick={() =>
+                open({
+                  title: `${w.name} 伤害`,
+                  baseBonus: 0,
+                  kind: "damage",
+                  damageCount: w.dmgCount,
+                  damageFaces: w.dmgFaces,
+                  damageBonus: dmgB,
+                })
+              }
+            >
+              伤害 {w.dmgCount}d{w.dmgFaces}
+              {signed(dmgB)} {w.dmgType}
+            </button>
+          </>
+        )}
+        {layoutEdit && <Del onClick={onRemove} />}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <label className="text-[10px] text-neutral-500">
+          属性
+          <select
+            disabled={!canWrite}
+            className={`${inp} w-full mt-0.5`}
+            value={w.ability}
+            onChange={(e) => onChange({ ...w, ability: e.target.value as AbilityId })}
+          >
+            {ABILITIES.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-[10px] text-neutral-500">
+          伤害骰
+          <div className="flex gap-1 mt-0.5">
+            <input
+              disabled={!canWrite}
+              type="number"
+              min={1}
+              className={`${inp} w-12`}
+              value={w.dmgCount}
+              onChange={(e) => onChange({ ...w, dmgCount: Number(e.target.value) || 1 })}
+            />
+            <span className="self-center text-neutral-500">d</span>
+            <input
+              disabled={!canWrite}
+              type="number"
+              min={2}
+              className={`${inp} w-12`}
+              value={w.dmgFaces}
+              onChange={(e) => onChange({ ...w, dmgFaces: Number(e.target.value) || 4 })}
+            />
+          </div>
+        </label>
+        <label className="text-[10px] text-neutral-500">
+          调整值
+          <input
+            disabled={!canWrite}
+            type="number"
+            className={`${inp} w-full mt-0.5`}
+            value={w.dmgBonus}
+            onChange={(e) => onChange({ ...w, dmgBonus: Number(e.target.value) || 0 })}
+          />
+        </label>
+        <label className="text-[10px] text-neutral-500">
+          魔法加值
+          <input
+            disabled={!canWrite}
+            type="number"
+            className={`${inp} w-full mt-0.5`}
+            value={w.magic}
+            onChange={(e) => onChange({ ...w, magic: Number(e.target.value) || 0 })}
+          />
+        </label>
+        <label className="text-[10px] text-neutral-500">
+          伤害类型
+          <input
+            disabled={!canWrite}
+            className={`${inp} w-full mt-0.5`}
+            value={w.dmgType}
+            onChange={(e) => onChange({ ...w, dmgType: e.target.value })}
+            placeholder="穿刺"
+          />
+        </label>
+        <label className="text-[10px] text-neutral-500">
+          距离
+          <input
+            disabled={!canWrite}
+            className={`${inp} w-full mt-0.5`}
+            value={w.range}
+            onChange={(e) => onChange({ ...w, range: e.target.value })}
+            placeholder="5"
+          />
+        </label>
+        <label className="text-[10px] text-neutral-500">
+          重量(磅)
+          <input
+            disabled={!canWrite}
+            type="number"
+            step="0.1"
+            className={`${inp} w-full mt-0.5`}
+            value={w.weight}
+            onChange={(e) => onChange({ ...w, weight: Number(e.target.value) || 0 })}
+          />
+        </label>
+        <label className="text-[10px] text-neutral-500">
+          备注
+          <input
+            disabled={!canWrite}
+            className={`${inp} w-full mt-0.5`}
+            value={w.notes}
+            onChange={(e) => onChange({ ...w, notes: e.target.value })}
+          />
+        </label>
+      </div>
+      <div className="flex flex-wrap gap-3 text-[10px] text-neutral-400">
+        <label className="flex items-center gap-1">
+          <input
+            type="checkbox"
+            disabled={!canWrite}
+            checked={w.proficient}
+            onChange={(e) => onChange({ ...w, proficient: e.target.checked })}
+          />
+          熟练
+        </label>
+        <label className="flex items-center gap-1">
+          <input
+            type="checkbox"
+            disabled={!canWrite}
+            checked={w.finesse}
+            onChange={(e) => onChange({ ...w, finesse: e.target.checked })}
+          />
+          灵巧
+        </label>
+        <label className="flex items-center gap-1">
+          <input
+            type="checkbox"
+            disabled={!canWrite}
+            checked={w.ranged}
+            onChange={(e) => onChange({ ...w, ranged: e.target.checked })}
+          />
+          远程
+        </label>
+        {layoutEdit && (
+          <span className="text-neutral-500">
+            命中 {signed(atk)} · 伤害 {w.dmgCount}d{w.dmgFaces}
+            {signed(dmgB)}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
 
 function SpellBlock({
   d,
-  editable,
+  layoutEdit,
+  canWrite,
   patch,
 }: {
   d: DndPlayData;
-  editable: boolean;
+  layoutEdit: boolean;
+  canWrite: boolean;
   patch: (p: Partial<DndPlayData>) => void;
 }) {
   const open = useOpenCheck();
   const slots = [...d.spellSlots];
   while (slots.length < 9) slots.push(0);
+  const left = [...(d.spellSlotsLeft || [])];
+  while (left.length < 9) left.push(0);
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2 text-sm items-center">
         <span className="text-neutral-500 text-xs">职业Ⅰ 主属性</span>
         <select
-          disabled={!editable}
+          disabled={!layoutEdit}
           className={inp}
           value={d.spellAbility}
           onChange={(e) => patch({ spellAbility: e.target.value as AbilityId })}
@@ -894,7 +1380,7 @@ function SpellBlock({
           ))}
         </select>
         <Roll
-          editable={editable}
+          hide={layoutEdit}
           className="text-cyan-300 text-xs"
           onClick={() =>
             open({
@@ -909,7 +1395,7 @@ function SpellBlock({
         </Roll>
         <span className="text-neutral-500 text-xs">职业Ⅱ</span>
         <select
-          disabled={!editable}
+          disabled={!layoutEdit}
           className={inp}
           value={d.spellAbility2}
           onChange={(e) =>
@@ -925,7 +1411,7 @@ function SpellBlock({
         </select>
         {d.spellAbility2 && (
           <Roll
-            editable={editable}
+            hide={layoutEdit}
             className="text-cyan-300 text-xs"
             onClick={() =>
               open({
@@ -942,30 +1428,47 @@ function SpellBlock({
       </div>
 
       <div>
-        <div className="text-[10px] text-neutral-500 mb-1">每日法术位</div>
+        <div className="text-[10px] text-neutral-500 mb-1">每日法术位（剩余 / 上限）</div>
         <div className="grid grid-cols-3 sm:grid-cols-9 gap-1">
           {SPELL_LEVEL_LABELS.slice(1).map((lab, i) => (
-            <label key={lab} className="text-[10px] text-neutral-500">
+            <div key={lab} className="text-[10px] text-neutral-500">
               {lab}
-              <input
-                disabled={!editable}
-                type="number"
-                min={0}
-                className={`${inp} w-full mt-0.5`}
-                value={slots[i] || 0}
-                onChange={(e) => {
-                  const next = [...slots];
-                  next[i] = Number(e.target.value) || 0;
-                  patch({ spellSlots: next });
-                }}
-              />
-            </label>
+              <div className="flex items-center gap-0.5 mt-0.5">
+                <input
+                  disabled={!canWrite}
+                  type="number"
+                  min={0}
+                  title="剩余"
+                  className={`${inp} w-full`}
+                  value={left[i] || 0}
+                  onChange={(e) => {
+                    const next = [...left];
+                    next[i] = Number(e.target.value) || 0;
+                    patch({ spellSlotsLeft: next });
+                  }}
+                />
+                <span>/</span>
+                <input
+                  disabled={!layoutEdit}
+                  type="number"
+                  min={0}
+                  title="上限"
+                  className={`${inp} w-full`}
+                  value={slots[i] || 0}
+                  onChange={(e) => {
+                    const next = [...slots];
+                    next[i] = Number(e.target.value) || 0;
+                    patch({ spellSlots: next });
+                  }}
+                />
+              </div>
+            </div>
           ))}
         </div>
         <label className="text-[10px] text-neutral-500 inline-block mt-2">
           契约魔法环阶
           <input
-            disabled={!editable}
+            disabled={!layoutEdit}
             type="number"
             min={0}
             max={9}
@@ -982,7 +1485,7 @@ function SpellBlock({
           <div key={lv} className="border-t border-neutral-800 pt-2">
             <div className="flex items-center justify-between mb-1">
               <h4 className="text-xs text-neutral-300">{lab}</h4>
-              {editable && (
+              {layoutEdit && (
                 <button
                   type="button"
                   className="text-[10px] text-cyan-300"
@@ -996,7 +1499,8 @@ function SpellBlock({
               <SpellRow
                 key={sp.id}
                 sp={sp}
-                editable={editable}
+                layoutEdit={layoutEdit}
+                canWrite={canWrite}
                 onChange={(n) =>
                   patch({ spells: d.spells.map((x) => (x.id === sp.id ? n : x)) })
                 }
@@ -1014,18 +1518,20 @@ function SpellBlock({
 
 function SpellRow({
   sp,
-  editable,
+  layoutEdit,
+  canWrite,
   onChange,
   onRemove,
 }: {
   sp: DndSpell;
-  editable: boolean;
+  layoutEdit: boolean;
+  canWrite: boolean;
   onChange: (s: DndSpell) => void;
   onRemove: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const vsm = [sp.v && "V", sp.s && "S", sp.m && "M"].filter(Boolean).join("");
-  if (editable) {
+  if (layoutEdit) {
     return (
       <div className="border border-neutral-800 rounded p-2 mb-2 space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
@@ -1148,25 +1654,37 @@ function SpellRow({
 
   return (
     <div className="border border-neutral-800 rounded px-2 py-1.5 mb-1 text-sm">
-      <button
-        type="button"
-        className="w-full text-left flex flex-wrap items-center gap-x-2 gap-y-0.5"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className={sp.prepared ? "text-cyan-300" : "text-neutral-500"}>
-          {sp.prepared ? "●" : "○"}
-        </span>
-        <span className="font-medium">{sp.name || "（未命名）"}</span>
-        {sp.school && <span className="text-[10px] text-neutral-500">{sp.school}</span>}
-        <span className="text-[10px] text-neutral-500">{sp.castingTime}</span>
-        <span className="text-[10px] text-neutral-500">{sp.range}</span>
-        <span className="text-[10px] text-neutral-500">{sp.duration}</span>
-        {vsm && <span className="text-[10px] text-neutral-500">{vsm}</span>}
-        {sp.concentration && (
-          <span className="text-[10px] text-amber-400">专注</span>
+      <div className="w-full flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        {canWrite ? (
+          <label className="text-[10px] text-neutral-500 flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={sp.prepared}
+              onChange={(e) => onChange({ ...sp, prepared: e.target.checked })}
+            />
+          </label>
+        ) : (
+          <span className={sp.prepared ? "text-cyan-300" : "text-neutral-500"}>
+            {sp.prepared ? "●" : "○"}
+          </span>
         )}
-        {sp.ritual && <span className="text-[10px] text-sky-400">仪式</span>}
-      </button>
+        <button
+          type="button"
+          className="flex-1 text-left flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0"
+          onClick={() => setOpen((v) => !v)}
+        >
+          <span className="font-medium">{sp.name || "（未命名）"}</span>
+          {sp.school && <span className="text-[10px] text-neutral-500">{sp.school}</span>}
+          <span className="text-[10px] text-neutral-500">{sp.castingTime}</span>
+          <span className="text-[10px] text-neutral-500">{sp.range}</span>
+          <span className="text-[10px] text-neutral-500">{sp.duration}</span>
+          {vsm && <span className="text-[10px] text-neutral-500">{vsm}</span>}
+          {sp.concentration && (
+            <span className="text-[10px] text-amber-400">专注</span>
+          )}
+          {sp.ritual && <span className="text-[10px] text-sky-400">仪式</span>}
+        </button>
+      </div>
       {open && (
         <div className="mt-1 text-xs text-neutral-400 whitespace-pre-wrap">
           {sp.effect || "（无效果文本）"}

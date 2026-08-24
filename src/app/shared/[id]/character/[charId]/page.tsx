@@ -274,6 +274,7 @@ export default function SharedCharacterPage({
           <DndRuleSheet
             character={character}
             editable={editable}
+            canWrite={canEdit}
             onChange={(play) =>
               updateCharacter({ play: play || wrapPlay(defaultDndPlay()) })
             }

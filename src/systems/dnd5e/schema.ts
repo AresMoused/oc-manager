@@ -24,7 +24,7 @@ export const SKILLS: {
   { id: "nature", label: "自然", ability: "int" },
   { id: "religion", label: "宗教", ability: "int" },
   { id: "animal", label: "驯养动物", ability: "wis" },
-  { id: "insight", label: "洞悉", ability: "wis" },
+  { id: "insight", label: "察言观色", ability: "wis" },
   { id: "medicine", label: "医药", ability: "wis" },
   { id: "perception", label: "察觉", ability: "wis" },
   { id: "survival", label: "生存", ability: "wis" },
@@ -65,23 +65,82 @@ export type PanelId =
   | "abilities"
   | "skills"
   | "survival"
+  | "conditions"
   | "attacks"
   | "gear"
   | "spells"
   | "profs"
   | "features";
 
+export const DEFAULT_PANEL_ORDER: PanelId[] = [
+  "level",
+  "abilities",
+  "skills",
+  "survival",
+  "conditions",
+  "attacks",
+  "gear",
+  "spells",
+  "profs",
+  "features",
+];
+
+export const PANEL_TITLE: Record<PanelId, string> = {
+  level: "等级",
+  abilities: "属性 / 豁免",
+  skills: "技能",
+  survival: "状态",
+  conditions: "特殊状态",
+  attacks: "攻击",
+  gear: "装备",
+  spells: "法术",
+  profs: "语言 / 熟练",
+  features: "特征 & 能力",
+};
+
 export const DEFAULT_PANEL_WIDTH: Record<PanelId, PanelWidth> = {
   level: "full",
   abilities: "full",
   skills: "half",
   survival: "half",
+  conditions: "half",
   attacks: "full",
   gear: "full",
   spells: "full",
   profs: "half",
   features: "half",
 };
+
+export const RESOURCE_PRESETS = [
+  "荒野型态",
+  "引导神力",
+  "先攻骰",
+  "激励骰",
+  "偷袭骰",
+  "卓越骰",
+  "术法点",
+  "狂暴",
+  "武艺",
+  "气",
+] as const;
+
+export const CONDITION_PRESETS = [
+  "目盲",
+  "魅惑",
+  "耳聋",
+  "恐慌",
+  "受擒",
+  "失能",
+  "隐形",
+  "麻痹",
+  "石化",
+  "中毒",
+  "倒地",
+  "束缚",
+  "震慑",
+  "昏迷",
+  "力竭",
+] as const;
 
 export interface DndSkillState {
   proficient: boolean;
@@ -160,6 +219,19 @@ export interface DndProfs {
   background: DndProfSource;
 }
 
+export interface DndResource {
+  id: string;
+  name: string;
+  value: string;
+  remaining: number;
+}
+
+export interface DndCondition {
+  id: string;
+  name: string;
+  notes: string;
+}
+
 export const EMPTY_PROF: DndProfSource = {
   languages: "",
   skills: "",
@@ -209,6 +281,10 @@ export interface DndPlayData {
   proficiencies: string;
   profs: DndProfs;
   panelWidth: Record<PanelId, PanelWidth>;
+  panelOrder: PanelId[];
+  resources: DndResource[];
+  conditions: DndCondition[];
+  spellSlotsLeft: number[];
 }
 
 function uid() {
@@ -391,6 +467,60 @@ function normalizeProf(raw?: Partial<DndProfSource>): DndProfSource {
   return { ...EMPTY_PROF, ...(raw || {}) };
 }
 
+export function emptyResource(name = "激励骰"): DndResource {
+  return { id: uid(), name, value: "", remaining: 0 };
+}
+
+export function emptyCondition(name = ""): DndCondition {
+  return { id: uid(), name, notes: "" };
+}
+
+function normalizeResource(raw: Partial<DndResource>): DndResource {
+  return {
+    id: raw.id || uid(),
+    name: raw.name || "",
+    value: raw.value || "",
+    remaining: Number(raw.remaining) || 0,
+  };
+}
+
+function normalizeCondition(raw: Partial<DndCondition>): DndCondition {
+  return {
+    id: raw.id || uid(),
+    name: raw.name || "",
+    notes: raw.notes || "",
+  };
+}
+
+function padDeath(raw?: boolean[]): boolean[] {
+  return [0, 1, 2].map((i) => !!(raw && raw[i]));
+}
+
+function normalizeSlots9(raw?: number[], fallback?: number[]): number[] {
+  const src = Array.isArray(raw) ? raw : Array.isArray(fallback) ? fallback : [];
+  const out = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < 9; i++) out[i] = Number(src[i]) || 0;
+  return out;
+}
+
+export function normalizePanelOrder(raw?: PanelId[]): PanelId[] {
+  const valid = new Set<PanelId>(DEFAULT_PANEL_ORDER);
+  const seen = new Set<PanelId>();
+  const out: PanelId[] = [];
+  if (Array.isArray(raw)) {
+    for (const id of raw) {
+      if (valid.has(id) && !seen.has(id)) {
+        seen.add(id);
+        out.push(id);
+      }
+    }
+  }
+  for (const id of DEFAULT_PANEL_ORDER) {
+    if (!seen.has(id)) out.push(id);
+  }
+  return out;
+}
+
 export function defaultDndPlay(): DndPlayData {
   const abilities = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
   return {
@@ -451,6 +581,10 @@ export function defaultDndPlay(): DndPlayData {
     proficiencies: "",
     profs: emptyProfs(),
     panelWidth: { ...DEFAULT_PANEL_WIDTH },
+    panelOrder: [...DEFAULT_PANEL_ORDER],
+    resources: [],
+    conditions: [],
+    spellSlotsLeft: [0, 0, 0, 0, 0, 0, 0, 0, 0],
   };
 }
 
@@ -473,6 +607,15 @@ export function parseDndPlay(raw: unknown): DndPlayData {
       ? o.features
       : [];
   const panelWidth = { ...DEFAULT_PANEL_WIDTH, ...(o.panelWidth || {}) };
+  const spellSlots = normalizeSlots9(o.spellSlots, d.spellSlots);
+  let resources: DndResource[] = Array.isArray(o.resources)
+    ? o.resources.map(normalizeResource)
+    : [];
+  if (!resources.length && Number(o.inspiration) > 0) {
+    resources = [
+      { id: uid(), name: "激励骰", value: "1d6", remaining: Number(o.inspiration) || 0 },
+    ];
+  }
   return {
     ...d,
     ...o,
@@ -486,12 +629,16 @@ export function parseDndPlay(raw: unknown): DndPlayData {
     features: featuresClass,
     featuresRace: Array.isArray(o.featuresRace) ? o.featuresRace : [],
     featuresClass,
-    spellSlots: Array.isArray(o.spellSlots) ? o.spellSlots : d.spellSlots,
-    deathSuccess: Array.isArray(o.deathSuccess) ? o.deathSuccess : d.deathSuccess,
-    deathFail: Array.isArray(o.deathFail) ? o.deathFail : d.deathFail,
+    spellSlots,
+    spellSlotsLeft: normalizeSlots9(o.spellSlotsLeft, spellSlots),
+    deathSuccess: padDeath(o.deathSuccess),
+    deathFail: padDeath(o.deathFail),
     pactSlotLevel: Number(o.pactSlotLevel) || 0,
     profs,
     panelWidth,
+    panelOrder: normalizePanelOrder(o.panelOrder),
+    resources,
+    conditions: Array.isArray(o.conditions) ? o.conditions.map(normalizeCondition) : [],
   };
 }
 

@@ -117,10 +117,10 @@ export default function DndBriefCard({
             </div>
           ))}
           <div className="mt-2 space-y-0.5 text-[10px] text-neutral-400">
-            <p>被动洞悉 {passiveSkill(d, "insight")}</p>
-            <p>被动察觉 {passiveSkill(d, "perception")}</p>
-            <p>被动调查 {passiveSkill(d, "investigation")}</p>
-            <p>熟练 {signed(pb)}</p>
+            <p>被动感知【察言观色】 {passiveSkill(d, "insight")}</p>
+            <p>被动感知【察觉】 {passiveSkill(d, "perception")}</p>
+            <p>被动智力【调查】 {passiveSkill(d, "investigation")}</p>
+            <p>熟练加值 {signed(pb)}</p>
           </div>
         </div>
 
