@@ -1939,11 +1939,20 @@ function SpellRow({
           </label>
         </div>
         <textarea
-          className={`${inp} w-full min-h-[64px]`}
+          className={`${inp} w-full min-h-[96px]`}
           placeholder="效果"
           value={sp.effect}
           onChange={(e) => onChange({ ...sp, effect: e.target.value })}
         />
+        <label className="text-[10px] text-neutral-500 block">
+          介绍链接
+          <input
+            className={`${inp} w-full mt-0.5`}
+            value={sp.url || ""}
+            placeholder="https://…"
+            onChange={(e) => onChange({ ...sp, url: e.target.value })}
+          />
+        </label>
       </div>
     );
   }
@@ -2040,6 +2049,18 @@ function SpellRow({
         <div className="mt-1 text-xs text-neutral-400 whitespace-pre-wrap">
           {sp.effect || "（无效果文本）"}
           {sp.materials ? `\n材料：${sp.materials}` : ""}
+          {sp.url ? (
+            <div className="mt-1">
+              <a
+                href={sp.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sky-400 hover:underline"
+              >
+                法术介绍 ↗
+              </a>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

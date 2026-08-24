@@ -103,6 +103,7 @@ export default function WorldDmPage({
             <SpellPresetPanel
               presets={world.spellPresets || []}
               onChange={(spellPresets) => updateWorld(world.id, { spellPresets })}
+              defaultCollapsed
             />
           )}
         </main>

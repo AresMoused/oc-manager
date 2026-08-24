@@ -242,12 +242,6 @@ export default function WorldPage({
             >
               {isShared ? "已分享 · 管理" : "分享"}
             </button>
-            <Link
-              href="/generator"
-              className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
-            >
-              角色外观生成器
-            </Link>
             <button
               onClick={handleExportWorld}
               className="px-3 py-1.5 text-sm border border-neutral-700 rounded-lg text-neutral-300 hover:bg-neutral-800 transition"
@@ -312,6 +306,7 @@ export default function WorldPage({
                 onChange={(spellPresets) =>
                   updateWorld(world.id, { spellPresets })
                 }
+                defaultCollapsed
               />
             </div>
           )}

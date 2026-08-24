@@ -251,6 +251,7 @@ export interface DndSpell {
   dmgFaces: number;
   dmgBonus: number;
   dmgType: string;
+  url: string;
 }
 
 export type DndSpellPreset = DndSpell;
@@ -652,6 +653,7 @@ export function emptySpell(level = 0): DndSpell {
     dmgFaces: 6,
     dmgBonus: 0,
     dmgType: "",
+    url: "",
   };
 }
 
@@ -681,6 +683,7 @@ function normalizeSpell(raw: Partial<DndSpell> & { notes?: string }): DndSpell {
     dmgFaces: Number(raw.dmgFaces) || 6,
     dmgBonus: Number(raw.dmgBonus) || 0,
     dmgType: raw.dmgType || "",
+    url: raw.url || "",
   };
 }
 

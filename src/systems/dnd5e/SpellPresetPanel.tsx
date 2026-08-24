@@ -18,12 +18,15 @@ const inp =
 export default function SpellPresetPanel({
   presets,
   onChange,
+  defaultCollapsed = false,
 }: {
   presets: DndSpellPreset[];
   onChange: (next: DndSpellPreset[]) => void;
+  defaultCollapsed?: boolean;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const query = q.trim().toLowerCase();
 
   const add = (level = 0) => {
@@ -44,14 +47,25 @@ export default function SpellPresetPanel({
             已载入 2024 核心 {presets.length} 个。角色卡可「从预设拉取」。
           </p>
         </div>
-        <button
-          type="button"
-          className="text-xs text-cyan-300"
-          onClick={() => add(0)}
-        >
-          + 法术
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="text-xs text-neutral-300 border border-neutral-700 rounded px-2 py-1"
+            onClick={() => setCollapsed((v) => !v)}
+          >
+            {collapsed ? "展开列表" : "收起列表"}
+          </button>
+          <button
+            type="button"
+            className="text-xs text-cyan-300"
+            onClick={() => add(0)}
+          >
+            + 法术
+          </button>
+        </div>
       </div>
+      {!collapsed && (
+        <>
       <input
         className={`${inp} w-full text-xs`}
         placeholder="搜索法术名、学派、伤害…"
@@ -100,6 +114,17 @@ export default function SpellPresetPanel({
                       {sp.dmgCount}d{sp.dmgFaces} {sp.dmgType}
                     </span>
                   )}
+                  {sp.url && (
+                    <a
+                      href={sp.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[10px] text-sky-400 hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      介绍
+                    </a>
+                  )}
                 </button>
                 {openId === sp.id && (
                   <PresetEditor
@@ -115,6 +140,8 @@ export default function SpellPresetPanel({
           </div>
         );
       })}
+        </>
+      )}
     </section>
   );
 }
@@ -262,11 +289,30 @@ function PresetEditor({
         </label>
       </div>
       <textarea
-        className={`${inp} w-full min-h-[56px]`}
+        className={`${inp} w-full min-h-[120px]`}
         placeholder="效果"
         value={sp.effect}
         onChange={(e) => onChange({ ...sp, effect: e.target.value })}
       />
+      <label className="text-[10px] text-neutral-500 block">
+        介绍链接
+        <input
+          className={`${inp} w-full mt-0.5`}
+          value={sp.url || ""}
+          placeholder="https://…"
+          onChange={(e) => onChange({ ...sp, url: e.target.value })}
+        />
+      </label>
+      {sp.url && (
+        <a
+          href={sp.url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-[11px] text-sky-400 hover:underline"
+        >
+          打开法术介绍 ↗
+        </a>
+      )}
     </div>
   );
 }
