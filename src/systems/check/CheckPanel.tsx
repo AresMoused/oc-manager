@@ -160,7 +160,7 @@ export default function CheckPanel({
             {!!req.d20Penalty && (
               <p>已计入 d20 −{req.d20Penalty}</p>
             )}
-            {req.warnings.map((w, i) => (
+            {(req.warnings || []).map((w, i) => (
               <p key={i}>· {w}</p>
             ))}
           </div>
