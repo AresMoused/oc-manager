@@ -54,9 +54,7 @@ export default function DndBriefCard({
       baseBonus: abilityCheckBonus(d, id),
       kind: "check",
       ability: id,
-      breakdown: d.jackOfAllTrades
-        ? `调整值 ${signed(abilityMod(d.abilities[id]))} + 一半熟练`
-        : `调整值 ${signed(abilityMod(d.abilities[id]))}`,
+      breakdown: `调整值 ${signed(abilityMod(d.abilities[id]))}`,
     });
 
   const rollSave = (id: AbilityId) =>

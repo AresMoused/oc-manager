@@ -405,11 +405,7 @@ export function skillBonus(data: DndPlayData, skillId: string): number {
 }
 
 export function abilityCheckBonus(data: DndPlayData, abi: AbilityId): number {
-  const pb = proficiencyBonus(totalLevel(data));
-  return (
-    abilityMod(data.abilities[abi]) +
-    (data.jackOfAllTrades ? Math.floor(pb / 2) : 0)
-  );
+  return abilityMod(data.abilities[abi]);
 }
 
 export function initiativeBonus(data: DndPlayData): number {

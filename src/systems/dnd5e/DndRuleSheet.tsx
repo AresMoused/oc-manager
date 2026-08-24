@@ -239,9 +239,7 @@ export default function DndRuleSheet({
                       baseBonus: abilityCheckBonus(d, a.id),
                       kind: "check",
                       ability: a.id,
-                      breakdown: d.jackOfAllTrades
-                        ? `调整值 ${signed(abilityMod(d.abilities[a.id]))} + 一半熟练`
-                        : `调整值 ${signed(abilityMod(d.abilities[a.id]))}`,
+                      breakdown: `调整值 ${signed(abilityMod(d.abilities[a.id]))}`,
                     })
                   }
                 >
@@ -539,9 +537,7 @@ export default function DndRuleSheet({
                     baseBonus: initiativeBonus(d),
                     kind: "initiative",
                     ability: "dex",
-                    breakdown: d.jackOfAllTrades
-                      ? "d20 + 敏捷 + 一半熟练（万事通）"
-                      : "d20 + 敏捷",
+                    breakdown: "d20 + 敏捷",
                   })
                 }
               >
