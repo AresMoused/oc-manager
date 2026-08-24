@@ -34,7 +34,54 @@ export const SKILLS: {
   { id: "persuasion", label: "说服", ability: "cha" },
 ];
 
+export const SPELL_SCHOOLS = [
+  "防护",
+  "咒法",
+  "预言",
+  "惑控",
+  "塑能",
+  "幻术",
+  "死灵",
+  "变化",
+] as const;
+
+export const SPELL_LEVEL_LABELS = [
+  "戏法",
+  "一环",
+  "二环",
+  "三环",
+  "四环",
+  "五环",
+  "六环",
+  "七环",
+  "八环",
+  "九环",
+] as const;
+
 export type AdvPreset = "none" | "adv" | "dis";
+export type PanelWidth = "half" | "full";
+export type PanelId =
+  | "level"
+  | "abilities"
+  | "skills"
+  | "survival"
+  | "attacks"
+  | "gear"
+  | "spells"
+  | "profs"
+  | "features";
+
+export const DEFAULT_PANEL_WIDTH: Record<PanelId, PanelWidth> = {
+  level: "full",
+  abilities: "full",
+  skills: "half",
+  survival: "half",
+  attacks: "full",
+  gear: "full",
+  spells: "full",
+  profs: "half",
+  features: "half",
+};
 
 export interface DndSkillState {
   proficient: boolean;
@@ -57,6 +104,7 @@ export interface DndWeapon {
   dmgType: string;
   range: string;
   notes: string;
+  weight: number;
 }
 
 export interface DndItem {
@@ -73,13 +121,52 @@ export interface DndSpell {
   name: string;
   level: number;
   prepared: boolean;
-  notes: string;
+  school: string;
+  castingTime: string;
+  range: string;
+  duration: string;
+  effect: string;
+  concentration: boolean;
+  ritual: boolean;
+  v: boolean;
+  s: boolean;
+  m: boolean;
+  materials: string;
 }
 
 export interface DndClassRow {
   name: string;
   level: number;
 }
+
+export interface DndFeature {
+  id: string;
+  name: string;
+  uses: string;
+  body: string;
+}
+
+export interface DndProfSource {
+  languages: string;
+  skills: string;
+  weapons: string;
+  armor: string;
+  tools: string;
+}
+
+export interface DndProfs {
+  race: DndProfSource;
+  class: DndProfSource;
+  background: DndProfSource;
+}
+
+export const EMPTY_PROF: DndProfSource = {
+  languages: "",
+  skills: "",
+  weapons: "",
+  armor: "",
+  tools: "",
+};
 
 export interface DndPlayData {
   abilities: Record<AbilityId, number>;
@@ -113,10 +200,15 @@ export interface DndPlayData {
   spellAbility: AbilityId;
   spellAbility2: AbilityId | "";
   spellSlots: number[];
+  pactSlotLevel: number;
   spells: DndSpell[];
-  features: { id: string; name: string; uses: string; body: string }[];
+  features: DndFeature[];
+  featuresRace: DndFeature[];
+  featuresClass: DndFeature[];
   languages: string;
   proficiencies: string;
+  profs: DndProfs;
+  panelWidth: Record<PanelId, PanelWidth>;
 }
 
 function uid() {
@@ -159,14 +251,19 @@ export function saveBonus(data: DndPlayData, abi: AbilityId): number {
   return abilityMod(data.abilities[abi]) + (data.saveProf[abi] ? pb : 0);
 }
 
+export function weaponAbility(data: DndPlayData, w: DndWeapon): AbilityId {
+  if (w.finesse) {
+    return abilityMod(data.abilities.dex) >= abilityMod(data.abilities.str)
+      ? "dex"
+      : "str";
+  }
+  if (w.ranged) return "dex";
+  return w.ability;
+}
+
 export function weaponAttackBonus(data: DndPlayData, w: DndWeapon): number {
   const pb = proficiencyBonus(totalLevel(data));
-  let abi: AbilityId = w.ability;
-  if (w.finesse) {
-    abi = abilityMod(data.abilities.dex) >= abilityMod(data.abilities.str) ? "dex" : "str";
-  } else if (w.ranged) {
-    abi = "dex";
-  }
+  const abi = weaponAbility(data, w);
   return (
     abilityMod(data.abilities[abi]) +
     (w.proficient ? pb : 0) +
@@ -175,12 +272,7 @@ export function weaponAttackBonus(data: DndPlayData, w: DndWeapon): number {
 }
 
 export function weaponDamageBonus(data: DndPlayData, w: DndWeapon): number {
-  let abi: AbilityId = w.ability;
-  if (w.finesse) {
-    abi = abilityMod(data.abilities.dex) >= abilityMod(data.abilities.str) ? "dex" : "str";
-  } else if (w.ranged) {
-    abi = "dex";
-  }
+  const abi = weaponAbility(data, w);
   return abilityMod(data.abilities[abi]) + (Number(w.magic) || 0) + (Number(w.dmgBonus) || 0);
 }
 
@@ -197,10 +289,12 @@ export function carryingCap(data: DndPlayData): number {
 }
 
 export function currentWeight(data: DndPlayData): number {
-  return data.items.reduce(
+  const items = data.items.reduce(
     (s, it) => s + (Number(it.weight) || 0) * (Number(it.qty) || 1),
     0
   );
+  const weapons = data.weapons.reduce((s, w) => s + (Number(w.weight) || 0), 0);
+  return items + weapons;
 }
 
 export function spellSaveDc(data: DndPlayData, abi: AbilityId): number {
@@ -221,6 +315,80 @@ function emptySkills(): Record<string, DndSkillState> {
     o[s.id] = { proficient: false, expertise: false, misc: 0, adv: "none" };
   }
   return o;
+}
+
+function emptyProfs(): DndProfs {
+  return {
+    race: { ...EMPTY_PROF },
+    class: { ...EMPTY_PROF },
+    background: { ...EMPTY_PROF },
+  };
+}
+
+export function emptySpell(level = 0): DndSpell {
+  return {
+    id: uid(),
+    name: "",
+    level,
+    prepared: level === 0,
+    school: "",
+    castingTime: "1 个动作",
+    range: "",
+    duration: "即效",
+    effect: "",
+    concentration: false,
+    ritual: false,
+    v: true,
+    s: false,
+    m: false,
+    materials: "",
+  };
+}
+
+function normalizeSpell(raw: Partial<DndSpell> & { notes?: string }): DndSpell {
+  const base = emptySpell(Number(raw.level) || 0);
+  return {
+    ...base,
+    ...raw,
+    id: raw.id || base.id,
+    name: raw.name || "",
+    level: Math.max(0, Math.min(9, Number(raw.level) || 0)),
+    prepared: !!raw.prepared,
+    school: raw.school || "",
+    castingTime: raw.castingTime || base.castingTime,
+    range: raw.range || "",
+    duration: raw.duration || base.duration,
+    effect: raw.effect || raw.notes || "",
+    concentration: !!raw.concentration,
+    ritual: !!raw.ritual,
+    v: raw.v !== undefined ? !!raw.v : true,
+    s: !!raw.s,
+    m: !!raw.m,
+    materials: raw.materials || "",
+  };
+}
+
+function normalizeWeapon(raw: Partial<DndWeapon>): DndWeapon {
+  return {
+    id: raw.id || uid(),
+    name: raw.name || "武器",
+    ability: (raw.ability as AbilityId) || "str",
+    proficient: raw.proficient !== false,
+    finesse: !!raw.finesse,
+    ranged: !!raw.ranged,
+    magic: Number(raw.magic) || 0,
+    dmgCount: Number(raw.dmgCount) || 1,
+    dmgFaces: Number(raw.dmgFaces) || 6,
+    dmgBonus: Number(raw.dmgBonus) || 0,
+    dmgType: raw.dmgType || "挥砍",
+    range: raw.range || "5",
+    notes: raw.notes || "",
+    weight: Number(raw.weight) || 0,
+  };
+}
+
+function normalizeProf(raw?: Partial<DndProfSource>): DndProfSource {
+  return { ...EMPTY_PROF, ...(raw || {}) };
 }
 
 export function defaultDndPlay(): DndPlayData {
@@ -266,6 +434,7 @@ export function defaultDndPlay(): DndPlayData {
         dmgType: "穿刺",
         range: "5（20/60）",
         notes: "轻型 灵巧",
+        weight: 1,
       },
     ],
     items: [],
@@ -273,17 +442,37 @@ export function defaultDndPlay(): DndPlayData {
     spellAbility: "cha",
     spellAbility2: "",
     spellSlots: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    pactSlotLevel: 0,
     spells: [],
     features: [],
+    featuresRace: [],
+    featuresClass: [],
     languages: "",
     proficiencies: "",
+    profs: emptyProfs(),
+    panelWidth: { ...DEFAULT_PANEL_WIDTH },
   };
 }
 
 export function parseDndPlay(raw: unknown): DndPlayData {
   const d = defaultDndPlay();
   if (!raw || typeof raw !== "object") return d;
-  const o = raw as Partial<DndPlayData>;
+  const o = raw as Partial<DndPlayData> & { spells?: Array<Partial<DndSpell> & { notes?: string }> };
+  const profs: DndProfs = {
+    race: normalizeProf(o.profs?.race),
+    class: normalizeProf(o.profs?.class),
+    background: normalizeProf(o.profs?.background),
+  };
+  if (!o.profs) {
+    if (o.languages) profs.race.languages = o.languages;
+    if (o.proficiencies) profs.class.tools = o.proficiencies;
+  }
+  const featuresClass = Array.isArray(o.featuresClass)
+    ? o.featuresClass
+    : Array.isArray(o.features)
+      ? o.features
+      : [];
+  const panelWidth = { ...DEFAULT_PANEL_WIDTH, ...(o.panelWidth || {}) };
   return {
     ...d,
     ...o,
@@ -291,13 +480,18 @@ export function parseDndPlay(raw: unknown): DndPlayData {
     saveProf: { ...d.saveProf, ...(o.saveProf || {}) },
     skills: { ...d.skills, ...(o.skills || {}) },
     classes: Array.isArray(o.classes) && o.classes.length ? o.classes : d.classes,
-    weapons: Array.isArray(o.weapons) ? o.weapons : d.weapons,
+    weapons: Array.isArray(o.weapons) ? o.weapons.map(normalizeWeapon) : d.weapons,
     items: Array.isArray(o.items) ? o.items : d.items,
-    spells: Array.isArray(o.spells) ? o.spells : d.spells,
-    features: Array.isArray(o.features) ? o.features : d.features,
+    spells: Array.isArray(o.spells) ? o.spells.map(normalizeSpell) : d.spells,
+    features: featuresClass,
+    featuresRace: Array.isArray(o.featuresRace) ? o.featuresRace : [],
+    featuresClass,
     spellSlots: Array.isArray(o.spellSlots) ? o.spellSlots : d.spellSlots,
     deathSuccess: Array.isArray(o.deathSuccess) ? o.deathSuccess : d.deathSuccess,
     deathFail: Array.isArray(o.deathFail) ? o.deathFail : d.deathFail,
+    pactSlotLevel: Number(o.pactSlotLevel) || 0,
+    profs,
+    panelWidth,
   };
 }
 
