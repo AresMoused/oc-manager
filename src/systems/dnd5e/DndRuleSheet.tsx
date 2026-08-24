@@ -25,27 +25,33 @@ import {
   PANEL_TITLE,
   RESOURCE_PRESETS,
   SKILLS,
+  SKILL_PROF_MODES,
   SPELL_LEVEL_LABELS,
   SPELL_SCHOOLS,
   WEAPON_PROP_DEFS,
   abilityMod,
   applyIncomingDamage,
   armorClass,
+  abilityCheckBonus,
   carryingCap,
   currentWeight,
   emptyCondition,
   emptyResource,
   emptySpell,
   emptyWeapon,
+  halfProficiency,
+  initiativeBonus,
   parseDndPlay,
   passiveSkill,
   proficiencyBonus,
   saveBonus,
   signed,
   skillBonus,
+  skillProfMode,
   spellAttack,
   spellSaveDc,
   totalLevel,
+  withSkillProfMode,
   weaponActiveProps,
   weaponAttackBonus,
   weaponAttackBreakdown,
@@ -195,7 +201,9 @@ export default function DndRuleSheet({
                 editable={layoutEdit}
                 onChange={(xp) => patch({ xp })}
               />
-              <span className="text-xs text-neutral-400">熟练 {signed(pb)}</span>
+              <span className="text-xs text-neutral-400">
+                熟练 {signed(pb)} / 半 {signed(halfProficiency(lv))}
+              </span>
             </div>
           </div>
         );
@@ -231,13 +239,16 @@ export default function DndRuleSheet({
                   onClick={() =>
                     open({
                       title: `${a.label}检定`,
-                      baseBonus: abilityMod(d.abilities[a.id]),
+                      baseBonus: abilityCheckBonus(d, a.id),
                       kind: "check",
                       ability: a.id,
+                      breakdown: d.jackOfAllTrades
+                        ? `调整值 ${signed(abilityMod(d.abilities[a.id]))} + 一半熟练`
+                        : `调整值 ${signed(abilityMod(d.abilities[a.id]))}`,
                     })
                   }
                 >
-                  {signed(abilityMod(d.abilities[a.id]))}
+                  {signed(abilityCheckBonus(d, a.id))}
                 </Roll>
                 <label className="text-[10px] text-neutral-500 flex items-center gap-1">
                   <input
@@ -274,16 +285,26 @@ export default function DndRuleSheet({
       case "skills":
         return wrapPanel(
           id,
-          undefined,
+          <label className="text-[10px] text-neutral-400 flex items-center gap-1">
+            <input
+              type="checkbox"
+              disabled={!layoutEdit}
+              checked={!!d.jackOfAllTrades}
+              onChange={(e) => patch({ jackOfAllTrades: e.target.checked })}
+            />
+            万事通（一半熟练）
+          </label>,
           <>
             <div className="grid sm:grid-cols-2 gap-1">
               {SKILLS.map((s) => {
                 const st = d.skills[s.id];
+                const mode = skillProfMode(st);
+                const joatHalf = mode === "none" && d.jackOfAllTrades;
                 return (
-                  <div key={s.id} className="flex items-center gap-2 text-sm px-1">
+                  <div key={s.id} className="flex items-center gap-1.5 text-sm px-1">
                     <Roll
                       hide={layoutEdit}
-                      className="w-14 text-left font-mono text-cyan-300"
+                      className="w-12 text-left font-mono text-cyan-300"
                       onClick={() =>
                         open({
                           title: s.label,
@@ -292,28 +313,49 @@ export default function DndRuleSheet({
                           ability: s.ability,
                           skillId: s.id,
                           presetAdv: st?.adv === "none" ? "none" : st?.adv,
+                          breakdown:
+                            mode === "expert"
+                              ? "专精（双倍熟练）"
+                              : mode === "full"
+                                ? "完全熟练"
+                                : mode === "half" || joatHalf
+                                  ? "一半熟练"
+                                  : "未熟练",
                         })
                       }
                     >
                       {signed(skillBonus(d, s.id))}
                     </Roll>
                     <span className="flex-1 truncate">{s.label}</span>
-                    <label className="text-[10px] text-neutral-500">
-                      <input
-                        type="checkbox"
-                        disabled={!layoutEdit}
-                        checked={!!st?.proficient}
+                    {layoutEdit ? (
+                      <select
+                        className={`${inp} w-12 text-[10px] px-1 py-0.5`}
+                        value={mode}
                         onChange={(e) =>
                           patch({
                             skills: {
                               ...d.skills,
-                              [s.id]: { ...st, proficient: e.target.checked },
+                              [s.id]: withSkillProfMode(
+                                st,
+                                e.target.value as (typeof SKILL_PROF_MODES)[number]["id"]
+                              ),
                             },
                           })
                         }
-                      />{" "}
-                      熟练
-                    </label>
+                      >
+                        {SKILL_PROF_MODES.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-[10px] text-neutral-500 w-6">
+                        {mode === "none" && joatHalf
+                          ? "半"
+                          : SKILL_PROF_MODES.find((m) => m.id === mode)?.label}
+                      </span>
+                    )}
                   </div>
                 );
               })}
@@ -334,7 +376,13 @@ export default function DndRuleSheet({
               ))}
               <div className="flex items-center gap-2 bg-neutral-950 rounded px-2 py-1 text-xs">
                 <span className="font-mono text-cyan-300 w-8">{signed(pb)}</span>
-                <span className="text-neutral-300">熟练加值</span>
+                <span className="text-neutral-300">完全熟练加值</span>
+              </div>
+              <div className="flex items-center gap-2 bg-neutral-950 rounded px-2 py-1 text-xs">
+                <span className="font-mono text-cyan-300 w-8">
+                  {signed(halfProficiency(lv))}
+                </span>
+                <span className="text-neutral-300">一半熟练（吟游诗人）</span>
               </div>
             </div>
           </>
@@ -496,14 +544,16 @@ export default function DndRuleSheet({
                 onClick={() =>
                   open({
                     title: "先攻",
-                    baseBonus: abilityMod(d.abilities.dex),
+                    baseBonus: initiativeBonus(d),
                     kind: "initiative",
                     ability: "dex",
-                    breakdown: "d20 + 敏捷",
+                    breakdown: d.jackOfAllTrades
+                      ? "d20 + 敏捷 + 一半熟练（万事通）"
+                      : "d20 + 敏捷",
                   })
                 }
               >
-                先攻 {signed(abilityMod(d.abilities.dex))}
+                先攻 {signed(initiativeBonus(d))}
               {exhaustionLevel(d) > 0
                 ? `（力竭 −${exhaustionLevel(d) * 2}）`
                 : ""}

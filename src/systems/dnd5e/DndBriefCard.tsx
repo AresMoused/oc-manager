@@ -7,14 +7,17 @@ import { applyCheckConditions } from "./conditions";
 import {
   ABILITIES,
   SKILLS,
+  abilityCheckBonus,
   abilityMod,
   armorClass,
+  halfProficiency,
   parseDndPlay,
   passiveSkill,
   proficiencyBonus,
   saveBonus,
   signed,
   skillBonus,
+  skillProfMode,
   spellAttack,
   spellSaveDc,
   totalLevel,
@@ -49,10 +52,12 @@ export default function DndBriefCard({
   const rollAbility = (id: AbilityId) =>
     open({
       title: `${ABILITIES.find((a) => a.id === id)?.label}检定`,
-      baseBonus: abilityMod(d.abilities[id]),
+      baseBonus: abilityCheckBonus(d, id),
       kind: "check",
       ability: id,
-      breakdown: `调整值 ${signed(abilityMod(d.abilities[id]))}`,
+      breakdown: d.jackOfAllTrades
+        ? `调整值 ${signed(abilityMod(d.abilities[id]))} + 一半熟练`
+        : `调整值 ${signed(abilityMod(d.abilities[id]))}`,
     });
 
   const rollSave = (id: AbilityId) =>
@@ -114,7 +119,7 @@ export default function DndBriefCard({
                 onClick={() => rollAbility(a.id)}
                 className="w-6 text-rose-400 font-bold hover:text-white"
               >
-                {abilityMod(d.abilities[a.id])}
+                {signed(abilityCheckBonus(d, a.id))}
               </button>
               <span className="w-3 text-center">{d.saveProf[a.id] ? "✓" : ""}</span>
               <button
@@ -130,7 +135,8 @@ export default function DndBriefCard({
             <p>被动感知【察言观色】 {passiveSkill(d, "insight")}</p>
             <p>被动感知【察觉】 {passiveSkill(d, "perception")}</p>
             <p>被动智力【调查】 {passiveSkill(d, "investigation")}</p>
-            <p>熟练加值 {signed(pb)}</p>
+            <p>熟练加值 {signed(pb)} / 半 {signed(halfProficiency(lv))}</p>
+            {d.jackOfAllTrades && <p>万事通已开</p>}
           </div>
         </div>
 
@@ -173,7 +179,17 @@ export default function DndBriefCard({
                 }
                 className={`flex items-center justify-between px-1.5 py-0.5 rounded ${SKILL_COLOR[s.ability]}`}
               >
-                <span className="truncate">{s.label}</span>
+                <span className="truncate">
+                  {s.label}
+                  {skillProfMode(d.skills[s.id]) === "expert"
+                    ? " 专"
+                    : skillProfMode(d.skills[s.id]) === "full"
+                      ? " 熟"
+                      : skillProfMode(d.skills[s.id]) === "half" ||
+                          (skillProfMode(d.skills[s.id]) === "none" && d.jackOfAllTrades)
+                        ? " 半"
+                        : ""}
+                </span>
                 <span className="font-mono">{signed(skillBonus(d, s.id))}</span>
               </button>
             ))}

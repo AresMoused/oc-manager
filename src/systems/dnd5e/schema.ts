@@ -184,6 +184,7 @@ export type WeaponPropId = (typeof WEAPON_PROP_DEFS)[number]["id"];
 export interface DndSkillState {
   proficient: boolean;
   expertise: boolean;
+  half: boolean;
   misc: number;
   adv: AdvPreset;
 }
@@ -350,6 +351,7 @@ export interface DndPlayData {
   resistances: string[];
   immunities: string[];
   vulnerabilities: string[];
+  jackOfAllTrades: boolean;
 }
 
 function uid() {
@@ -363,6 +365,51 @@ export function abilityMod(score: number): number {
 export function proficiencyBonus(level: number): number {
   const lv = Math.max(1, Math.min(20, Number(level) || 1));
   return 2 + Math.floor((lv - 1) / 4);
+}
+
+export function halfProficiency(level: number): number {
+  return Math.floor(proficiencyBonus(level) / 2);
+}
+
+export type SkillProfMode = "none" | "half" | "full" | "expert";
+
+export const SKILL_PROF_MODES: { id: SkillProfMode; label: string }[] = [
+  { id: "none", label: "无" },
+  { id: "half", label: "半" },
+  { id: "full", label: "满" },
+  { id: "expert", label: "专" },
+];
+
+export function skillProfMode(st?: DndSkillState): SkillProfMode {
+  if (!st) return "none";
+  if (st.expertise) return "expert";
+  if (st.proficient) return "full";
+  if (st.half) return "half";
+  return "none";
+}
+
+export function withSkillProfMode(
+  st: DndSkillState | undefined,
+  mode: SkillProfMode
+): DndSkillState {
+  const base = st || { proficient: false, expertise: false, half: false, misc: 0, adv: "none" as const };
+  return {
+    ...base,
+    proficient: mode === "full" || mode === "expert",
+    expertise: mode === "expert",
+    half: mode === "half",
+  };
+}
+
+export function skillProfAmount(data: DndPlayData, skillId: string): number {
+  const pb = proficiencyBonus(totalLevel(data));
+  const half = Math.floor(pb / 2);
+  const mode = skillProfMode(data.skills[skillId]);
+  if (mode === "expert") return pb * 2;
+  if (mode === "full") return pb;
+  if (mode === "half") return half;
+  if (data.jackOfAllTrades) return half;
+  return 0;
 }
 
 export function totalLevel(data: DndPlayData): number {
@@ -379,12 +426,23 @@ export function skillBonus(data: DndPlayData, skillId: string): number {
   const def = SKILLS.find((s) => s.id === skillId);
   if (!def) return 0;
   const st = data.skills[skillId];
+  return (
+    abilityMod(data.abilities[def.ability]) +
+    skillProfAmount(data, skillId) +
+    (Number(st?.misc) || 0)
+  );
+}
+
+export function abilityCheckBonus(data: DndPlayData, abi: AbilityId): number {
   const pb = proficiencyBonus(totalLevel(data));
-  let n = abilityMod(data.abilities[def.ability]);
-  if (st?.proficient) n += pb;
-  if (st?.expertise) n += pb;
-  n += Number(st?.misc) || 0;
-  return n;
+  return (
+    abilityMod(data.abilities[abi]) +
+    (data.jackOfAllTrades ? Math.floor(pb / 2) : 0)
+  );
+}
+
+export function initiativeBonus(data: DndPlayData): number {
+  return abilityCheckBonus(data, "dex");
 }
 
 export function saveBonus(data: DndPlayData, abi: AbilityId): number {
@@ -558,7 +616,7 @@ export function passiveSkill(data: DndPlayData, skillId: string): number {
 function emptySkills(): Record<string, DndSkillState> {
   const o: Record<string, DndSkillState> = {};
   for (const s of SKILLS) {
-    o[s.id] = { proficient: false, expertise: false, misc: 0, adv: "none" };
+    o[s.id] = { proficient: false, expertise: false, half: false, misc: 0, adv: "none" };
   }
   return o;
 }
@@ -855,6 +913,7 @@ export function defaultDndPlay(): DndPlayData {
     resistances: [],
     immunities: [],
     vulnerabilities: [],
+    jackOfAllTrades: false,
   };
 }
 
@@ -912,6 +971,7 @@ export function parseDndPlay(raw: unknown): DndPlayData {
     resistances: Array.isArray(o.resistances) ? o.resistances : [],
     immunities: Array.isArray(o.immunities) ? o.immunities : [],
     vulnerabilities: Array.isArray(o.vulnerabilities) ? o.vulnerabilities : [],
+    jackOfAllTrades: !!o.jackOfAllTrades,
   };
 }
 
