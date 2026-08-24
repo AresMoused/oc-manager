@@ -2206,7 +2206,7 @@ function PresetPull({
   return (
     <span className="flex items-center gap-1">
       <select
-        className={`${inp} text-[10px] max-w-[8rem]`}
+        className={`${inp} text-[10px] max-w-[11rem]`}
         value={id}
         onChange={(e) => setId(e.target.value)}
       >

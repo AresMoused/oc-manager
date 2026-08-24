@@ -1,5 +1,5 @@
 import type { DndSpellPreset } from "@/systems/dnd5e/schema";
-import { DEFAULT_SPELL_PRESETS } from "@/systems/dnd5e/spellPresets";
+import { DEFAULT_SPELL_PRESETS, mergeCoreSpellPresets } from "@/systems/dnd5e/spellPresets";
 
 /** World metadata — top-level partition for all data */
 
@@ -60,11 +60,12 @@ export function normalizeWorld(w: WorldMeta): WorldMeta {
     dmRoster: Array.isArray(w.dmRoster)
       ? w.dmRoster.filter((id) => typeof id === "string")
       : [],
-    spellPresets: Array.isArray(rawPresets)
-      ? (rawPresets as DndSpellPreset[])
-      : system === "dnd5e"
-        ? DEFAULT_SPELL_PRESETS.map((p) => ({ ...p }))
-        : [],
+    spellPresets:
+      system === "dnd5e"
+        ? mergeCoreSpellPresets(Array.isArray(rawPresets) ? (rawPresets as DndSpellPreset[]) : [])
+        : Array.isArray(rawPresets)
+          ? (rawPresets as DndSpellPreset[])
+          : [],
   };
 }
 
@@ -73,7 +74,17 @@ export function loadWorlds(): WorldMeta[] {
   try {
     const raw = localStorage.getItem(WORLDS_KEY);
     if (!raw) return [];
-    return (JSON.parse(raw) as WorldMeta[]).map(normalizeWorld);
+    const parsed = JSON.parse(raw) as WorldMeta[];
+    const worlds = parsed.map(normalizeWorld);
+    const grew = worlds.some((w, i) => {
+      const prev = parsed[i]?.spellPresets;
+      const before = Array.isArray(prev) ? prev.length : 0;
+      return (w.spellPresets?.length || 0) > before;
+    });
+    if (grew) {
+      localStorage.setItem(WORLDS_KEY, JSON.stringify(worlds));
+    }
+    return worlds;
   } catch {
     return [];
   }

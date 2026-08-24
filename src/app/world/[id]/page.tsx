@@ -20,7 +20,7 @@ import { getLore } from "@/lib/worldLore";
 import type { LoreHistoryEvent } from "@/lib/worldLore";
 import { WORLD_SYSTEMS, worldSystemLabel } from "@/lib/worlds";
 import { defaultDndPlay, wrapPlay } from "@/systems/dnd5e/schema";
-import { DEFAULT_SPELL_PRESETS } from "@/systems/dnd5e/spellPresets";
+import { mergeCoreSpellPresets } from "@/systems/dnd5e/spellPresets";
 import SpellPresetPanel from "@/systems/dnd5e/SpellPresetPanel";
 
 export default function WorldPage({
@@ -201,11 +201,11 @@ export default function WorldPage({
                 const system = e.target.value as typeof world.system;
                 updateWorld(world.id, {
                   system,
-                  ...(system === "dnd5e" && !(world.spellPresets || []).length
+                  ...(system === "dnd5e"
                     ? {
-                        spellPresets: DEFAULT_SPELL_PRESETS.map((p) => ({
-                          ...p,
-                        })),
+                        spellPresets: mergeCoreSpellPresets(
+                          world.spellPresets || []
+                        ),
                       }
                     : {}),
                 });

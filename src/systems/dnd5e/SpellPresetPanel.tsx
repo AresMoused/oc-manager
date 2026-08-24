@@ -23,6 +23,8 @@ export default function SpellPresetPanel({
   onChange: (next: DndSpellPreset[]) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const query = q.trim().toLowerCase();
 
   const add = (level = 0) => {
     const s = { ...emptySpell(level), name: "新法术", prepared: false };
@@ -39,7 +41,7 @@ export default function SpellPresetPanel({
         <div>
           <h2 className="text-sm font-medium text-white">法术预设</h2>
           <p className="text-[11px] text-neutral-500">
-            DM 在此维护本世界的法术表。角色卡编辑时可「从预设拉取」。
+            已载入 2024 核心 {presets.length} 个。角色卡可「从预设拉取」。
           </p>
         </div>
         <button
@@ -50,9 +52,20 @@ export default function SpellPresetPanel({
           + 法术
         </button>
       </div>
+      <input
+        className={`${inp} w-full text-xs`}
+        placeholder="搜索法术名、学派、伤害…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
       {SPELL_LEVEL_LABELS.map((lab, lv) => {
-        const list = presets.filter((p) => p.level === lv);
-        if (!list.length && lv > 3) return null;
+        const list = presets.filter((p) => {
+          if (p.level !== lv) return false;
+          if (!query) return true;
+          const blob = `${p.name} ${p.school} ${p.effect} ${p.dmgType}`.toLowerCase();
+          return blob.includes(query);
+        });
+        if (!list.length) return null;
         return (
           <div key={lv}>
             <div className="flex items-center justify-between mb-1">
