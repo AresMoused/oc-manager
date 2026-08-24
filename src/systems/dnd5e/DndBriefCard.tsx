@@ -17,7 +17,6 @@ import {
   saveBonus,
   signed,
   skillBonus,
-  skillProfMode,
   spellAttack,
   spellSaveDc,
   totalLevel,
@@ -181,12 +180,11 @@ export default function DndBriefCard({
               >
                 <span className="truncate">
                   {s.label}
-                  {skillProfMode(d.skills[s.id]) === "expert"
+                  {d.skills[s.id]?.expertise
                     ? " 专"
-                    : skillProfMode(d.skills[s.id]) === "full"
+                    : d.skills[s.id]?.proficient
                       ? " 熟"
-                      : skillProfMode(d.skills[s.id]) === "half" ||
-                          (skillProfMode(d.skills[s.id]) === "none" && d.jackOfAllTrades)
+                      : d.jackOfAllTrades
                         ? " 半"
                         : ""}
                 </span>

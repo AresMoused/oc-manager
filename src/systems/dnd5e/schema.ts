@@ -372,43 +372,13 @@ export function halfProficiency(level: number): number {
   return Math.floor(proficiencyBonus(level) / 2);
 }
 
-export type SkillProfMode = "none" | "half" | "full" | "expert";
-
-export const SKILL_PROF_MODES: { id: SkillProfMode; label: string }[] = [
-  { id: "none", label: "无" },
-  { id: "half", label: "半" },
-  { id: "full", label: "满" },
-  { id: "expert", label: "专" },
-];
-
-export function skillProfMode(st?: DndSkillState): SkillProfMode {
-  if (!st) return "none";
-  if (st.expertise) return "expert";
-  if (st.proficient) return "full";
-  if (st.half) return "half";
-  return "none";
-}
-
-export function withSkillProfMode(
-  st: DndSkillState | undefined,
-  mode: SkillProfMode
-): DndSkillState {
-  const base = st || { proficient: false, expertise: false, half: false, misc: 0, adv: "none" as const };
-  return {
-    ...base,
-    proficient: mode === "full" || mode === "expert",
-    expertise: mode === "expert",
-    half: mode === "half",
-  };
-}
-
 export function skillProfAmount(data: DndPlayData, skillId: string): number {
   const pb = proficiencyBonus(totalLevel(data));
   const half = Math.floor(pb / 2);
-  const mode = skillProfMode(data.skills[skillId]);
-  if (mode === "expert") return pb * 2;
-  if (mode === "full") return pb;
-  if (mode === "half") return half;
+  const st = data.skills[skillId];
+  // 熟练/专精只吃满额（或双倍），不再叠万事通的一半。
+  if (st?.expertise) return pb * 2;
+  if (st?.proficient) return pb;
   if (data.jackOfAllTrades) return half;
   return 0;
 }

@@ -25,7 +25,6 @@ import {
   PANEL_TITLE,
   RESOURCE_PRESETS,
   SKILLS,
-  SKILL_PROF_MODES,
   SPELL_LEVEL_LABELS,
   SPELL_SCHOOLS,
   WEAPON_PROP_DEFS,
@@ -47,11 +46,9 @@ import {
   saveBonus,
   signed,
   skillBonus,
-  skillProfMode,
   spellAttack,
   spellSaveDc,
   totalLevel,
-  withSkillProfMode,
   weaponActiveProps,
   weaponAttackBonus,
   weaponAttackBreakdown,
@@ -298,8 +295,8 @@ export default function DndRuleSheet({
             <div className="grid sm:grid-cols-2 gap-1">
               {SKILLS.map((s) => {
                 const st = d.skills[s.id];
-                const mode = skillProfMode(st);
-                const joatHalf = mode === "none" && d.jackOfAllTrades;
+                const trained = !!st?.proficient || !!st?.expertise;
+                const joatHalf = !trained && d.jackOfAllTrades;
                 return (
                   <div key={s.id} className="flex items-center gap-1.5 text-sm px-1">
                     <Roll
@@ -313,48 +310,43 @@ export default function DndRuleSheet({
                           ability: s.ability,
                           skillId: s.id,
                           presetAdv: st?.adv === "none" ? "none" : st?.adv,
-                          breakdown:
-                            mode === "expert"
-                              ? "专精（双倍熟练）"
-                              : mode === "full"
-                                ? "完全熟练"
-                                : mode === "half" || joatHalf
-                                  ? "一半熟练"
-                                  : "未熟练",
+                          breakdown: st?.expertise
+                            ? "专精（双倍熟练）"
+                            : trained
+                              ? "完全熟练"
+                              : joatHalf
+                                ? "万事通（一半熟练）"
+                                : "未熟练",
                         })
                       }
                     >
                       {signed(skillBonus(d, s.id))}
                     </Roll>
                     <span className="flex-1 truncate">{s.label}</span>
-                    {layoutEdit ? (
-                      <select
-                        className={`${inp} w-12 text-[10px] px-1 py-0.5`}
-                        value={mode}
+                    <label className="text-[10px] text-neutral-500 flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        disabled={!layoutEdit}
+                        checked={trained}
                         onChange={(e) =>
                           patch({
                             skills: {
                               ...d.skills,
-                              [s.id]: withSkillProfMode(
-                                st,
-                                e.target.value as (typeof SKILL_PROF_MODES)[number]["id"]
-                              ),
+                              [s.id]: {
+                                proficient: e.target.checked,
+                                expertise: e.target.checked ? !!st?.expertise : false,
+                                half: false,
+                                misc: Number(st?.misc) || 0,
+                                adv: st?.adv || "none",
+                              },
                             },
                           })
                         }
-                      >
-                        {SKILL_PROF_MODES.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-[10px] text-neutral-500 w-6">
-                        {mode === "none" && joatHalf
-                          ? "半"
-                          : SKILL_PROF_MODES.find((m) => m.id === mode)?.label}
-                      </span>
+                      />
+                      熟练
+                    </label>
+                    {!layoutEdit && joatHalf && (
+                      <span className="text-[10px] text-amber-400">半</span>
                     )}
                   </div>
                 );
