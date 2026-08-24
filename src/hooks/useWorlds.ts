@@ -8,6 +8,7 @@ import {
   WORLD_COLOR_PALETTE,
 } from "@/lib/worlds";
 import { useAppData } from "@/context/AppDataContext";
+import { DEFAULT_SPELL_PRESETS } from "@/systems/dnd5e/spellPresets";
 
 export function useWorlds() {
   const {
@@ -39,6 +40,8 @@ export function useWorlds() {
         color: color || WORLD_COLOR_PALETTE[0],
         system: system || "generic",
         dmRoster: [],
+        spellPresets:
+          system === "dnd5e" ? DEFAULT_SPELL_PRESETS.map((p) => ({ ...p })) : [],
         createdAt: now,
         updatedAt: now,
       };
@@ -54,7 +57,7 @@ export function useWorlds() {
   const updateWorld = useCallback(
     (
       id: string,
-      updates: Partial<Pick<WorldMeta, "name" | "color" | "system" | "dmRoster">>
+      updates: Partial<Pick<WorldMeta, "name" | "color" | "system" | "dmRoster" | "spellPresets">>
     ) => {
       setWorlds((prev) =>
         prev.map((w) =>

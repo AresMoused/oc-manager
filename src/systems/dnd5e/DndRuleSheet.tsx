@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import type { Character } from "@/lib/types";
+import { useWorlds } from "@/hooks/useWorlds";
 import { FreeDiceButton, useOpenCheck } from "@/systems/check/CheckHost";
 import type { CheckRequest } from "@/systems/check/CheckPanel";
 import {
@@ -11,9 +12,13 @@ import {
   exhaustionLevel,
   speedLockedBy,
 } from "./conditions";
+import { DEFAULT_SPELL_PRESETS, spellFromPreset } from "./spellPresets";
 import {
   ABILITIES,
   CONDITION_PRESETS,
+  DAMAGE_MAGICAL,
+  DAMAGE_PHYSICAL,
+  DAMAGE_TYPES,
   DEFAULT_PANEL_ORDER,
   DEFAULT_PANEL_WIDTH,
   EMPTY_PROF,
@@ -22,13 +27,16 @@ import {
   SKILLS,
   SPELL_LEVEL_LABELS,
   SPELL_SCHOOLS,
+  WEAPON_PROP_DEFS,
   abilityMod,
+  applyIncomingDamage,
   armorClass,
   carryingCap,
   currentWeight,
   emptyCondition,
   emptyResource,
   emptySpell,
+  emptyWeapon,
   parseDndPlay,
   passiveSkill,
   proficiencyBonus,
@@ -38,9 +46,10 @@ import {
   spellAttack,
   spellSaveDc,
   totalLevel,
+  weaponActiveProps,
   weaponAttackBonus,
   weaponAttackBreakdown,
-  weaponDamageBonus,
+  weaponDamageParts,
   wrapPlay,
   type AbilityId,
   type DndCondition,
@@ -50,6 +59,7 @@ import {
   type DndProfSource,
   type DndResource,
   type DndSpell,
+  type DndSpellPreset,
   type DndWeapon,
   type PanelId,
   type PanelWidth,
@@ -78,6 +88,10 @@ export default function DndRuleSheet({
   const patch = (p: Partial<DndPlayData>) => commit({ ...d, ...p });
   const layoutEdit = editable;
   const canWrite = canWriteProp ?? editable;
+  const { getWorldByName } = useWorlds();
+  const worldPresets =
+    getWorldByName(character.world || "")?.spellPresets || [];
+  const spellPresets = worldPresets.length ? worldPresets : DEFAULT_SPELL_PRESETS;
   const lv = totalLevel(d);
   const pb = proficiencyBonus(lv);
   const ac = armorClass(d);
@@ -412,6 +426,20 @@ export default function DndRuleSheet({
                 onChange={(e) => patch({ hitDice: e.target.value })}
               />
             </label>
+            <ResistBlock
+              d={d}
+              canWrite={canWrite}
+              onChange={(p) => patch(p)}
+            />
+            {canWrite && (
+              <HurtBox
+                d={d}
+                onApply={(next, note) => {
+                  patch(next);
+                  return note;
+                }}
+              />
+            )}
             <div className="rounded border border-neutral-800 p-2 space-y-1.5">
               <div className="text-[11px] text-neutral-300">~死亡豁免~</div>
               <DeathMarks
@@ -576,26 +604,7 @@ export default function DndRuleSheet({
                 className="text-xs text-cyan-300 mt-1"
                 onClick={() =>
                   patch({
-                    weapons: [
-                      ...d.weapons,
-                      {
-                        id: crypto.randomUUID(),
-                        name: "新武器",
-                        ability: "str",
-                        proficient: true,
-                        finesse: false,
-                        ranged: false,
-                        magic: 0,
-                        atkBonus: 0,
-                        dmgCount: 1,
-                        dmgFaces: 8,
-                        dmgBonus: 0,
-                        dmgType: "挥砍",
-                        range: "5",
-                        notes: "",
-                        weight: 0,
-                      },
-                    ],
+                    weapons: [...d.weapons, emptyWeapon()],
                   })
                 }
               >
@@ -682,6 +691,7 @@ export default function DndRuleSheet({
               layoutEdit={layoutEdit}
               canWrite={canWrite}
               patch={patch}
+              presets={spellPresets}
             />
           ) : null
         );
@@ -1242,8 +1252,14 @@ function WeaponRow({
   const openRaw = useOpenCheck();
   const open = (req: CheckRequest) => openRaw(applyCheckConditions(data, req));
   const atk = weaponAttackBonus(data, w);
-  const dmgB = weaponDamageBonus(data, w);
+  const parts = weaponDamageParts(data, w);
   const formula = weaponAttackBreakdown(data, w);
+  const dmgLabel = parts
+    .map(
+      (p) =>
+        `${p.count}d${p.faces}${p.bonus ? signed(p.bonus) : ""}${p.type ? ` ${p.type}` : ""}`
+    )
+    .join(" + ");
 
   const hitBtn = (
     <button
@@ -1271,24 +1287,27 @@ function WeaponRow({
           title: `${w.name} 伤害`,
           baseBonus: 0,
           kind: "damage",
-          damageCount: w.dmgCount,
-          damageFaces: w.dmgFaces,
-          damageBonus: dmgB,
+          damageParts: parts,
         })
       }
     >
-      伤害 {w.dmgCount}d{w.dmgFaces}
-      {signed(dmgB)} {w.dmgType}
+      伤害 {dmgLabel}
     </button>
   );
 
   if (!layoutEdit) {
+    const props = weaponActiveProps(w);
     return (
       <div className="flex flex-wrap items-center gap-2 text-sm border border-neutral-800 rounded p-2 mb-1">
         <span className="flex-1 min-w-[80px]">{w.name}</span>
         {hitBtn}
         {dmgBtn}
         <span className="text-[10px] text-neutral-500">{w.range}</span>
+        {props.map((p) => (
+          <span key={p} className="text-[10px] px-1 rounded bg-neutral-900 text-neutral-400">
+            {p}
+          </span>
+        ))}
       </div>
     );
   }
@@ -1367,13 +1386,50 @@ function WeaponRow({
           />
         </label>
         <label className="text-[10px] text-neutral-500">
-          伤害类型
-          <input
+          物理伤害
+          <select
             className={`${inp} w-full mt-0.5`}
-            value={w.dmgType}
-            onChange={(e) => onChange({ ...w, dmgType: e.target.value })}
-            placeholder="穿刺"
-          />
+            value={w.dmgTypePhys || ""}
+            onChange={(e) =>
+              onChange({
+                ...w,
+                dmgTypePhys: e.target.value,
+                dmgType: e.target.value || w.dmgTypeMagic,
+              })
+            }
+          >
+            <option value="">无</option>
+            {DAMAGE_PHYSICAL.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-[10px] text-neutral-500">
+          魔法伤害
+          <select
+            className={`${inp} w-full mt-0.5`}
+            value={w.dmgTypeMagic || ""}
+            onChange={(e) =>
+              onChange({
+                ...w,
+                dmgTypeMagic: e.target.value,
+                dmgType: w.dmgTypePhys || e.target.value,
+                magicDmgCount:
+                  e.target.value && w.dmgTypePhys && !w.magicDmgCount
+                    ? 1
+                    : w.magicDmgCount,
+              })
+            }
+          >
+            <option value="">无</option>
+            {DAMAGE_MAGICAL.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="text-[10px] text-neutral-500">
           距离
@@ -1394,6 +1450,41 @@ function WeaponRow({
             onChange={(e) => onChange({ ...w, weight: Number(e.target.value) || 0 })}
           />
         </label>
+        {w.dmgTypePhys && w.dmgTypeMagic && (
+          <label className="text-[10px] text-neutral-500 col-span-2">
+            额外魔法骰（{w.dmgTypeMagic}）
+            <div className="flex gap-1 mt-0.5">
+              <input
+                type="number"
+                min={0}
+                className={`${inp} w-12`}
+                value={w.magicDmgCount || 0}
+                onChange={(e) =>
+                  onChange({ ...w, magicDmgCount: Number(e.target.value) || 0 })
+                }
+              />
+              <span className="self-center">d</span>
+              <input
+                type="number"
+                min={2}
+                className={`${inp} w-12`}
+                value={w.magicDmgFaces || 6}
+                onChange={(e) =>
+                  onChange({ ...w, magicDmgFaces: Number(e.target.value) || 6 })
+                }
+              />
+              <span className="self-center text-neutral-500">+</span>
+              <input
+                type="number"
+                className={`${inp} w-12`}
+                value={w.magicDmgBonus || 0}
+                onChange={(e) =>
+                  onChange({ ...w, magicDmgBonus: Number(e.target.value) || 0 })
+                }
+              />
+            </div>
+          </label>
+        )}
         <label className="text-[10px] text-neutral-500 col-span-2">
           备注
           <input
@@ -1403,38 +1494,24 @@ function WeaponRow({
           />
         </label>
       </div>
-      <div className="flex flex-wrap gap-3 text-[10px] text-neutral-400">
-        <label className="flex items-center gap-1">
-          <input
-            type="checkbox"
-            checked={w.proficient}
-            onChange={(e) => onChange({ ...w, proficient: e.target.checked })}
-          />
-          熟练
-        </label>
-        <label className="flex items-center gap-1">
-          <input
-            type="checkbox"
-            checked={w.finesse}
-            onChange={(e) => onChange({ ...w, finesse: e.target.checked })}
-          />
-          灵巧（力量/敏捷取高）
-        </label>
-        <label className="flex items-center gap-1">
-          <input
-            type="checkbox"
-            checked={w.ranged}
-            onChange={(e) => {
-              const ranged = e.target.checked;
-              onChange({
-                ...w,
-                ranged,
-                ability: ranged && !w.finesse && w.ability === "str" ? "dex" : w.ability,
-              });
-            }}
-          />
-          远程（投掷近战请保持力量）
-        </label>
+      <div className="flex flex-wrap gap-2 text-[10px] text-neutral-400">
+        {WEAPON_PROP_DEFS.map((p) => (
+          <label key={p.id} className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={!!w[p.id]}
+              onChange={(e) => {
+                const on = e.target.checked;
+                const next = { ...w, [p.id]: on } as DndWeapon;
+                if (p.id === "ranged" && on && !w.finesse && w.ability === "str") {
+                  next.ability = "dex";
+                }
+                onChange(next);
+              }}
+            />
+            {p.label}
+          </label>
+        ))}
         <span className="text-neutral-500">{formula}</span>
       </div>
     </div>
@@ -1446,11 +1523,13 @@ function SpellBlock({
   layoutEdit,
   canWrite,
   patch,
+  presets,
 }: {
   d: DndPlayData;
   layoutEdit: boolean;
   canWrite: boolean;
   patch: (p: Partial<DndPlayData>) => void;
+  presets: DndSpellPreset[];
 }) {
   const openRaw = useOpenCheck();
   const open = (req: CheckRequest) => openRaw(applyCheckConditions(d, req));
@@ -1583,22 +1662,31 @@ function SpellBlock({
         const list = d.spells.filter((s) => s.level === lv);
         return (
           <div key={lv} className="border-t border-neutral-800 pt-2">
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-1 gap-2">
               <h4 className="text-xs text-neutral-300">{lab}</h4>
               {layoutEdit && (
-                <button
-                  type="button"
-                  className="text-[10px] text-cyan-300"
-                  onClick={() => patch({ spells: [...d.spells, emptySpell(lv)] })}
-                >
-                  + {lab}法术
-                </button>
+                <div className="flex items-center gap-2">
+                  <PresetPull
+                    presets={presets.filter((p) => p.level === lv)}
+                    onPick={(p) =>
+                      patch({ spells: [...d.spells, spellFromPreset(p)] })
+                    }
+                  />
+                  <button
+                    type="button"
+                    className="text-[10px] text-cyan-300"
+                    onClick={() => patch({ spells: [...d.spells, emptySpell(lv)] })}
+                  >
+                    + {lab}法术
+                  </button>
+                </div>
               )}
             </div>
             {list.map((sp) => (
               <SpellRow
                 key={sp.id}
                 sp={sp}
+                d={d}
                 layoutEdit={layoutEdit}
                 canWrite={canWrite}
                 onChange={(n) =>
@@ -1618,18 +1706,22 @@ function SpellBlock({
 
 function SpellRow({
   sp,
+  d,
   layoutEdit,
   canWrite,
   onChange,
   onRemove,
 }: {
   sp: DndSpell;
+  d: DndPlayData;
   layoutEdit: boolean;
   canWrite: boolean;
   onChange: (s: DndSpell) => void;
   onRemove: () => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const openRaw = useOpenCheck();
+  const open = (req: CheckRequest) => openRaw(applyCheckConditions(d, req));
+  const [openRow, setOpenRow] = useState(false);
   const vsm = [sp.v && "V", sp.s && "S", sp.m && "M"].filter(Boolean).join("");
   if (layoutEdit) {
     return (
@@ -1742,6 +1834,60 @@ function SpellRow({
             onChange={(e) => onChange({ ...sp, materials: e.target.value })}
           />
         )}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
+          <label className="text-[10px] text-neutral-400 flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={sp.hasAttack}
+              onChange={(e) => onChange({ ...sp, hasAttack: e.target.checked })}
+            />
+            法术攻击
+          </label>
+          <label className="text-[10px] text-neutral-500">
+            豁免
+            <select
+              className={`${inp} w-full mt-0.5`}
+              value={sp.saveAbility || ""}
+              onChange={(e) =>
+                onChange({ ...sp, saveAbility: (e.target.value || "") as AbilityId | "" })
+              }
+            >
+              <option value="">无</option>
+              {ABILITIES.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-[10px] text-neutral-500">
+            伤害骰
+            <div className="flex gap-1 mt-0.5">
+              <input
+                type="number"
+                min={0}
+                className={`${inp} w-12`}
+                value={sp.dmgCount || 0}
+                onChange={(e) => onChange({ ...sp, dmgCount: Number(e.target.value) || 0 })}
+              />
+              <span className="self-center">d</span>
+              <input
+                type="number"
+                min={2}
+                className={`${inp} w-12`}
+                value={sp.dmgFaces || 6}
+                onChange={(e) => onChange({ ...sp, dmgFaces: Number(e.target.value) || 6 })}
+              />
+            </div>
+          </label>
+          <label className="text-[10px] text-neutral-500">
+            伤害类型
+            <DamageTypeSelect
+              value={sp.dmgType || ""}
+              onChange={(dmgType) => onChange({ ...sp, dmgType })}
+            />
+          </label>
+        </div>
         <textarea
           className={`${inp} w-full min-h-[64px]`}
           placeholder="效果"
@@ -1771,7 +1917,7 @@ function SpellRow({
         <button
           type="button"
           className="flex-1 text-left flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => setOpenRow((v) => !v)}
         >
           <span className="font-medium">{sp.name || "（未命名）"}</span>
           {sp.school && <span className="text-[10px] text-neutral-500">{sp.school}</span>}
@@ -1784,8 +1930,63 @@ function SpellRow({
           )}
           {sp.ritual && <span className="text-[10px] text-sky-400">仪式</span>}
         </button>
+        {sp.hasAttack && (
+          <button
+            type="button"
+            className="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-200 text-[10px]"
+            onClick={() =>
+              open({
+                title: `${sp.name || "法术"} 攻击`,
+                baseBonus: spellAttack(d, d.spellAbility),
+                kind: "attack",
+                ability: d.spellAbility,
+                dcLabel: "AC",
+              })
+            }
+          >
+            攻击 {signed(spellAttack(d, d.spellAbility))}
+          </button>
+        )}
+        {sp.saveAbility && (
+          <button
+            type="button"
+            className="px-1.5 py-0.5 rounded bg-rose-950 text-rose-200 text-[10px]"
+            onClick={() =>
+              open({
+                title: `${sp.name || "法术"} ${ABILITIES.find((a) => a.id === sp.saveAbility)?.label}豁免`,
+                baseBonus: 0,
+                kind: "save",
+                ability: sp.saveAbility,
+                defaultDc: spellSaveDc(d, d.spellAbility),
+                dcLabel: "DC",
+              })
+            }
+          >
+            DC {spellSaveDc(d, d.spellAbility)}
+          </button>
+        )}
+        {sp.dmgCount > 0 && (
+          <button
+            type="button"
+            className="px-1.5 py-0.5 rounded bg-amber-950 text-amber-200 text-[10px]"
+            onClick={() =>
+              open({
+                title: `${sp.name || "法术"} 伤害`,
+                baseBonus: 0,
+                kind: "damage",
+                damageCount: sp.dmgCount,
+                damageFaces: sp.dmgFaces,
+                damageBonus: sp.dmgBonus,
+                damageType: sp.dmgType,
+              })
+            }
+          >
+            {sp.dmgCount}d{sp.dmgFaces}
+            {sp.dmgBonus ? signed(sp.dmgBonus) : ""} {sp.dmgType}
+          </button>
+        )}
       </div>
-      {open && (
+      {openRow && (
         <div className="mt-1 text-xs text-neutral-400 whitespace-pre-wrap">
           {sp.effect || "（无效果文本）"}
           {sp.materials ? `\n材料：${sp.materials}` : ""}
@@ -1907,3 +2108,188 @@ function FeatureList({
     </div>
   );
 }
+
+function DamageTypeSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <select
+      className={`${inp} w-full mt-0.5`}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">无</option>
+      <optgroup label="物理">
+        {DAMAGE_PHYSICAL.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="魔法">
+        {DAMAGE_MAGICAL.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </optgroup>
+      {value && !(DAMAGE_TYPES as readonly string[]).includes(value) && (
+        <option value={value}>{value}</option>
+      )}
+    </select>
+  );
+}
+
+function PresetPull({
+  presets,
+  onPick,
+}: {
+  presets: DndSpellPreset[];
+  onPick: (p: DndSpellPreset) => void;
+}) {
+  const [id, setId] = useState("");
+  if (!presets.length) return null;
+  return (
+    <span className="flex items-center gap-1">
+      <select
+        className={`${inp} text-[10px] max-w-[8rem]`}
+        value={id}
+        onChange={(e) => setId(e.target.value)}
+      >
+        <option value="">从预设拉取</option>
+        {presets.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="text-[10px] text-cyan-300"
+        disabled={!id}
+        onClick={() => {
+          const p = presets.find((x) => x.id === id);
+          if (p) onPick(p);
+          setId("");
+        }}
+      >
+        拉取
+      </button>
+    </span>
+  );
+}
+
+function ResistBlock({
+  d,
+  canWrite,
+  onChange,
+}: {
+  d: DndPlayData;
+  canWrite: boolean;
+  onChange: (p: Partial<DndPlayData>) => void;
+}) {
+  const rows: { key: "resistances" | "immunities" | "vulnerabilities"; label: string }[] = [
+    { key: "resistances", label: "抗性" },
+    { key: "immunities", label: "免疫" },
+    { key: "vulnerabilities", label: "易伤" },
+  ];
+  return (
+    <div className="space-y-1">
+      {rows.map((row) => {
+        const list = d[row.key] || [];
+        return (
+          <div key={row.key} className="flex flex-wrap items-center gap-1">
+            <span className="text-[10px] text-neutral-500 w-8">{row.label}</span>
+            {list.map((t) => (
+              <button
+                key={t}
+                type="button"
+                disabled={!canWrite}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-700 text-neutral-300"
+                onClick={() =>
+                  onChange({ [row.key]: list.filter((x) => x !== t) })
+                }
+              >
+                {t}
+                {canWrite ? " ×" : ""}
+              </button>
+            ))}
+            {canWrite && (
+              <select
+                className={`${inp} text-[10px] w-20`}
+                value=""
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v && !list.includes(v)) onChange({ [row.key]: [...list, v] });
+                }}
+              >
+                <option value="">+</option>
+                {DAMAGE_TYPES.filter((t) => !list.includes(t)).map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            )}
+            {!list.length && !canWrite && (
+              <span className="text-[10px] text-neutral-600">无</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function HurtBox({
+  d,
+  onApply,
+}: {
+  d: DndPlayData;
+  onApply: (next: Partial<DndPlayData>, note: string) => string;
+}) {
+  const [type, setType] = useState<string>("穿刺");
+  const [amount, setAmount] = useState("0");
+  const [log, setLog] = useState("");
+  return (
+    <div className="rounded border border-rose-900/50 bg-rose-950/20 p-2 space-y-1.5">
+      <div className="text-[11px] text-rose-200">受伤判定（已命中）</div>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-[10px] text-neutral-500">
+          伤害类型
+          <DamageTypeSelect value={type} onChange={setType} />
+        </label>
+        <label className="text-[10px] text-neutral-500">
+          数值
+          <input
+            type="number"
+            min={0}
+            className={`${inp} w-20 mt-0.5`}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        </label>
+        <button
+          type="button"
+          className="px-2 py-1 rounded bg-rose-800 text-white text-xs"
+          onClick={() => {
+            const res = applyIncomingDamage(d, Number(amount) || 0, type);
+            const note = onApply(
+              { hpCurrent: res.hpCurrent, hpTemp: res.hpTemp },
+              res.note
+            );
+            setLog(note);
+          }}
+        >
+          结算
+        </button>
+      </div>
+      {log && <p className="text-[10px] text-rose-200">{log}</p>}
+    </div>
+  );
+}
+

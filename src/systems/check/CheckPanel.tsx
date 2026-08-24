@@ -20,6 +20,8 @@ export interface CheckRequest {
   damageCount?: number;
   damageFaces?: number;
   damageBonus?: number;
+  damageType?: string;
+  damageParts?: { count: number; faces: number; bonus: number; type: string }[];
   ability?: string;
   skillId?: string;
   warnings?: string[];
@@ -69,12 +71,55 @@ export default function CheckPanel({
     let total = 0;
 
     if (isDamage) {
-      const c = req.damageCount || 1;
-      const f = req.damageFaces || 6;
-      const rolled = rollDice(c, f);
-      lines.push(`伤害骰 ${c}d${f}：${rolled.rolls.join(" + ")} = ${rolled.sum}`);
-      total += rolled.sum + (req.damageBonus || 0) + (Number(flat) || 0);
-      lines.push(`伤害加值 ${req.damageBonus || 0}，额外 ${flat || 0}`);
+      const parts =
+        req.damageParts && req.damageParts.length
+          ? req.damageParts
+          : [
+              {
+                count: req.damageCount || 1,
+                faces: req.damageFaces || 6,
+                bonus: req.damageBonus || 0,
+                type: req.damageType || "",
+              },
+            ];
+      const byType: Record<string, number> = {};
+      parts.forEach((part) => {
+        const c = part.count || 1;
+        const f = part.faces || 6;
+        const rolled = rollDice(c, f);
+        const sub = rolled.sum + (Number(part.bonus) || 0);
+        total += sub;
+        const t = part.type || "未分类";
+        byType[t] = (byType[t] || 0) + sub;
+        const bonusTxt = part.bonus ? (part.bonus >= 0 ? `+${part.bonus}` : String(part.bonus)) : "";
+        lines.push(
+          `${t} ${c}d${f}${bonusTxt}：${rolled.rolls.join(" + ")} = ${sub}`
+        );
+      });
+      if (flat) {
+        total += Number(flat) || 0;
+        lines.push(`额外加值 ${flat}`);
+      }
+      const typeLine = Object.entries(byType)
+        .map(([t, n]) => `${n} ${t}`)
+        .join(" + ");
+      extra.forEach((die, i) => {
+        const hand = manualExtras[i];
+        if (mode === "manual" && hand != null && hand !== "") {
+          const n = Number(hand) || 0;
+          total += n;
+          lines.push(`额外 ${die.count}d${die.faces} 手填：${n}`);
+        } else {
+          const rolled = rollDice(die.count, die.faces);
+          total += rolled.sum;
+          lines.push(
+            `额外 ${die.count}d${die.faces}：${rolled.rolls.join(" + ")} = ${rolled.sum}`
+          );
+        }
+      });
+      lines.push(`总计：${total}${typeLine ? `（${typeLine}）` : ""}`);
+      setResult(lines);
+      return;
     } else if (!isFree) {
       let d20 = 0;
       if (mode === "manual") {

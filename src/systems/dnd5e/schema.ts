@@ -142,6 +142,45 @@ export const CONDITION_PRESETS = [
   "力竭",
 ] as const;
 
+export const DAMAGE_PHYSICAL = ["钝击", "穿刺", "挥砍"] as const;
+export const DAMAGE_MAGICAL = [
+  "强酸",
+  "冷冻",
+  "火焰",
+  "力场",
+  "闪电",
+  "黯蚀",
+  "毒素",
+  "心灵",
+  "光耀",
+  "雷鸣",
+] as const;
+export const DAMAGE_TYPES = [...DAMAGE_PHYSICAL, ...DAMAGE_MAGICAL] as const;
+export type DamageType = (typeof DAMAGE_TYPES)[number];
+
+export function isPhysicalDamage(t: string) {
+  return (DAMAGE_PHYSICAL as readonly string[]).includes(t);
+}
+export function isMagicalDamage(t: string) {
+  return (DAMAGE_MAGICAL as readonly string[]).includes(t);
+}
+
+export const WEAPON_PROP_DEFS = [
+  { id: "proficient", label: "熟练" },
+  { id: "finesse", label: "灵巧" },
+  { id: "light", label: "轻型" },
+  { id: "heavy", label: "重型" },
+  { id: "twoHanded", label: "双手" },
+  { id: "thrown", label: "投掷" },
+  { id: "reach", label: "触及" },
+  { id: "versatile", label: "多用" },
+  { id: "ammunition", label: "弹药" },
+  { id: "loading", label: "装填" },
+  { id: "ranged", label: "远程" },
+] as const;
+
+export type WeaponPropId = (typeof WEAPON_PROP_DEFS)[number]["id"];
+
 export interface DndSkillState {
   proficient: boolean;
   expertise: boolean;
@@ -156,12 +195,25 @@ export interface DndWeapon {
   proficient: boolean;
   finesse: boolean;
   ranged: boolean;
+  light: boolean;
+  heavy: boolean;
+  twoHanded: boolean;
+  thrown: boolean;
+  reach: boolean;
+  versatile: boolean;
+  ammunition: boolean;
+  loading: boolean;
   magic: number;
   atkBonus: number;
   dmgCount: number;
   dmgFaces: number;
   dmgBonus: number;
   dmgType: string;
+  dmgTypePhys: string;
+  dmgTypeMagic: string;
+  magicDmgCount: number;
+  magicDmgFaces: number;
+  magicDmgBonus: number;
   range: string;
   notes: string;
   weight: number;
@@ -192,7 +244,15 @@ export interface DndSpell {
   s: boolean;
   m: boolean;
   materials: string;
+  hasAttack: boolean;
+  saveAbility: AbilityId | "";
+  dmgCount: number;
+  dmgFaces: number;
+  dmgBonus: number;
+  dmgType: string;
 }
+
+export type DndSpellPreset = DndSpell;
 
 export interface DndClassRow {
   name: string;
@@ -287,6 +347,9 @@ export interface DndPlayData {
   resources: DndResource[];
   conditions: DndCondition[];
   spellSlotsLeft: number[];
+  resistances: string[];
+  immunities: string[];
+  vulnerabilities: string[];
 }
 
 function uid() {
@@ -364,6 +427,101 @@ export function weaponDamageBonus(data: DndPlayData, w: DndWeapon): number {
   return abilityMod(data.abilities[abi]) + (Number(w.magic) || 0) + (Number(w.dmgBonus) || 0);
 }
 
+export interface DamagePart {
+  count: number;
+  faces: number;
+  bonus: number;
+  type: string;
+}
+
+export function primaryDamageType(w: {
+  dmgTypePhys?: string;
+  dmgTypeMagic?: string;
+  dmgType?: string;
+}): string {
+  return w.dmgTypePhys || w.dmgTypeMagic || w.dmgType || "";
+}
+
+export function weaponDamageParts(data: DndPlayData, w: DndWeapon): DamagePart[] {
+  const phys = w.dmgTypePhys || (isPhysicalDamage(w.dmgType) ? w.dmgType : "");
+  const mag = w.dmgTypeMagic || (isMagicalDamage(w.dmgType) ? w.dmgType : "");
+  const mainType = phys || mag || w.dmgType || "";
+  const parts: DamagePart[] = [
+    {
+      count: Number(w.dmgCount) || 1,
+      faces: Number(w.dmgFaces) || 4,
+      bonus: weaponDamageBonus(data, w),
+      type: mainType,
+    },
+  ];
+  if (phys && mag && Number(w.magicDmgCount) > 0) {
+    parts.push({
+      count: Number(w.magicDmgCount) || 1,
+      faces: Number(w.magicDmgFaces) || 6,
+      bonus: Number(w.magicDmgBonus) || 0,
+      type: mag,
+    });
+  }
+  return parts;
+}
+
+export function applyIncomingDamage(
+  data: DndPlayData,
+  amount: number,
+  type: string
+): {
+  hpCurrent: number;
+  hpTemp: number;
+  raw: number;
+  taken: number;
+  note: string;
+} {
+  const raw = Math.max(0, Number(amount) || 0);
+  const immune = (data.immunities || []).includes(type);
+  const resist = (data.resistances || []).includes(type);
+  const vuln = (data.vulnerabilities || []).includes(type);
+  let n = raw;
+  const bits: string[] = [`${type || "未分类"} ${raw}`];
+  if (immune) {
+    n = 0;
+    bits.push("免疫 → 0");
+  } else {
+    if (resist && !vuln) {
+      n = Math.floor(n / 2);
+      bits.push("抗性减半 → " + n);
+    } else if (vuln && !resist) {
+      n = n * 2;
+      bits.push("易伤加倍 → " + n);
+    } else if (resist && vuln) {
+      bits.push("抗性与易伤抵消");
+    }
+  }
+  let temp = Number(data.hpTemp) || 0;
+  let hp = Number(data.hpCurrent) || 0;
+  const incoming = n;
+  const fromTemp = Math.min(temp, n);
+  if (fromTemp) bits.push(`临时 HP −${fromTemp}`);
+  temp -= fromTemp;
+  n -= fromTemp;
+  if (n) {
+    hp = Math.max(0, hp - n);
+    bits.push(`HP −${n} → ${hp}`);
+  }
+  return {
+    hpCurrent: hp,
+    hpTemp: temp,
+    raw,
+    taken: incoming,
+    note: bits.join("，"),
+  };
+}
+
+export function weaponActiveProps(w: DndWeapon): string[] {
+  return WEAPON_PROP_DEFS.filter((p) => p.id !== "proficient" && !!(w as unknown as Record<string, boolean>)[p.id]).map(
+    (p) => p.label
+  );
+}
+
 export function armorClass(data: DndPlayData): number {
   const dex = abilityMod(data.abilities.dex);
   const cap = data.armorDexMax;
@@ -430,6 +588,12 @@ export function emptySpell(level = 0): DndSpell {
     s: false,
     m: false,
     materials: "",
+    hasAttack: false,
+    saveAbility: "",
+    dmgCount: 0,
+    dmgFaces: 6,
+    dmgBonus: 0,
+    dmgType: "",
   };
 }
 
@@ -453,10 +617,65 @@ function normalizeSpell(raw: Partial<DndSpell> & { notes?: string }): DndSpell {
     s: !!raw.s,
     m: !!raw.m,
     materials: raw.materials || "",
+    hasAttack: !!raw.hasAttack,
+    saveAbility: (raw.saveAbility as AbilityId | "") || "",
+    dmgCount: Number(raw.dmgCount) || 0,
+    dmgFaces: Number(raw.dmgFaces) || 6,
+    dmgBonus: Number(raw.dmgBonus) || 0,
+    dmgType: raw.dmgType || "",
   };
 }
 
+export function emptyWeapon(): DndWeapon {
+  return {
+    id: uid(),
+    name: "新武器",
+    ability: "str",
+    proficient: true,
+    finesse: false,
+    ranged: false,
+    light: false,
+    heavy: false,
+    twoHanded: false,
+    thrown: false,
+    reach: false,
+    versatile: false,
+    ammunition: false,
+    loading: false,
+    magic: 0,
+    atkBonus: 0,
+    dmgCount: 1,
+    dmgFaces: 8,
+    dmgBonus: 0,
+    dmgType: "挥砍",
+    dmgTypePhys: "挥砍",
+    dmgTypeMagic: "",
+    magicDmgCount: 0,
+    magicDmgFaces: 6,
+    magicDmgBonus: 0,
+    range: "5",
+    notes: "",
+    weight: 0,
+  };
+}
+
+function splitLegacyDmgType(raw: Partial<DndWeapon>): {
+  phys: string;
+  mag: string;
+  fallback: string;
+} {
+  const listed = raw.dmgType || "";
+  const phys =
+    raw.dmgTypePhys ||
+    (isPhysicalDamage(listed) ? listed : "");
+  const mag =
+    raw.dmgTypeMagic ||
+    (isMagicalDamage(listed) ? listed : "");
+  return { phys, mag, fallback: listed };
+}
+
 function normalizeWeapon(raw: Partial<DndWeapon>): DndWeapon {
+  const types = splitLegacyDmgType(raw);
   return {
     id: raw.id || uid(),
     name: raw.name || "武器",
@@ -464,12 +683,25 @@ function normalizeWeapon(raw: Partial<DndWeapon>): DndWeapon {
     proficient: raw.proficient !== false,
     finesse: !!raw.finesse,
     ranged: !!raw.ranged,
+    light: !!raw.light,
+    heavy: !!raw.heavy,
+    twoHanded: !!raw.twoHanded,
+    thrown: !!raw.thrown,
+    reach: !!raw.reach,
+    versatile: !!raw.versatile,
+    ammunition: !!raw.ammunition,
+    loading: !!raw.loading,
     magic: Number(raw.magic) || 0,
     atkBonus: Number(raw.atkBonus) || 0,
     dmgCount: Number(raw.dmgCount) || 1,
     dmgFaces: Number(raw.dmgFaces) || 6,
     dmgBonus: Number(raw.dmgBonus) || 0,
-    dmgType: raw.dmgType || "挥砍",
+    dmgType: types.phys || types.mag || types.fallback || "挥砍",
+    dmgTypePhys: types.phys,
+    dmgTypeMagic: types.mag,
+    magicDmgCount: Number(raw.magicDmgCount) || 0,
+    magicDmgFaces: Number(raw.magicDmgFaces) || 6,
+    magicDmgBonus: Number(raw.magicDmgBonus) || 0,
     range: raw.range || "5",
     notes: raw.notes || "",
     weight: Number(raw.weight) || 0,
@@ -578,14 +810,27 @@ export function defaultDndPlay(): DndPlayData {
         proficient: true,
         finesse: true,
         ranged: false,
+        light: true,
+        heavy: false,
+        twoHanded: false,
+        thrown: true,
+        reach: false,
+        versatile: false,
+        ammunition: false,
+        loading: false,
         magic: 0,
         atkBonus: 0,
         dmgCount: 1,
         dmgFaces: 4,
         dmgBonus: 0,
         dmgType: "穿刺",
+        dmgTypePhys: "穿刺",
+        dmgTypeMagic: "",
+        magicDmgCount: 0,
+        magicDmgFaces: 6,
+        magicDmgBonus: 0,
         range: "5（20/60）",
-        notes: "轻型 灵巧",
+        notes: "",
         weight: 1,
       },
     ],
@@ -607,6 +852,9 @@ export function defaultDndPlay(): DndPlayData {
     resources: [],
     conditions: [],
     spellSlotsLeft: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    resistances: [],
+    immunities: [],
+    vulnerabilities: [],
   };
 }
 
@@ -661,6 +909,9 @@ export function parseDndPlay(raw: unknown): DndPlayData {
     panelOrder: normalizePanelOrder(o.panelOrder),
     resources,
     conditions: Array.isArray(o.conditions) ? o.conditions.map(normalizeCondition) : [],
+    resistances: Array.isArray(o.resistances) ? o.resistances : [],
+    immunities: Array.isArray(o.immunities) ? o.immunities : [],
+    vulnerabilities: Array.isArray(o.vulnerabilities) ? o.vulnerabilities : [],
   };
 }
 

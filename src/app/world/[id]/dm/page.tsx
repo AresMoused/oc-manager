@@ -8,6 +8,7 @@ import { useWorlds } from "@/hooks/useWorlds";
 import { useCharacters } from "@/hooks/useCharacters";
 import { CheckHost, FreeDiceButton } from "@/systems/check/CheckHost";
 import DndBriefCard from "@/systems/dnd5e/DndBriefCard";
+import SpellPresetPanel from "@/systems/dnd5e/SpellPresetPanel";
 import type { Character } from "@/lib/types";
 
 export default function WorldDmPage({
@@ -97,6 +98,13 @@ export default function WorldDmPage({
 
           <Row title="玩家" list={pcs} />
           <Row title="NPC" list={npcs} />
+
+          {world.system === "dnd5e" && (
+            <SpellPresetPanel
+              presets={world.spellPresets || []}
+              onChange={(spellPresets) => updateWorld(world.id, { spellPresets })}
+            />
+          )}
         </main>
         <Footer />
       </div>

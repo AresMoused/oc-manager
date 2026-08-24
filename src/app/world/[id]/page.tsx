@@ -20,6 +20,8 @@ import { getLore } from "@/lib/worldLore";
 import type { LoreHistoryEvent } from "@/lib/worldLore";
 import { WORLD_SYSTEMS, worldSystemLabel } from "@/lib/worlds";
 import { defaultDndPlay, wrapPlay } from "@/systems/dnd5e/schema";
+import { DEFAULT_SPELL_PRESETS } from "@/systems/dnd5e/spellPresets";
+import SpellPresetPanel from "@/systems/dnd5e/SpellPresetPanel";
 
 export default function WorldPage({
   params,
@@ -195,11 +197,19 @@ export default function WorldPage({
             <select
               className="px-2 py-1.5 text-sm bg-neutral-900 border border-neutral-700 rounded-lg text-neutral-300"
               value={world.system || "generic"}
-              onChange={(e) =>
+              onChange={(e) => {
+                const system = e.target.value as typeof world.system;
                 updateWorld(world.id, {
-                  system: e.target.value as typeof world.system,
-                })
-              }
+                  system,
+                  ...(system === "dnd5e" && !(world.spellPresets || []).length
+                    ? {
+                        spellPresets: DEFAULT_SPELL_PRESETS.map((p) => ({
+                          ...p,
+                        })),
+                      }
+                    : {}),
+                });
+              }}
             >
               {WORLD_SYSTEMS.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -295,6 +305,16 @@ export default function WorldPage({
 
         {/* World lore panels */}
         <div className="mt-10" id="world-lore">
+          {world.system === "dnd5e" && (
+            <div className="mb-8">
+              <SpellPresetPanel
+                presets={world.spellPresets || []}
+                onChange={(spellPresets) =>
+                  updateWorld(world.id, { spellPresets })
+                }
+              />
+            </div>
+          )}
           <WorldLorePanel
             worldName={world.name}
             lore={worldLore}

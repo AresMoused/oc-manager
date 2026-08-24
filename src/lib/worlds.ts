@@ -1,3 +1,6 @@
+import type { DndSpellPreset } from "@/systems/dnd5e/schema";
+import { DEFAULT_SPELL_PRESETS } from "@/systems/dnd5e/spellPresets";
+
 /** World metadata — top-level partition for all data */
 
 export type WorldSystem = "generic" | "dnd5e" | "coc7" | "cyberpunk";
@@ -27,6 +30,8 @@ export interface WorldMeta {
   system: WorldSystem;
   /** Character ids the DM chose to show on the DM page */
   dmRoster: string[];
+  /** D&D 5e spell library for this world (DM-managed) */
+  spellPresets: DndSpellPreset[];
   createdAt: string;
   updatedAt: string;
 }
@@ -47,12 +52,19 @@ export const WORLD_COLOR_PALETTE = [
 ];
 
 export function normalizeWorld(w: WorldMeta): WorldMeta {
+  const system = normalizeWorldSystem((w as { system?: unknown }).system);
+  const rawPresets = (w as { spellPresets?: unknown }).spellPresets;
   return {
     ...w,
-    system: normalizeWorldSystem((w as { system?: unknown }).system),
+    system,
     dmRoster: Array.isArray(w.dmRoster)
       ? w.dmRoster.filter((id) => typeof id === "string")
       : [],
+    spellPresets: Array.isArray(rawPresets)
+      ? (rawPresets as DndSpellPreset[])
+      : system === "dnd5e"
+        ? DEFAULT_SPELL_PRESETS.map((p) => ({ ...p }))
+        : [],
   };
 }
 
@@ -100,6 +112,7 @@ export function migrateWorldsFromCharacters(
       color,
       system: "generic",
       dmRoster: [],
+      spellPresets: [],
       createdAt: now,
       updatedAt: now,
     };
