@@ -3,6 +3,14 @@
 import { useState, type ReactNode } from "react";
 import type { Character } from "@/lib/types";
 import { FreeDiceButton, useOpenCheck } from "@/systems/check/CheckHost";
+import type { CheckRequest } from "@/systems/check/CheckPanel";
+import {
+  applyCheckConditions,
+  conditionDef,
+  effectiveSpeed,
+  exhaustionLevel,
+  speedLockedBy,
+} from "./conditions";
 import {
   ABILITIES,
   CONDITION_PRESETS,
@@ -31,6 +39,7 @@ import {
   spellSaveDc,
   totalLevel,
   weaponAttackBonus,
+  weaponAttackBreakdown,
   weaponDamageBonus,
   wrapPlay,
   type AbilityId,
@@ -62,8 +71,9 @@ export default function DndRuleSheet({
   editable: boolean;
   canWrite?: boolean;
 }) {
-  const open = useOpenCheck();
+  const openRaw = useOpenCheck();
   const d = parseDndPlay(character.play?.data);
+  const open = (req: CheckRequest) => openRaw(applyCheckConditions(d, req));
   const commit = (next: DndPlayData) => onChange(wrapPlay(next));
   const patch = (p: Partial<DndPlayData>) => commit({ ...d, ...p });
   const layoutEdit = editable;
@@ -208,6 +218,8 @@ export default function DndRuleSheet({
                     open({
                       title: `${a.label}检定`,
                       baseBonus: abilityMod(d.abilities[a.id]),
+                      kind: "check",
+                      ability: a.id,
                     })
                   }
                 >
@@ -233,6 +245,8 @@ export default function DndRuleSheet({
                     open({
                       title: `${a.label}豁免`,
                       baseBonus: saveBonus(d, a.id),
+                      kind: "save",
+                      ability: a.id,
                     })
                   }
                 >
@@ -260,6 +274,9 @@ export default function DndRuleSheet({
                         open({
                           title: s.label,
                           baseBonus: skillBonus(d, s.id),
+                          kind: "check",
+                          ability: s.ability,
+                          skillId: s.id,
                           presetAdv: st?.adv === "none" ? "none" : st?.adv,
                         })
                       }
@@ -346,31 +363,46 @@ export default function DndRuleSheet({
                 editable={canWrite}
                 onChange={(shield) => patch({ shield })}
               />
-              <Num
+              <SpeedNum
                 label="步行"
                 value={d.speedWalk}
+                shown={effectiveSpeed(d.speedWalk, d)}
                 editable={canWrite}
                 onChange={(speedWalk) => patch({ speedWalk })}
               />
-              <Num
+              <SpeedNum
                 label="游泳"
                 value={d.speedSwim}
+                shown={effectiveSpeed(d.speedSwim, d)}
                 editable={canWrite}
                 onChange={(speedSwim) => patch({ speedSwim })}
               />
-              <Num
+              <SpeedNum
                 label="飞行"
                 value={d.speedFly}
+                shown={effectiveSpeed(d.speedFly, d)}
                 editable={canWrite}
                 onChange={(speedFly) => patch({ speedFly })}
               />
-              <Num
+              <SpeedNum
                 label="攀爬"
                 value={d.speedClimb}
+                shown={effectiveSpeed(d.speedClimb, d)}
                 editable={canWrite}
                 onChange={(speedClimb) => patch({ speedClimb })}
               />
             </div>
+            {!!speedLockedBy(d).length && (
+              <p className="text-[10px] text-amber-400">
+                速度 0（{speedLockedBy(d).join("、")}）
+              </p>
+            )}
+            {!speedLockedBy(d).length && exhaustionLevel(d) > 0 && (
+              <p className="text-[10px] text-amber-400">
+                力竭 {exhaustionLevel(d)} 级：速度 −{exhaustionLevel(d) * 5} 尺，d20 −
+                {exhaustionLevel(d) * 2}
+              </p>
+            )}
             <label className="text-[10px] text-neutral-500 inline-block">
               生命骰
               <input
@@ -437,11 +469,16 @@ export default function DndRuleSheet({
                   open({
                     title: "先攻",
                     baseBonus: abilityMod(d.abilities.dex),
+                    kind: "initiative",
+                    ability: "dex",
                     breakdown: "d20 + 敏捷",
                   })
                 }
               >
                 先攻 {signed(abilityMod(d.abilities.dex))}
+              {exhaustionLevel(d) > 0
+                ? `（力竭 −${exhaustionLevel(d) * 2}）`
+                : ""}
               </Roll>
               <Roll
                 hide={layoutEdit}
@@ -483,15 +520,6 @@ export default function DndRuleSheet({
             ))}
             {canWrite && (
               <div className="flex flex-wrap gap-1">
-                <button
-                  type="button"
-                  className="text-xs text-cyan-300"
-                  onClick={() =>
-                    patch({ conditions: [...d.conditions, emptyCondition()] })
-                  }
-                >
-                  + 状态
-                </button>
                 {CONDITION_PRESETS.filter(
                   (name) => !d.conditions.some((c) => c.name === name)
                 ).map((name) => (
@@ -506,6 +534,15 @@ export default function DndRuleSheet({
                     {name}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className="text-xs text-cyan-300 px-1.5 py-0.5"
+                  onClick={() =>
+                    patch({ conditions: [...d.conditions, emptyCondition()] })
+                  }
+                >
+                  + 状态
+                </button>
               </div>
             )}
             {!d.conditions.length && !canWrite && (
@@ -525,7 +562,6 @@ export default function DndRuleSheet({
                 w={w}
                 data={d}
                 layoutEdit={layoutEdit}
-                canWrite={canWrite}
                 onChange={(nw) =>
                   patch({ weapons: d.weapons.map((x) => (x.id === w.id ? nw : x)) })
                 }
@@ -550,6 +586,7 @@ export default function DndRuleSheet({
                         finesse: false,
                         ranged: false,
                         magic: 0,
+                        atkBonus: 0,
                         dmgCount: 1,
                         dmgFaces: 8,
                         dmgBonus: 0,
@@ -993,6 +1030,39 @@ function ResourceCard({
   );
 }
 
+function SpeedNum({
+  label,
+  value,
+  shown,
+  editable,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  shown: number;
+  editable: boolean;
+  onChange: (n: number) => void;
+}) {
+  const changed = shown !== value;
+  return (
+    <label className="text-xs text-neutral-500 space-y-0.5">
+      <span className="block">
+        {label}
+        {changed && (
+          <span className="text-amber-400 ml-1">实际 {shown}</span>
+        )}
+      </span>
+      <input
+        disabled={!editable}
+        type="number"
+        className={`${inp} w-full`}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value) || 0)}
+      />
+    </label>
+  );
+}
+
 function ConditionRow({
   c,
   canWrite,
@@ -1004,19 +1074,58 @@ function ConditionRow({
   onChange: (c: DndCondition) => void;
   onRemove: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const preset = (CONDITION_PRESETS as readonly string[]).includes(c.name)
     ? c.name
     : "__custom__";
+  const def = conditionDef(c.name);
+  const exLv = c.name === "力竭" ? Math.min(6, Number(c.level) || 1) : 0;
+
   return (
     <div className="border border-neutral-800 rounded p-2 space-y-1">
       <div className="flex items-center gap-1">
-        {canWrite ? (
+        <button
+          type="button"
+          className="flex-1 text-left text-sm text-neutral-200 hover:text-white min-w-0"
+          onClick={() => setOpen((v) => !v)}
+        >
+          <span className="font-medium">{c.name || "自定义状态"}</span>
+          {c.name === "力竭" && (
+            <span className="text-[10px] text-amber-300 ml-1">{exLv} 级</span>
+          )}
+          <span className="text-[10px] text-neutral-500 ml-2">
+            {open ? "收起" : "简介"}
+          </span>
+        </button>
+        {canWrite && <Del onClick={onRemove} />}
+      </div>
+      {open && (
+        <div className="text-xs text-neutral-400 space-y-1 bg-neutral-950 rounded p-2">
+          <p className="text-neutral-200">{def?.summary || "自定义状态，不会自动改数值。"}</p>
+          {def?.bullets.map((b) => (
+            <p key={b}>· {b}</p>
+          ))}
+          {c.name === "力竭" && (
+            <p className="text-amber-300">
+              当前：d20 −{exLv * 2}，速度 −{exLv * 5} 尺
+              {exLv >= 6 ? "；6 级死亡" : ""}
+            </p>
+          )}
+        </div>
+      )}
+      {canWrite && (
+        <>
           <select
-            className={`${inp} flex-1`}
+            className={`${inp} w-full`}
             value={preset}
             onChange={(e) => {
               const v = e.target.value;
-              onChange({ ...c, name: v === "__custom__" ? "" : v });
+              const name = v === "__custom__" ? "" : v;
+              onChange({
+                ...c,
+                name,
+                level: name === "力竭" ? c.level || 1 : 0,
+              });
             }}
           >
             {CONDITION_PRESETS.map((n) => (
@@ -1026,28 +1135,43 @@ function ConditionRow({
             ))}
             <option value="__custom__">自定义</option>
           </select>
-        ) : (
-          <span className="flex-1 text-sm">{c.name || "状态"}</span>
-        )}
-        {canWrite && <Del onClick={onRemove} />}
-      </div>
-      {canWrite && preset === "__custom__" && (
-        <input
-          className={inp}
-          placeholder="状态名称"
-          value={c.name}
-          onChange={(e) => onChange({ ...c, name: e.target.value })}
-        />
+          {preset === "__custom__" && (
+            <input
+              className={inp}
+              placeholder="状态名称"
+              value={c.name}
+              onChange={(e) => onChange({ ...c, name: e.target.value, level: 0 })}
+            />
+          )}
+          {c.name === "力竭" && (
+            <label className="text-[10px] text-neutral-500 flex items-center gap-1">
+              力竭等级
+              <input
+                type="number"
+                min={1}
+                max={6}
+                className={`${inp} w-14`}
+                value={exLv}
+                onChange={(e) =>
+                  onChange({
+                    ...c,
+                    level: Math.max(1, Math.min(6, Number(e.target.value) || 1)),
+                  })
+                }
+              />
+              / 6
+            </label>
+          )}
+          <input
+            className={inp}
+            placeholder="备注（来源 / 持续时间）"
+            value={c.notes}
+            onChange={(e) => onChange({ ...c, notes: e.target.value })}
+          />
+        </>
       )}
-      {canWrite ? (
-        <input
-          className={inp}
-          placeholder="备注（来源 / 持续时间）"
-          value={c.notes}
-          onChange={(e) => onChange({ ...c, notes: e.target.value })}
-        />
-      ) : (
-        c.notes && <p className="text-[11px] text-neutral-500">{c.notes}</p>
+      {!canWrite && c.notes && (
+        <p className="text-[11px] text-neutral-500">{c.notes}</p>
       )}
     </div>
   );
@@ -1106,56 +1230,64 @@ function WeaponRow({
   w,
   data,
   layoutEdit,
-  canWrite,
   onChange,
   onRemove,
 }: {
   w: DndWeapon;
   data: DndPlayData;
   layoutEdit: boolean;
-  canWrite: boolean;
   onChange: (w: DndWeapon) => void;
   onRemove: () => void;
 }) {
-  const open = useOpenCheck();
+  const openRaw = useOpenCheck();
+  const open = (req: CheckRequest) => openRaw(applyCheckConditions(data, req));
   const atk = weaponAttackBonus(data, w);
   const dmgB = weaponDamageBonus(data, w);
+  const formula = weaponAttackBreakdown(data, w);
 
-  if (!canWrite && !layoutEdit) {
+  const hitBtn = (
+    <button
+      type="button"
+      className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-200 text-xs"
+      onClick={() =>
+        open({
+          title: `${w.name} 命中`,
+          baseBonus: atk,
+          kind: "attack",
+          dcLabel: "AC",
+          breakdown: formula,
+        })
+      }
+    >
+      命中 {signed(atk)}
+    </button>
+  );
+  const dmgBtn = (
+    <button
+      type="button"
+      className="px-2 py-0.5 rounded bg-amber-950 text-amber-200 text-xs"
+      onClick={() =>
+        open({
+          title: `${w.name} 伤害`,
+          baseBonus: 0,
+          kind: "damage",
+          damageCount: w.dmgCount,
+          damageFaces: w.dmgFaces,
+          damageBonus: dmgB,
+        })
+      }
+    >
+      伤害 {w.dmgCount}d{w.dmgFaces}
+      {signed(dmgB)} {w.dmgType}
+    </button>
+  );
+
+  if (!layoutEdit) {
     return (
-      <div className="flex flex-wrap items-center gap-2 text-sm border border-neutral-800 rounded p-2">
+      <div className="flex flex-wrap items-center gap-2 text-sm border border-neutral-800 rounded p-2 mb-1">
         <span className="flex-1 min-w-[80px]">{w.name}</span>
-        <button
-          type="button"
-          className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-200 text-xs"
-          onClick={() =>
-            open({
-              title: `${w.name} 命中`,
-              baseBonus: atk,
-              kind: "attack",
-              dcLabel: "AC",
-            })
-          }
-        >
-          命中 {signed(atk)}
-        </button>
-        <button
-          type="button"
-          className="px-2 py-0.5 rounded bg-amber-950 text-amber-200 text-xs"
-          onClick={() =>
-            open({
-              title: `${w.name} 伤害`,
-              baseBonus: 0,
-              kind: "damage",
-              damageCount: w.dmgCount,
-              damageFaces: w.dmgFaces,
-              damageBonus: dmgB,
-            })
-          }
-        >
-          伤害 {w.dmgCount}d{w.dmgFaces}
-          {signed(dmgB)} {w.dmgType}
-        </button>
+        {hitBtn}
+        {dmgBtn}
         <span className="text-[10px] text-neutral-500">{w.range}</span>
       </div>
     );
@@ -1165,54 +1297,17 @@ function WeaponRow({
     <div className="border border-neutral-800 rounded p-2 space-y-2 text-sm mb-2">
       <div className="flex flex-wrap items-center gap-2">
         <input
-          disabled={!canWrite}
           className={`${inp} flex-1 min-w-[100px]`}
           value={w.name}
           onChange={(e) => onChange({ ...w, name: e.target.value })}
           placeholder="武器名称"
         />
-        {!layoutEdit && (
-          <>
-            <button
-              type="button"
-              className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-200 text-xs"
-              onClick={() =>
-                open({
-                  title: `${w.name} 命中`,
-                  baseBonus: atk,
-                  kind: "attack",
-                  dcLabel: "AC",
-                })
-              }
-            >
-              命中 {signed(atk)}
-            </button>
-            <button
-              type="button"
-              className="px-2 py-0.5 rounded bg-amber-950 text-amber-200 text-xs"
-              onClick={() =>
-                open({
-                  title: `${w.name} 伤害`,
-                  baseBonus: 0,
-                  kind: "damage",
-                  damageCount: w.dmgCount,
-                  damageFaces: w.dmgFaces,
-                  damageBonus: dmgB,
-                })
-              }
-            >
-              伤害 {w.dmgCount}d{w.dmgFaces}
-              {signed(dmgB)} {w.dmgType}
-            </button>
-          </>
-        )}
-        {layoutEdit && <Del onClick={onRemove} />}
+        <Del onClick={onRemove} />
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <label className="text-[10px] text-neutral-500">
           属性
           <select
-            disabled={!canWrite}
             className={`${inp} w-full mt-0.5`}
             value={w.ability}
             onChange={(e) => onChange({ ...w, ability: e.target.value as AbilityId })}
@@ -1228,7 +1323,6 @@ function WeaponRow({
           伤害骰
           <div className="flex gap-1 mt-0.5">
             <input
-              disabled={!canWrite}
               type="number"
               min={1}
               className={`${inp} w-12`}
@@ -1237,7 +1331,6 @@ function WeaponRow({
             />
             <span className="self-center text-neutral-500">d</span>
             <input
-              disabled={!canWrite}
               type="number"
               min={2}
               className={`${inp} w-12`}
@@ -1247,9 +1340,17 @@ function WeaponRow({
           </div>
         </label>
         <label className="text-[10px] text-neutral-500">
-          调整值
+          命中加值
           <input
-            disabled={!canWrite}
+            type="number"
+            className={`${inp} w-full mt-0.5`}
+            value={w.atkBonus || 0}
+            onChange={(e) => onChange({ ...w, atkBonus: Number(e.target.value) || 0 })}
+          />
+        </label>
+        <label className="text-[10px] text-neutral-500">
+          伤害加值
+          <input
             type="number"
             className={`${inp} w-full mt-0.5`}
             value={w.dmgBonus}
@@ -1259,7 +1360,6 @@ function WeaponRow({
         <label className="text-[10px] text-neutral-500">
           魔法加值
           <input
-            disabled={!canWrite}
             type="number"
             className={`${inp} w-full mt-0.5`}
             value={w.magic}
@@ -1269,7 +1369,6 @@ function WeaponRow({
         <label className="text-[10px] text-neutral-500">
           伤害类型
           <input
-            disabled={!canWrite}
             className={`${inp} w-full mt-0.5`}
             value={w.dmgType}
             onChange={(e) => onChange({ ...w, dmgType: e.target.value })}
@@ -1279,7 +1378,6 @@ function WeaponRow({
         <label className="text-[10px] text-neutral-500">
           距离
           <input
-            disabled={!canWrite}
             className={`${inp} w-full mt-0.5`}
             value={w.range}
             onChange={(e) => onChange({ ...w, range: e.target.value })}
@@ -1289,7 +1387,6 @@ function WeaponRow({
         <label className="text-[10px] text-neutral-500">
           重量(磅)
           <input
-            disabled={!canWrite}
             type="number"
             step="0.1"
             className={`${inp} w-full mt-0.5`}
@@ -1297,10 +1394,9 @@ function WeaponRow({
             onChange={(e) => onChange({ ...w, weight: Number(e.target.value) || 0 })}
           />
         </label>
-        <label className="text-[10px] text-neutral-500">
+        <label className="text-[10px] text-neutral-500 col-span-2">
           备注
           <input
-            disabled={!canWrite}
             className={`${inp} w-full mt-0.5`}
             value={w.notes}
             onChange={(e) => onChange({ ...w, notes: e.target.value })}
@@ -1311,7 +1407,6 @@ function WeaponRow({
         <label className="flex items-center gap-1">
           <input
             type="checkbox"
-            disabled={!canWrite}
             checked={w.proficient}
             onChange={(e) => onChange({ ...w, proficient: e.target.checked })}
           />
@@ -1320,27 +1415,27 @@ function WeaponRow({
         <label className="flex items-center gap-1">
           <input
             type="checkbox"
-            disabled={!canWrite}
             checked={w.finesse}
             onChange={(e) => onChange({ ...w, finesse: e.target.checked })}
           />
-          灵巧
+          灵巧（力量/敏捷取高）
         </label>
         <label className="flex items-center gap-1">
           <input
             type="checkbox"
-            disabled={!canWrite}
             checked={w.ranged}
-            onChange={(e) => onChange({ ...w, ranged: e.target.checked })}
+            onChange={(e) => {
+              const ranged = e.target.checked;
+              onChange({
+                ...w,
+                ranged,
+                ability: ranged && !w.finesse && w.ability === "str" ? "dex" : w.ability,
+              });
+            }}
           />
-          远程
+          远程（投掷近战请保持力量）
         </label>
-        {layoutEdit && (
-          <span className="text-neutral-500">
-            命中 {signed(atk)} · 伤害 {w.dmgCount}d{w.dmgFaces}
-            {signed(dmgB)}
-          </span>
-        )}
+        <span className="text-neutral-500">{formula}</span>
       </div>
     </div>
   );
@@ -1357,7 +1452,8 @@ function SpellBlock({
   canWrite: boolean;
   patch: (p: Partial<DndPlayData>) => void;
 }) {
-  const open = useOpenCheck();
+  const openRaw = useOpenCheck();
+  const open = (req: CheckRequest) => openRaw(applyCheckConditions(d, req));
   const slots = [...d.spellSlots];
   while (slots.length < 9) slots.push(0);
   const left = [...(d.spellSlotsLeft || [])];
@@ -1386,6 +1482,8 @@ function SpellBlock({
             open({
               title: "职业Ⅰ 法术攻击",
               baseBonus: spellAttack(d, d.spellAbility),
+              kind: "attack",
+              ability: d.spellAbility,
               dcLabel: "AC",
             })
           }
@@ -1417,6 +1515,8 @@ function SpellBlock({
               open({
                 title: "职业Ⅱ 法术攻击",
                 baseBonus: spellAttack(d, d.spellAbility2 as AbilityId),
+                kind: "attack",
+                ability: d.spellAbility2 as AbilityId,
                 dcLabel: "AC",
               })
             }

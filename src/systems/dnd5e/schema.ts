@@ -157,6 +157,7 @@ export interface DndWeapon {
   finesse: boolean;
   ranged: boolean;
   magic: number;
+  atkBonus: number;
   dmgCount: number;
   dmgFaces: number;
   dmgBonus: number;
@@ -230,6 +231,7 @@ export interface DndCondition {
   id: string;
   name: string;
   notes: string;
+  level: number;
 }
 
 export const EMPTY_PROF: DndProfSource = {
@@ -333,7 +335,6 @@ export function weaponAbility(data: DndPlayData, w: DndWeapon): AbilityId {
       ? "dex"
       : "str";
   }
-  if (w.ranged) return "dex";
   return w.ability;
 }
 
@@ -343,8 +344,19 @@ export function weaponAttackBonus(data: DndPlayData, w: DndWeapon): number {
   return (
     abilityMod(data.abilities[abi]) +
     (w.proficient ? pb : 0) +
-    (Number(w.magic) || 0)
+    (Number(w.magic) || 0) +
+    (Number(w.atkBonus) || 0)
   );
+}
+
+export function weaponAttackBreakdown(data: DndPlayData, w: DndWeapon): string {
+  const abi = weaponAbility(data, w);
+  const abiLabel = ABILITIES.find((a) => a.id === abi)?.label || abi;
+  const parts = ["d20", abiLabel];
+  if (w.proficient) parts.push("熟练");
+  if (Number(w.magic)) parts.push(`魔法${signed(Number(w.magic))}`);
+  if (Number(w.atkBonus)) parts.push(`加值${signed(Number(w.atkBonus))}`);
+  return `${parts.join(" + ")} = ${signed(weaponAttackBonus(data, w))}`;
 }
 
 export function weaponDamageBonus(data: DndPlayData, w: DndWeapon): number {
@@ -453,6 +465,7 @@ function normalizeWeapon(raw: Partial<DndWeapon>): DndWeapon {
     finesse: !!raw.finesse,
     ranged: !!raw.ranged,
     magic: Number(raw.magic) || 0,
+    atkBonus: Number(raw.atkBonus) || 0,
     dmgCount: Number(raw.dmgCount) || 1,
     dmgFaces: Number(raw.dmgFaces) || 6,
     dmgBonus: Number(raw.dmgBonus) || 0,
@@ -472,7 +485,12 @@ export function emptyResource(name = "激励骰"): DndResource {
 }
 
 export function emptyCondition(name = ""): DndCondition {
-  return { id: uid(), name, notes: "" };
+  return {
+    id: uid(),
+    name,
+    notes: "",
+    level: name === "力竭" ? 1 : 0,
+  };
 }
 
 function normalizeResource(raw: Partial<DndResource>): DndResource {
@@ -485,10 +503,13 @@ function normalizeResource(raw: Partial<DndResource>): DndResource {
 }
 
 function normalizeCondition(raw: Partial<DndCondition>): DndCondition {
+  const name = raw.name || "";
+  const levelRaw = Number(raw.level) || 0;
   return {
     id: raw.id || uid(),
-    name: raw.name || "",
+    name,
     notes: raw.notes || "",
+    level: name === "力竭" ? Math.max(1, Math.min(6, levelRaw || 1)) : levelRaw,
   };
 }
 
@@ -558,6 +579,7 @@ export function defaultDndPlay(): DndPlayData {
         finesse: true,
         ranged: false,
         magic: 0,
+        atkBonus: 0,
         dmgCount: 1,
         dmgFaces: 4,
         dmgBonus: 0,

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { Character } from "@/lib/types";
 import { useOpenCheck } from "@/systems/check/CheckHost";
+import { applyCheckConditions } from "./conditions";
 import {
   ABILITIES,
   SKILLS,
@@ -37,8 +38,10 @@ export default function DndBriefCard({
   character: Character;
   href: string;
 }) {
-  const open = useOpenCheck();
+  const openRaw = useOpenCheck();
   const d = parseDndPlay(character.play?.data);
+  const open = (req: Parameters<typeof applyCheckConditions>[1]) =>
+    openRaw(applyCheckConditions(d, req));
   const lv = totalLevel(d);
   const pb = proficiencyBonus(lv);
   const ac = armorClass(d);
@@ -47,6 +50,8 @@ export default function DndBriefCard({
     open({
       title: `${ABILITIES.find((a) => a.id === id)?.label}检定`,
       baseBonus: abilityMod(d.abilities[id]),
+      kind: "check",
+      ability: id,
       breakdown: `调整值 ${signed(abilityMod(d.abilities[id]))}`,
     });
 
@@ -54,13 +59,18 @@ export default function DndBriefCard({
     open({
       title: `${ABILITIES.find((a) => a.id === id)?.label}豁免`,
       baseBonus: saveBonus(d, id),
+      kind: "save",
+      ability: id,
       breakdown: d.saveProf[id] ? "含熟练" : "未熟练",
     });
 
-  const rollSkill = (id: string, label: string, adv: AdvPreset) =>
+  const rollSkill = (id: string, label: string, adv: AdvPreset, ability: AbilityId) =>
     open({
       title: label,
       baseBonus: skillBonus(d, id),
+      kind: "check",
+      ability,
+      skillId: id,
       presetAdv: adv === "none" ? "none" : adv,
     });
 
@@ -134,6 +144,8 @@ export default function DndBriefCard({
                 open({
                   title: "法术攻击",
                   baseBonus: spellAttack(d, d.spellAbility),
+                  kind: "attack",
+                  ability: d.spellAbility,
                   dcLabel: "AC",
                 })
               }
@@ -151,7 +163,14 @@ export default function DndBriefCard({
               <button
                 key={s.id}
                 type="button"
-                onClick={() => rollSkill(s.id, s.label, d.skills[s.id]?.adv || "none")}
+                onClick={() =>
+                  rollSkill(
+                    s.id,
+                    s.label,
+                    d.skills[s.id]?.adv || "none",
+                    s.ability
+                  )
+                }
                 className={`flex items-center justify-between px-1.5 py-0.5 rounded ${SKILL_COLOR[s.ability]}`}
               >
                 <span className="truncate">{s.label}</span>

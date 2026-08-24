@@ -13,13 +13,18 @@ export interface CheckRequest {
   title: string;
   baseBonus: number;
   breakdown?: string;
-  kind?: "check" | "attack" | "damage" | "free" | "death";
+  kind?: "check" | "save" | "attack" | "damage" | "free" | "death" | "initiative";
   dcLabel?: string;
   defaultDc?: number;
   presetAdv?: AdvMode;
   damageCount?: number;
   damageFaces?: number;
   damageBonus?: number;
+  ability?: string;
+  skillId?: string;
+  warnings?: string[];
+  autoFail?: boolean;
+  d20Penalty?: number;
 }
 
 const FACE_OPTS = [4, 6, 8, 10, 12, 20, 100];
@@ -93,6 +98,11 @@ export default function CheckPanel({
       total += d20 + (Number(req.baseBonus) || 0) + (Number(flat) || 0);
       lines.push(`基础加值 ${req.baseBonus >= 0 ? "+" : ""}${req.baseBonus}`);
       if (flat) lines.push(`额外加值 ${flat >= 0 ? "+" : ""}${flat}`);
+      const penalty = Number(req.d20Penalty) || 0;
+      if (penalty) {
+        total -= penalty;
+        lines.push(`状态：d20 −${penalty}`);
+      }
     }
 
     extra.forEach((die, i) => {
@@ -111,6 +121,7 @@ export default function CheckPanel({
     });
 
     lines.push(`总计：${total}`);
+    if (req.autoFail) lines.push("⚠ 规则上此检定自动失败");
     if (!isDamage && !isFree && dcNum != null && !Number.isNaN(dcNum)) {
       lines.push(
         `${req.dcLabel || "DC"} ${dcNum} → ${total >= dcNum ? "通过" : "未通过"}`
@@ -139,6 +150,21 @@ export default function CheckPanel({
             关闭
           </button>
         </div>
+
+        {(!!req.warnings?.length || req.autoFail || !!req.d20Penalty) && (
+          <div className="text-xs bg-amber-950/40 border border-amber-700/50 rounded-lg p-2 space-y-1 text-amber-100">
+            <p className="text-amber-300 font-medium">状态警告</p>
+            {req.autoFail && (
+              <p className="text-rose-300 font-semibold">规则上此检定自动失败</p>
+            )}
+            {!!req.d20Penalty && (
+              <p>已计入 d20 −{req.d20Penalty}</p>
+            )}
+            {req.warnings.map((w, i) => (
+              <p key={i}>· {w}</p>
+            ))}
+          </div>
+        )}
 
         {!isDamage && !isFree && (
           <div className="flex gap-2 text-xs">
