@@ -50,13 +50,18 @@ export function inspirePayload(roll: InspireRoll) {
 export function dailyPromptPayload(roll: InspireRoll, date: string) {
   const ping = discordPingRoleMention();
   const emoji = discordDailyEmoji();
-  const embed = inspireEmbed(roll, `今日主题角色  ${date}`);
+  const embed = inspireEmbed(roll, `每日主题  ${date}`);
   embed.fields.push({
-    name: "投稿",
-    value: `把**图**发到跑图频道，正文带上 \`#${roll.code}\`。\nBot 会转到本频道。给转发卡片点 ${emoji} 投票。\n当天 23:59 (HKT) 截止，0 点公布结果。`,
+    name: "怎么玩",
+    value: [
+      `用上面的提示词去外观生成器 / 抽卡姬出图（也可以自己画）。`,
+      `把**图**发到跑图频道，正文带上 \`#${roll.code}\`。`,
+      `Bot 会转到本频道。给喜欢的卡片点 ${emoji}。`,
+      `当天 23:59 (HKT) 截止，次日 0 点公布冠军。`,
+    ].join("\n"),
   });
   return {
-    content: ping ? `${ping} 今日灵感已更新` : "今日灵感已更新",
+    content: ping ? `${ping} 今日主题角色已更新` : "今日主题角色已更新",
     allowed_mentions: allowedMentionsForPing(),
     embeds: [embed],
   };
@@ -115,7 +120,7 @@ export function resultPayload(opts: {
     desc = `**${opts.date}** 冠军：${opts.winnerName || "未知"}（${opts.votes ?? 0} ${discordDailyEmoji()}）\n${opts.winnerJump}`;
   } else desc = `**${opts.date}** 未能决出冠军。`;
   return {
-    content: ping ? `${ping} 昨日投票结果` : "昨日投票结果",
+    content: ping ? `${ping} 昨日每日主题结果` : "昨日每日主题结果",
     allowed_mentions: allowedMentionsForPing(),
     embeds: [{ title: "每日投票结果", description: desc, color: 0xe8b86d }],
   };
