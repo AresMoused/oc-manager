@@ -12,6 +12,7 @@ import {
   comfyWaitForImages, composePositivePrompt, defaultParams, defaultSettings,
   detectPlaceholders, loadParams, loadPromptPresets, loadSettings, loadWorkflows,
   normalizeWorkflowUpload, saveParams, savePromptPresets, saveSettings, saveWorkflows,
+  validateWorkflowTemplate,
 } from "@/lib/comfyConfig";
 import type { BuilderData } from "@/lib/promptBuilder";
 import { loadLexiconBuilder, rollRandomCharacter as rollLexicon } from "@/lib/comfyLexicon";
@@ -161,7 +162,12 @@ export default function ComfyView() {
   };
 
   const saveWorkflowFromEditor = () => {
-    try { JSON.parse(wfRaw); } catch { showToast("JSON 无效"); return; }
+    try {
+      validateWorkflowTemplate(wfRaw);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "JSON 或占位符无效");
+      return;
+    }
     const now = new Date().toISOString();
     if (wfEditingId) {
       persistWorkflows(workflows.map((w) =>
@@ -642,6 +648,7 @@ export default function ComfyView() {
               value={wfName} onChange={(e) => setWfName(e.target.value)} placeholder="工作流名称" />
             <p className="text-xs text-neutral-500">
               将需要动态替换的字段改成占位符，例如 <code className="text-purple-300">%prompt%</code>。
+              文本字段保留引号；数字字段（如 <code className="text-purple-300">%width%</code>、<code className="text-purple-300">%height%</code>）不要加引号。
             </p>
             <textarea className="flex-1 min-h-[280px] w-full bg-[#0a0a0a] border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-purple-500 text-neutral-300"
               value={wfRaw} onChange={(e) => setWfRaw(e.target.value)} />
