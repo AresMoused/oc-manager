@@ -45,20 +45,22 @@
 
 ---
 
-## 2. 服务器里建频道
+## 2. 服务器里的频道和身份组
 
-建议三个（每日题和跑图也可以合成一个）：
+出题、转发投稿、公布投票结果 **用同一个频道**。跑图可以另开（也可多个、也可就是这个频道）。
 
-| 频道 | 干什么 | 环境变量 |
+| | 干什么 | 环境变量 |
 | --- | --- | --- |
-| `#每日灵感` | Bot 0 点发今日题 | `DISCORD_DAILY_CHANNEL_ID` |
-| `#跑图交流` | 人往这里发「图 + `#代码`」 | `DISCORD_WATCH_CHANNEL_IDS` |
-| `#公布栏` | Bot 转发卡片、大家点表情投票 | `DISCORD_BULLETIN_CHANNEL_ID` |
+| 一个频道，例如 `#每日灵感` | 0 点出题、转发「图 + `#代码`」、宣布冠军 | `DISCORD_DAILY_CHANNEL_ID` |
+| 一个或多个跑图频道 | 玩家发图 + 当日 `#代码`（可以就是上面那个频道） | `DISCORD_WATCH_CHANNEL_IDS` |
+| 一个身份组，例如 `@每日灵感` | 出题和公布结果时 @ 它 | `DISCORD_PING_ROLE_ID` |
 
-复制 ID：Discord 设置 → 高级 → 开发者模式 → 右键频道 → 复制频道 ID。  
-服务器 ID 你们已有 `DISCORD_GUILD_ID`。
+复制 ID：开发者模式 → 右键频道 / 身份组 → 复制 ID。  
+`DISCORD_PING_ROLE_ID` **只放环境变量**，不写进代码。以后换身份组只改 Vercel 变量再 Redeploy。
 
-给 Bot 角色能看、能发这三个频道。
+Bot 角色需要：能看、能发该频道；**身份组设置里打开「允许任何人 @ 提及」**（否则 bot @ 了也没通知）。
+
+给 Bot 角色能看、能发这些频道。
 
 ---
 
@@ -83,7 +85,7 @@ DISCORD_PUBLIC_KEY=
 DISCORD_BOT_TOKEN=
 DISCORD_DAILY_CHANNEL_ID=
 DISCORD_WATCH_CHANNEL_IDS=     # 多个频道用逗号
-DISCORD_BULLETIN_CHANNEL_ID=
+DISCORD_PING_ROLE_ID=          # 出题 / 公布结果时 @ 的身份组
 DISCORD_DAILY_EMOJI=❤️
 CRON_SECRET=
 ```
@@ -133,7 +135,9 @@ CRON_SECRET=                # 和 Vercel 同一份
 
 - [ ] Bot 已进服  
 - [ ] Message Content Intent 已开  
-- [ ] 三个频道 ID  
+- [ ] 每日频道 ID（出题 = 公布栏）  
+- [ ] 监听频道 ID（可多个，可与每日频道相同）  
+- [ ] 要 @ 的身份组 ID  
 - [ ] Public Key 已进 Vercel  
 - [ ] Railway 服务 Start Command 已改成 `npm run discord:gateway`  
 - [ ] 正式站 `APP_URL`（我用来写 Interactions URL 和 `INGEST_URL`）

@@ -13,7 +13,8 @@
 | 时区 | `Asia/Hong_Kong`，**0 点发新题并结算昨天** |
 | `/灵感` | **默认公开** |
 | 计票 | **只用一个表情**，管理员可改（R2 / 环境变量） |
-| 公布栏 | **不是只贴冠军**。监听「含当天 `#代码` 且带图」的消息，**随到随转发**到公布栏（卡片样式见图） |
+| 公布栏 | 与每日出题 **同一频道**。符合条件的图转到该频道；投票也点在这些转发明细上 |
+| @ 身份组 | 出题、公布昨日结果时 @。ID 来自 `DISCORD_PING_ROLE_ID`，**不写死** |
 | 出图 | 玩家自己画 / 抽卡姬，bot 不连 Comfy |
 
 截图对应的公布栏卡片（已再精简）：
@@ -141,7 +142,7 @@ Bot 会转到公布栏。给公布栏上的指定表情投票。
 
 ### 4.4 公布栏卡片
 
-ingest 或 `/投稿` 之后，在 `DISCORD_BULLETIN_CHANNEL_ID` 发：
+ingest 之后，发到 **每日频道**（与出题同一频道）：
 
 ```
 原作者显示名
@@ -221,9 +222,9 @@ scripts/discord-gateway.ts        仅方案 C
 ```
 DISCORD_PUBLIC_KEY=
 DISCORD_BOT_TOKEN=
-DISCORD_DAILY_CHANNEL_ID=        # 发每日题
+DISCORD_DAILY_CHANNEL_ID=        # 出题 + 转发投稿 + 公布结果（同一频道）
 DISCORD_WATCH_CHANNEL_IDS=       # 监听投稿，逗号分隔
-DISCORD_BULLETIN_CHANNEL_ID=     # 公布栏
+DISCORD_PING_ROLE_ID=            # 出题 / 结果 @ 的身份组，只放 env
 DISCORD_DAILY_EMOJI=❤️           # 可被管理员指令覆盖
 CRON_SECRET=
 ```
