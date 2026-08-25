@@ -18,13 +18,15 @@ export function getAdminRoleIds(): string[] {
     .filter(Boolean);
 }
 
+export function isDiscordAdmin(userId: string, roleIds: string[] = []): boolean {
+  if (!userId) return false;
+  if (getAdminUserIds().includes(userId)) return true;
+  const adminRoles = getAdminRoleIds();
+  if (adminRoles.length && roleIds.some((r) => adminRoles.includes(r))) return true;
+  return false;
+}
+
 export function isAdminUser(user: AuthUser | null | undefined): boolean {
   if (!user?.id) return false;
-  const ids = getAdminUserIds();
-  if (ids.includes(user.id)) return true;
-  const roleIds = getAdminRoleIds();
-  if (roleIds.length && Array.isArray(user.roles)) {
-    if (user.roles.some((r) => roleIds.includes(r))) return true;
-  }
-  return false;
+  return isDiscordAdmin(user.id, Array.isArray(user.roles) ? user.roles : []);
 }

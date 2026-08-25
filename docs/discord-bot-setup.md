@@ -140,12 +140,29 @@ CRON_SECRET=                # 和 Vercel 同一份
 - [ ] Railway 服务 Start Command 已改成 `npm run discord:gateway`  
 - [ ] 正式站 `APP_URL`（我用来写 Interactions URL 和 `INGEST_URL`）
 
-我这边会写：`/灵感`、`/每日`、ingest 转发卡片、0 点 Cron、边车过滤逻辑。你填完变量、Railway 能保持在线后就能联调。
+## 6. 指令上线后（代码已合并）
+
+1. 确认 Vercel 正式站已带上这些变量（含 `DISCORD_PUBLIC_KEY`、`DISCORD_BOT_TOKEN`、频道/身份组、`CRON_SECRET`），并 Redeploy。
+2. Developer Portal → General Information → **Interactions Endpoint URL**：
+
+   `https://oc.aresmoused.com/api/discord/interactions`
+
+   点 Save，应显示绿色勾。失败多半是 Public Key 不对或还没部署到正式站。
+3. 注册斜杠指令（浏览器或 curl，把 SECRET 换成你的 `CRON_SECRET`）：
+
+   `https://oc.aresmoused.com/api/discord/register?secret=SECRET`
+
+   成功后服务器里应出现 `/灵感`、`/每日`。
+4. 手动试一次出题（可选）：
+
+   `https://oc.aresmoused.com/api/cron/daily?secret=SECRET`
+
+   会结算昨天并在每日频道发今天的题（@ 身份组）。
 
 ---
 
 ## 先不要做
 
-- 不要把 Interactions Endpoint 指到随便一个 URL（签名校验不过 Discord 会报 Failed）  
-- 不要给 Railway 跑 `next start`  
+- Interactions Endpoint 必须指向上面的正式 URL，不要填预览域名  
+- 不要给 Railway 跑 `next start` / `npm run build`  
 - 不要开 Presence Intent

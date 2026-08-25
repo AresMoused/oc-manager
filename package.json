@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "discord:gateway": "npx tsx scripts/discord-gateway.ts"
+    "discord:gateway": "npx tsx scripts/discord-gateway.ts",
+    "discord:register": "npx tsx scripts/discord-register.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.758.0",

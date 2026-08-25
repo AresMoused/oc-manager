@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ingestSubmission } from "@/lib/discord/daily";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,14 @@ export async function POST(req: NextRequest) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
-  // Full bulletin forward lands in a follow-up commit.
-  console.log("ingest stub", (body as { id?: string }).id);
-  return NextResponse.json({ ok: true, stub: true });
+  try {
+    const result = await ingestSubmission(body as Parameters<typeof ingestSubmission>[0]);
+    return NextResponse.json(result);
+  } catch (e) {
+    console.error("ingest", e);
+    return NextResponse.json(
+      { ok: false, reason: e instanceof Error ? e.message : "error" },
+      { status: 500 }
+    );
+  }
 }
