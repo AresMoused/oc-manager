@@ -1,9 +1,10 @@
 # Sidecar only: Discord Gateway → POST /api/discord/ingest
-# Do not run `next start` on this service.
+# Do not run `next build` / `next start` on this service.
 
 [build]
-builder = "nixpacks"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.gateway"
 
 [deploy]
-startCommand = "npm run discord:gateway"
+startCommand = "npx tsx scripts/discord-gateway.ts"
 restartPolicyType = "always"

@@ -99,13 +99,11 @@ CRON_SECRET=
 ## 5. 开 Railway
 
 1. 打开 [railway.com](https://railway.com) → Login with GitHub  
-2. **New Project** → **Deploy from GitHub repo** → `oc-manager`  
-3. 若问 Root / Start Command，先不要用默认 `npm start`（那是网站）。建好服务后：
-
-   **Settings → Deploy**
-   - Custom Start Command：`npm run discord:gateway`
-
-   这个服务 **只跑边车**，不要再给它绑自己的域名。
+2. **New Project** → **Deploy from GitHub repo** → `oc-manager`（分支 `vercel-preview`）  
+3. 仓库已带 `Dockerfile.gateway`，**不要**让它跑 `npm run build`（那是网站）。  
+   Settings → Build → Builder 选 **Dockerfile**，路径：`Dockerfile.gateway`  
+   Start Command 可空（镜像自己会跑 gateway），或填 `npx tsx scripts/discord-gateway.ts`  
+   这个服务只跑边车，不要绑域名。
 
 4. **Variables** 里加：
 

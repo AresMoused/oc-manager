@@ -1,0 +1,7 @@
+# Railway sidecar only — do not use this image for the Next.js site.
+FROM node:20-alpine
+WORKDIR /app
+RUN npm install --omit=dev ws@8.21.3 tsx@4.23.12
+COPY scripts/discord-gateway.ts ./scripts/discord-gateway.ts
+ENV NODE_ENV=production
+CMD ["npx", "tsx", "scripts/discord-gateway.ts"]
