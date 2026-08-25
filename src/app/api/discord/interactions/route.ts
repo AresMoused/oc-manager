@@ -53,7 +53,7 @@ async function handleInspire(token: string) {
 async function handleDaily(i: Interaction, token: string) {
   const sub = i.data?.options?.[0]?.name;
   const who = actor(i);
-  if (sub === "重抽") {
+  if (sub === "reroll" || sub === "重抽") {
     if (!isDiscordAdmin(who.id, who.roles)) {
       await fill(token, { content: "只有管理员可以重抽今日题。" });
       return;
@@ -64,7 +64,7 @@ async function handleDaily(i: Interaction, token: string) {
     });
     return;
   }
-  if (sub === "表情") {
+  if (sub === "emoji" || sub === "表情") {
     if (!isDiscordAdmin(who.id, who.roles)) {
       await fill(token, { content: "只有管理员可以改投票表情。" });
       return;
@@ -106,8 +106,9 @@ export async function POST(req: NextRequest) {
     const name = i.data?.name;
     const custom = i.data?.custom_id;
     after(() => {
-      if (name === "灵感" || custom === "inspire:reroll") return handleInspire(i.token);
-      if (name === "每日") return handleDaily(i, i.token);
+      if (name === "inspire" || name === "灵感" || name === "靈感" || custom === "inspire:reroll")
+        return handleInspire(i.token);
+      if (name === "daily" || name === "每日") return handleDaily(i, i.token);
       return fill(i.token, { content: "未知指令。" });
     });
     return NextResponse.json({ type: 5 });
