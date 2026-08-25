@@ -1,0 +1,9 @@
+# Sidecar only: Discord Gateway → POST /api/discord/ingest
+# Do not run `next start` on this service.
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npm run discord:gateway"
+restartPolicyType = "always"
