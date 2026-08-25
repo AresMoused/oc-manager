@@ -119,7 +119,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ type: 6 });
     }
     if (isInspire) {
-      return NextResponse.json({ type: 5, flags: 64 });
+      // flags MUST live under data — top-level flags are ignored, message stays public
+      return NextResponse.json({ type: 5, data: { flags: 64 } });
     }
     return NextResponse.json({ type: 5 });
   }
