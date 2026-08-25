@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
       if (name === "inspire" || name === "灵感" || name === "靈感" || custom === "inspire:reroll")
         return handleInspire(i.token);
       if (name === "daily" || name === "每日") return handleDaily(i, i.token);
+      if (name === "daily-admin" || name === "每日管理") return handleDaily(i, i.token);
       return fill(i.token, { content: "未知指令。" });
     });
     return NextResponse.json({ type: 5 });

@@ -17,30 +17,39 @@ const COMMANDS = [
   {
     name: "daily",
     name_localizations: { "zh-CN": "每日", "zh-TW": "每日" },
-    description: "Today's themed character; admins can reroll or set the vote emoji",
+    description: "View today's themed character prompt",
     description_localizations: {
-      "zh-CN": "查看今日主题角色；管理员可重抽或改投票表情",
-      "zh-TW": "查看今日主題角色；管理員可重抽或改投票表情",
+      "zh-CN": "查看今日主题角色",
+      "zh-TW": "查看今日主題角色",
+    },
+  },
+  {
+    name: "daily-admin",
+    name_localizations: { "zh-CN": "每日管理", "zh-TW": "每日管理" },
+    description: "Admin: reroll today's prompt or set the vote emoji",
+    description_localizations: {
+      "zh-CN": "管理员：重抽今日题或改投票表情",
+      "zh-TW": "管理員：重抽今日題或改投票表情",
     },
     options: [
       {
         type: 1,
         name: "reroll",
         name_localizations: { "zh-CN": "重抽", "zh-TW": "重抽" },
-        description: "Admin: replace today's prompt and ping the role",
+        description: "Replace today's prompt and ping the role",
         description_localizations: {
-          "zh-CN": "管理员：作废今日题并重抽（会 @ 身份组）",
-          "zh-TW": "管理員：作廢今日題並重抽（會 @ 身分組）",
+          "zh-CN": "作废今日题并重抽（会 @ 身份组）",
+          "zh-TW": "作廢今日題並重抽（會 @ 身分組）",
         },
       },
       {
         type: 1,
         name: "emoji",
         name_localizations: { "zh-CN": "表情", "zh-TW": "表情" },
-        description: "Admin: set the bulletin voting emoji",
+        description: "Set the bulletin voting emoji",
         description_localizations: {
-          "zh-CN": "管理员：设定公布栏投票用的表情",
-          "zh-TW": "管理員：設定公布欄投票用的表情",
+          "zh-CN": "设定公布栏投票用的表情",
+          "zh-TW": "設定公布欄投票用的表情",
         },
         options: [
           {
