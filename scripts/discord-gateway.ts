@@ -144,6 +144,17 @@ async function run() {
   };
 
   await connect();
+  const expireUrl = INGEST.replace(/\/ingest\/?$/, "/expire-inspire");
+  setInterval(() => {
+    void fetch(expireUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SECRET}` },
+    })
+      .then(async (res) => {
+        if (!res.ok) log("expire", res.status);
+      })
+      .catch((e) => log("expire error", e));
+  }, 30000);
   setInterval(() => {
     if (!identified) log("waiting for READY…");
   }, 30000);

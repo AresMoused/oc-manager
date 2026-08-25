@@ -123,6 +123,20 @@ export async function editInteractionOriginal(
   }
 }
 
+export async function deleteInteractionOriginal(
+  interactionToken: string
+): Promise<void> {
+  const id = appId();
+  const res = await fetch(
+    `${API}/webhooks/${id}/${interactionToken}/messages/@original`,
+    { method: "DELETE" }
+  );
+  if (!res.ok && res.status !== 404) {
+    const t = await res.text();
+    throw new Error(`delete original ${res.status}: ${t.slice(0, 400)}`);
+  }
+}
+
 export type SlashCommandDef = {
   name: string;
   description: string;

@@ -29,8 +29,14 @@ export function inspireEmbed(roll: InspireRoll, title = "灵感"): {
 }
 
 export function inspirePayload(roll: InspireRoll) {
+  const embed = inspireEmbed(roll);
+  embed.fields.push({
+    name: "可见性",
+    value: "仅你可见，5 分钟后自动消失。",
+  });
   return {
-    embeds: [inspireEmbed(roll)],
+    flags: 64,
+    embeds: [embed],
     components: [
       {
         type: 1,

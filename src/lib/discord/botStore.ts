@@ -74,3 +74,25 @@ export async function getBotConfig(): Promise<BotConfig> {
 export async function saveBotConfig(cfg: BotConfig): Promise<void> {
   await putJson("bot/config.json", cfg);
 }
+
+export type EphemeralJob = {
+  token: string;
+  expireAt: number;
+};
+
+export async function enqueueEphemeral(token: string, ttlMs = 5 * 60 * 1000) {
+  const list = (await getJson<EphemeralJob[]>("bot/ephemeral.json")) || [];
+  const expireAt = Date.now() + ttlMs;
+  const next = list.filter((j) => j.token !== token);
+  next.push({ token, expireAt });
+  await putJson("bot/ephemeral.json", next);
+}
+
+export async function takeExpiredEphemeral(): Promise<EphemeralJob[]> {
+  const list = (await getJson<EphemeralJob[]>("bot/ephemeral.json")) || [];
+  const now = Date.now();
+  const due = list.filter((j) => j.expireAt <= now);
+  const keep = list.filter((j) => j.expireAt > now);
+  if (due.length) await putJson("bot/ephemeral.json", keep);
+  return due;
+}

@@ -5,9 +5,8 @@ import { dailyViewPayload, inspirePayload } from "@/lib/discord/embeds";
 import { verifyDiscordSignature } from "@/lib/discord/verify";
 import { editInteractionOriginal } from "@/lib/discord/rest";
 import { getOrCreateToday, postTodayPrompt, votingEmoji } from "@/lib/discord/daily";
-import { saveBotConfig } from "@/lib/discord/botStore";
+import { saveBotConfig, saveRoll, enqueueEphemeral } from "@/lib/discord/botStore";
 import { hktDate, rollInspire } from "@/lib/inspire";
-import { saveRoll } from "@/lib/discord/botStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,10 +43,11 @@ async function fill(token: string, payload: Record<string, unknown>) {
   }
 }
 
-async function handleInspire(token: string) {
+async function handleInspire(token: string, scheduleExpire: boolean) {
   const roll = await rollInspire();
   await saveRoll(roll);
   await fill(token, inspirePayload(roll));
+  if (scheduleExpire) await enqueueEphemeral(token);
 }
 
 async function handleDaily(i: Interaction, token: string) {
@@ -104,13 +104,23 @@ export async function POST(req: NextRequest) {
   if (i.type === 2 || i.type === 3) {
     const name = i.data?.name;
     const custom = i.data?.custom_id;
+    const isInspire =
+      name === "inspire" ||
+      name === "灵感" ||
+      name === "靈感" ||
+      custom === "inspire:reroll";
     after(() => {
-      if (name === "inspire" || name === "灵感" || name === "靈感" || custom === "inspire:reroll")
-        return handleInspire(i.token);
+      if (isInspire) return handleInspire(i.token, custom !== "inspire:reroll");
       if (name === "daily" || name === "每日") return handleDaily(i, i.token);
       if (name === "daily-admin" || name === "每日管理") return handleDaily(i, i.token);
       return fill(i.token, { content: "未知指令。" });
     });
+    if (custom === "inspire:reroll") {
+      return NextResponse.json({ type: 6 });
+    }
+    if (isInspire) {
+      return NextResponse.json({ type: 5, flags: 64 });
+    }
     return NextResponse.json({ type: 5 });
   }
 
