@@ -71,12 +71,32 @@ export async function getChannelName(channelId: string): Promise<string> {
   }
 }
 
+export async function addOwnReaction(
+  channelId: string,
+  messageId: string,
+  emoji: string
+): Promise<void> {
+  const raw = emoji.trim();
+  const custom = raw.match(/^<a?:(\w+):(\d+)>$/);
+  const enc = encodeURIComponent(custom ? `${custom[1]}:${custom[2]}` : raw);
+  const res = await discordFetch(
+    "PUT",
+    `/channels/${channelId}/messages/${messageId}/reactions/${enc}/@me`
+  );
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`react ${res.status}: ${t.slice(0, 300)}`);
+  }
+}
+
 export async function listReactionUsers(
   channelId: string,
   messageId: string,
   emoji: string
 ): Promise<{ id: string; bot?: boolean }[]> {
-  const enc = encodeURIComponent(emoji);
+  const raw = emoji.trim();
+  const custom = raw.match(/^<a?:(\w+):(\d+)>$/);
+  const enc = encodeURIComponent(custom ? `${custom[1]}:${custom[2]}` : raw);
   const users = await discordJson<{ id: string; bot?: boolean }[]>(
     "GET",
     `/channels/${channelId}/messages/${messageId}/reactions/${enc}?limit=100`
