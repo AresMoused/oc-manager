@@ -69,7 +69,9 @@ async function handleDaily(i: Interaction, token: string) {
       await fill(token, { content: "只有管理员可以改投票表情。" });
       return;
     }
-    const emoji = String(i.data?.options?.[0]?.options?.[0]?.value || "").trim();
+    const emoji = String(
+      i.data?.options?.[0]?.options?.[0]?.value || ""
+    ).trim();
     if (!emoji) {
       await fill(token, { content: "请提供一个表情。" });
       return;

@@ -6,60 +6,40 @@ export const dynamic = "force-dynamic";
 
 const COMMANDS = [
   {
-    name: "inspire",
-    name_localizations: { "zh-CN": "灵感", "zh-TW": "靈感" },
-    description: "Random character prompt from the appearance generator",
+    name: "灵感",
+    name_localizations: { "zh-TW": "靈感" },
+    description: "从外观生成器词库随机一条角色提示词",
     description_localizations: {
-      "zh-CN": "从外观生成器词库随机一条角色提示词",
       "zh-TW": "從外觀產生器詞庫隨機一條角色提示詞",
     },
   },
   {
-    name: "daily",
-    name_localizations: { "zh-CN": "每日", "zh-TW": "每日" },
-    description: "View today's themed character prompt",
-    description_localizations: {
-      "zh-CN": "查看今日主题角色",
-      "zh-TW": "查看今日主題角色",
-    },
+    name: "每日",
+    description: "查看今日主题角色",
+    description_localizations: { "zh-TW": "查看今日主題角色" },
   },
   {
-    name: "daily-admin",
-    name_localizations: { "zh-CN": "每日管理", "zh-TW": "每日管理" },
-    description: "Admin: reroll today's prompt or set the vote emoji",
-    description_localizations: {
-      "zh-CN": "管理员：重抽今日题或改投票表情",
-      "zh-TW": "管理員：重抽今日題或改投票表情",
-    },
+    name: "每日管理",
+    description: "管理员：重抽今日题或改投票表情",
+    description_localizations: { "zh-TW": "管理員：重抽今日題或改投票表情" },
     options: [
       {
         type: 1,
-        name: "reroll",
-        name_localizations: { "zh-CN": "重抽", "zh-TW": "重抽" },
-        description: "Replace today's prompt and ping the role",
-        description_localizations: {
-          "zh-CN": "作废今日题并重抽（会 @ 身份组）",
-          "zh-TW": "作廢今日題並重抽（會 @ 身分組）",
-        },
+        name: "重抽",
+        description: "作废今日题并重抽（会 @ 身份组）",
+        description_localizations: { "zh-TW": "作廢今日題並重抽（會 @ 身分組）" },
       },
       {
         type: 1,
-        name: "emoji",
-        name_localizations: { "zh-CN": "表情", "zh-TW": "表情" },
-        description: "Set the bulletin voting emoji",
-        description_localizations: {
-          "zh-CN": "设定公布栏投票用的表情",
-          "zh-TW": "設定公布欄投票用的表情",
-        },
+        name: "表情",
+        description: "设定公布栏投票用的表情",
+        description_localizations: { "zh-TW": "設定公布欄投票用的表情" },
         options: [
           {
             type: 3,
-            name: "emoji",
-            description: "One emoji, e.g. ❤️",
-            description_localizations: {
-              "zh-CN": "一个表情，例如 ❤️",
-              "zh-TW": "一個表情，例如 ❤️",
-            },
+            name: "表情",
+            description: "一个表情，例如 ❤️",
+            description_localizations: { "zh-TW": "一個表情，例如 ❤️" },
             required: true,
           },
         ],

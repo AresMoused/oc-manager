@@ -47,16 +47,21 @@ export function inspirePayload(roll: InspireRoll) {
   };
 }
 
+export function dailyHowTo(code: string, emoji: string): string {
+  return [
+    "每天 0:00（香港时间）公布一套主题角色。用提示词出图，带着今日代码投稿，给喜欢的图投票。",
+    `① 用提示词去外观生成器 / 抽卡姬出图（也可以自己画）`,
+    `② 发到跑图频道，正文带上 \`#${code}\``,
+    `③ 机器人转到本频道后，点 ${emoji} 投票`,
+    `④ 当天 23:59 截止，次日 0:00 公布冠军`,
+  ].join("\n");
+}
+
 export function dailyViewPayload(roll: InspireRoll, date: string, emoji: string) {
   const embed = inspireEmbed(roll, `每日主题  ${date}`);
   embed.fields.push({
-    name: "怎么玩",
-    value: [
-      `用上面的提示词去外观生成器 / 抽卡姬出图（也可以自己画）。`,
-      `把**图**发到跑图频道，正文带上 \`#${roll.code}\`。`,
-      `Bot 会转到每日频道。给喜欢的卡片点 ${emoji}。`,
-      `当天 23:59 (HKT) 截止，次日 0 点公布冠军。`,
-    ].join("\n"),
+    name: "每日主题",
+    value: dailyHowTo(roll.code, emoji),
   });
   return {
     content: `今日 \`#${roll.code}\`（投票请点公布栏上的 ${emoji}）`,
@@ -70,13 +75,8 @@ export function dailyPromptPayload(roll: InspireRoll, date: string) {
   const emoji = discordDailyEmoji();
   const embed = inspireEmbed(roll, `每日主题  ${date}`);
   embed.fields.push({
-    name: "怎么玩",
-    value: [
-      `用上面的提示词去外观生成器 / 抽卡姬出图（也可以自己画）。`,
-      `把**图**发到跑图频道，正文带上 \`#${roll.code}\`。`,
-      `Bot 会转到本频道。给喜欢的卡片点 ${emoji}。`,
-      `当天 23:59 (HKT) 截止，次日 0 点公布冠军。`,
-    ].join("\n"),
+    name: "每日主题",
+    value: dailyHowTo(roll.code, emoji),
   });
   return {
     content: ping ? `${ping} 今日主题角色已更新` : "今日主题角色已更新",
