@@ -11,6 +11,7 @@ import {
   avatarUrl,
 } from "@/lib/discord/embeds";
 import {
+  addOwnReaction,
   getChannelName,
   listReactionUsers,
   postChannelMessage,
@@ -209,6 +210,11 @@ export async function ingestSubmission(raw: {
       ),
     })
   );
+  try {
+    await addOwnReaction(board, posted.id, await votingEmoji());
+  } catch (e) {
+    console.error("auto-react", posted.id, e);
+  }
   rec.submissions.push({
     sourceMessageId: raw.id,
     sourceChannelId: raw.channel_id,
