@@ -1,27 +1,23 @@
-import { createPublicKey, verify } from "node:crypto";
+import nacl from "tweetnacl";
 
-/** Ed25519 verify for Discord Interactions. */
+/** Ed25519 verify for Discord Interactions (same method as Discord docs). */
 export function verifyDiscordSignature(
   rawBody: string,
   timestamp: string,
   signatureHex: string,
   publicKeyHex: string
 ): boolean {
-  if (!rawBody || !timestamp || !signatureHex || !publicKeyHex) return false;
+  const keyHex = publicKeyHex.trim();
+  const sigHex = signatureHex.trim();
+  if (!rawBody || !timestamp || !sigHex || !keyHex) return false;
   try {
-    const key = createPublicKey({
-      key: Buffer.concat([
-        Buffer.from("302a300506032b6570032100", "hex"),
-        Buffer.from(publicKeyHex, "hex"),
-      ]),
-      format: "der",
-      type: "spki",
-    });
-    return verify(
-      null,
+    const key = Buffer.from(keyHex, "hex");
+    const sig = Buffer.from(sigHex, "hex");
+    if (key.length !== 32 || sig.length !== 64) return false;
+    return nacl.sign.detached.verify(
       Buffer.from(timestamp + rawBody),
-      key,
-      Buffer.from(signatureHex, "hex")
+      sig,
+      key
     );
   } catch {
     return false;

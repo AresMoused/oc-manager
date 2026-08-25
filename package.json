@@ -15,8 +15,9 @@
     "next": "15.3.8",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "ws": "^8.21.3",
-    "tsx": "^4.23.12"
+    "tsx": "^4.23.12",
+    "tweetnacl": "^1.0.3",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
