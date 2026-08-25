@@ -150,6 +150,148 @@ export function savePromptPresets(list: ComfyPromptPreset[]) {
   localStorage.setItem(PRESETS_KEY, JSON.stringify(list));
 }
 
+const NUMERIC_PLACEHOLDERS = new Set<PlaceholderKey>([
+  "seed", "steps", "cfg_scale", "width", "height",
+]);
+
+type WorkflowTokenMask = {
+  token: string;
+  rawSentinel: string;
+  textSentinel: string;
+};
+
+/**
+ * Temporarily masks template tokens so a workflow can be validated as JSON.
+ * Numeric tokens are replaced with JSON strings only during validation and
+ * restored before the template is saved; applyPlaceholders resolves them
+ * to numbers immediately before the request is sent to ComfyUI.
+ */
+function maskWorkflowPlaceholders(raw: string): {
+  masked: string;
+  restore: (serialized: string) => string;
+} {
+  const masks: WorkflowTokenMask[] = [];
+  let masked = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+
+    if (inString) {
+      if (escaped) {
+        masked += ch;
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        masked += ch;
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        masked += ch;
+        inString = false;
+        continue;
+      }
+
+      if (ch === "%") {
+        const match = raw.slice(i).match(/^%([A-Za-z0-9_]+)%/);
+        if (match && PLACEHOLDERS.includes(match[1] as PlaceholderKey)) {
+          const token = match[0];
+          const key = match[1] as PlaceholderKey;
+          if (NUMERIC_PLACEHOLDERS.has(key)) {
+            throw new Error(`${token} 必须作为数字使用，不能加引号`);
+          }
+          const index = masks.length;
+          const mask = {
+            token,
+            rawSentinel: `__OCM_RAW_TOKEN_${index}__`,
+            textSentinel: `__OCM_TEXT_TOKEN_${index}__`,
+          };
+          masks.push(mask);
+          masked += mask.textSentinel;
+          i += token.length - 1;
+          continue;
+        }
+      }
+
+      masked += ch;
+      continue;
+    }
+
+    if (ch === '"') {
+      masked += ch;
+      inString = true;
+      continue;
+    }
+
+    if (ch === "%") {
+      const match = raw.slice(i).match(/^%([A-Za-z0-9_]+)%/);
+      if (match && PLACEHOLDERS.includes(match[1] as PlaceholderKey)) {
+        const token = match[0];
+        const key = match[1] as PlaceholderKey;
+        if (!NUMERIC_PLACEHOLDERS.has(key)) {
+          throw new Error(`${token} 必须放在 JSON 字符串引号内`);
+        }
+        const index = masks.length;
+        const mask = {
+          token,
+          rawSentinel: `__OCM_RAW_TOKEN_${index}__`,
+          textSentinel: `__OCM_TEXT_TOKEN_${index}__`,
+        };
+        masks.push(mask);
+        masked += JSON.stringify(mask.rawSentinel);
+        i += token.length - 1;
+        continue;
+      }
+    }
+
+    masked += ch;
+  }
+
+  const restore = (serialized: string) => {
+    let restored = serialized;
+    for (const mask of masks) {
+      restored = restored
+        .split(JSON.stringify(mask.rawSentinel))
+        .join(mask.token)
+        .split(mask.textSentinel)
+        .join(mask.token);
+    }
+    return restored;
+  };
+
+  return { masked, restore };
+}
+
+function parseWorkflowTemplate(raw: string): {
+  data: Record<string, unknown>;
+  restore: (serialized: string) => string;
+} {
+  const text = raw.trim();
+  if (!text) throw new Error("工作流不能为空");
+
+  const unsupported = detectPlaceholders(text).filter(
+    (key) => !(PLACEHOLDERS as readonly string[]).includes(key),
+  );
+  if (unsupported.length > 0) {
+    throw new Error(`不支持的占位符：${unsupported.map((key) => `%${key}%`).join(", ")}`);
+  }
+
+  const { masked, restore } = maskWorkflowPlaceholders(text);
+  const data = JSON.parse(masked) as unknown;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("工作流必须是 JSON 对象");
+  }
+  return { data: data as Record<string, unknown>, restore };
+}
+
+/** Validate a workflow template without requiring placeholders to be JSON literals. */
+export function validateWorkflowTemplate(raw: string): Record<string, unknown> {
+  return parseWorkflowTemplate(raw).data;
+}
+
 export function applyPlaceholders(workflowRaw: string, params: ComfyParams): Record<string, unknown> {
   const resolvedSeed = params.seed < 0 ? Math.floor(Math.random() * 2 ** 32) : Math.floor(params.seed);
   const fullPrompt = composePositivePrompt(params);
@@ -255,10 +397,9 @@ export async function comfyCheckConnection(baseUrl: string): Promise<string> {
 }
 
 export function normalizeWorkflowUpload(raw: string): string {
-  const data = JSON.parse(raw);
+  const { data, restore } = parseWorkflowTemplate(raw);
   if (data && typeof data === "object" && data.prompt && typeof data.prompt === "object") {
-    return JSON.stringify(data.prompt, null, 2);
+    return restore(JSON.stringify(data.prompt, null, 2));
   }
-  if (data && typeof data === "object") return JSON.stringify(data, null, 2);
-  throw new Error("无效的工作流 JSON");
+  return restore(JSON.stringify(data, null, 2));
 }
