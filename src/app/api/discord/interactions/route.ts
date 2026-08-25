@@ -1,12 +1,12 @@
 import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 import { isDiscordAdmin } from "@/lib/admin";
-import { inspirePayload } from "@/lib/discord/embeds";
+import { dailyViewPayload, inspirePayload } from "@/lib/discord/embeds";
 import { verifyDiscordSignature } from "@/lib/discord/verify";
 import { editInteractionOriginal } from "@/lib/discord/rest";
 import { getOrCreateToday, postTodayPrompt, votingEmoji } from "@/lib/discord/daily";
 import { saveBotConfig } from "@/lib/discord/botStore";
-import { rollInspire } from "@/lib/inspire";
+import { hktDate, rollInspire } from "@/lib/inspire";
 import { saveRoll } from "@/lib/discord/botStore";
 
 export const runtime = "nodejs";
@@ -79,10 +79,7 @@ async function handleDaily(i: Interaction, token: string) {
     return;
   }
   const { roll } = await getOrCreateToday(false);
-  await fill(token, {
-    ...inspirePayload(roll),
-    content: `今日 \`#${roll.code}\`（投票请点公布栏上的 ${await votingEmoji()}）`,
-  });
+  await fill(token, dailyViewPayload(roll, hktDate(), await votingEmoji()));
 }
 
 export async function POST(req: NextRequest) {

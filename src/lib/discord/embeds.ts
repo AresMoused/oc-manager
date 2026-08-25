@@ -47,6 +47,24 @@ export function inspirePayload(roll: InspireRoll) {
   };
 }
 
+export function dailyViewPayload(roll: InspireRoll, date: string, emoji: string) {
+  const embed = inspireEmbed(roll, `每日主题  ${date}`);
+  embed.fields.push({
+    name: "怎么玩",
+    value: [
+      `用上面的提示词去外观生成器 / 抽卡姬出图（也可以自己画）。`,
+      `把**图**发到跑图频道，正文带上 \`#${roll.code}\`。`,
+      `Bot 会转到每日频道。给喜欢的卡片点 ${emoji}。`,
+      `当天 23:59 (HKT) 截止，次日 0 点公布冠军。`,
+    ].join("\n"),
+  });
+  return {
+    content: `今日 \`#${roll.code}\`（投票请点公布栏上的 ${emoji}）`,
+    embeds: [embed],
+    components: [],
+  };
+}
+
 export function dailyPromptPayload(roll: InspireRoll, date: string) {
   const ping = discordPingRoleMention();
   const emoji = discordDailyEmoji();
