@@ -1,6 +1,6 @@
 /**
  * Railway sidecar: keep a Discord Gateway connection and forward
- * watched-channel image messages to the Next ingest endpoint.
+ * watched-channel image/video messages to the Next ingest endpoint.
  *
  * Required env: DISCORD_BOT_TOKEN, DISCORD_WATCH_CHANNEL_IDS,
  * INGEST_URL, CRON_SECRET
@@ -101,14 +101,23 @@ async function run() {
     };
     if (msg.author?.bot) return;
     if (!WATCH.has(msg.channel_id)) return;
-    const hasImage =
-      (msg.attachments || []).some(
-        (a) =>
-          (a.content_type || "").startsWith("image/") ||
-          /\.(png|jpe?g|gif|webp)(\?|$)/i.test(a.url || "")
-      ) ||
-      (msg.embeds || []).some((e) => e.image?.url || e.thumbnail?.url);
-    if (!hasImage) return;
+    const hasMedia =
+      (msg.attachments || []).some((a) => {
+        const t = (a.content_type || "").toLowerCase();
+        const url = a.url || "";
+        return (
+          t.startsWith("image/") ||
+          t.startsWith("video/") ||
+          /\.(png|jpe?g|gif|webp|mp4|webm|mov|m4v)(\?|$)/i.test(url)
+        );
+      }) ||
+      (msg.embeds || []).some(
+        (e) =>
+          e.image?.url ||
+          e.thumbnail?.url ||
+          (e as { video?: { url?: string } }).video?.url
+      );
+    if (!hasMedia) return;
     if (!/#OC-[A-Z0-9]+/i.test(msg.content || "")) return;
 
     log("ingest candidate", msg.id, "ch", msg.channel_id);
