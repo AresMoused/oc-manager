@@ -50,9 +50,31 @@ export type DiscordMessage = {
 
 export async function postChannelMessage(
   channelId: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  file?: { bytes: Uint8Array; filename: string; contentType: string }
 ): Promise<DiscordMessage> {
-  return discordJson("POST", `/channels/${channelId}/messages`, payload);
+  if (!file) {
+    return discordJson("POST", `/channels/${channelId}/messages`, payload);
+  }
+  const form = new FormData();
+  form.append("payload_json", JSON.stringify(payload));
+  form.append(
+    "files[0]",
+    new Blob([file.bytes as BlobPart], {
+      type: file.contentType || "application/octet-stream",
+    }),
+    file.filename || "video.mp4"
+  );
+  const res = await fetch(`${API}/channels/${channelId}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${token()}` },
+    body: form,
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Discord POST message+file ${res.status}: ${text.slice(0, 400)}`);
+  }
+  return (text ? JSON.parse(text) : {}) as DiscordMessage;
 }
 
 export async function getChannelMessage(
