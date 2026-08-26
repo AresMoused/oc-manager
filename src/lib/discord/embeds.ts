@@ -55,9 +55,9 @@ export function inspirePayload(roll: InspireRoll) {
 
 export function dailyHowTo(code: string, emoji: string): string {
   return [
-    "每天 0:00（香港时间）公布一套主题角色。用提示词出图，带着今日代码投稿，给喜欢的图投票。",
-    `① 用提示词去外观生成器 / 抽卡姬出图（也可以自己画）`,
-    `② 发到跑图频道，正文带上 \`#${code}\``,
+    "每天 0:00（香港时间）公布一套主题角色。用提示词出图或影片，带着今日代码投稿，给喜欢的作品投票。",
+    `① 用提示词去外观生成器 / 抽卡姬出图或出片（也可以自己画）`,
+    `② 把图或影片发到跑图频道，正文带上 \`#${code}\``,
     `③ 机器人转到本频道后，点 ${emoji} 投票`,
     `④ 当天 23:59 截止，次日 0:00 公布冠军`,
   ].join("\n");
@@ -98,22 +98,26 @@ export function jumpUrl(guildId: string, channelId: string, messageId: string) {
 export function bulletinPayload(opts: {
   authorName: string;
   authorIcon?: string | null;
-  imageUrl: string;
+  imageUrl?: string;
+  kind?: "image" | "video";
   channelName: string;
   jump: string;
 }) {
+  const embed: Record<string, unknown> = {
+    author: {
+      name: opts.authorName,
+      icon_url: opts.authorIcon || undefined,
+    },
+    footer: { text: `来自 #${opts.channelName}` },
+    color: 0x7c5cbf,
+  };
+  if (opts.kind === "video") {
+    embed.description = "影片投稿";
+  } else if (opts.imageUrl) {
+    embed.image = { url: opts.imageUrl };
+  }
   return {
-    embeds: [
-      {
-        author: {
-          name: opts.authorName,
-          icon_url: opts.authorIcon || undefined,
-        },
-        image: { url: opts.imageUrl },
-        footer: { text: `来自 #${opts.channelName}` },
-        color: 0x7c5cbf,
-      },
-    ],
+    embeds: [embed],
     components: [
       {
         type: 1,
