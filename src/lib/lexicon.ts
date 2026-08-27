@@ -79,6 +79,7 @@ export function abandonLegacyPresets() {
     localStorage.removeItem("oc-builder-active-preset-v1");
     localStorage.removeItem("oc-builder-data-v1");
     localStorage.removeItem("oc-builder-sync-url");
+    localStorage.removeItem(CONTENT_CACHE_KEY);
   } catch {
     /* ignore */
   }
@@ -182,40 +183,33 @@ export function saveFixed(fixed: string) {
   localStorage.setItem(FIXED_KEY, fixed);
 }
 
+const memoryContentCache: Record<string, LexiconListContent> = {};
+
 function contentCacheGet(): Record<string, LexiconListContent> {
-  if (typeof window === "undefined") return {};
+  return memoryContentCache;
+}
+
+function wipeLegacyContentCache() {
+  if (typeof window === "undefined") return;
   try {
-    return JSON.parse(localStorage.getItem(CONTENT_CACHE_KEY) || "{}");
+    localStorage.removeItem(CONTENT_CACHE_KEY);
   } catch {
-    return {};
+    /* ignore */
   }
 }
 
 function contentCacheSet(id: string, content: LexiconListContent) {
-  if (typeof window === "undefined") return;
-  const c = contentCacheGet();
-  c[id] = content;
-  try {
-    localStorage.setItem(CONTENT_CACHE_KEY, JSON.stringify(c));
-  } catch {
-    /* quota */
-  }
+  memoryContentCache[id] = content;
 }
 
 /** Drop cached list content (after admin edit) so next load hits API */
 export function invalidateLexiconContentCache(listId?: string) {
-  if (typeof window === "undefined") return;
-  try {
-    if (!listId) {
-      localStorage.removeItem(CONTENT_CACHE_KEY);
-      return;
-    }
-    const c = contentCacheGet();
-    delete c[listId];
-    localStorage.setItem(CONTENT_CACHE_KEY, JSON.stringify(c));
-  } catch {
-    /* ignore */
+  wipeLegacyContentCache();
+  if (!listId) {
+    for (const k of Object.keys(memoryContentCache)) delete memoryContentCache[k];
+    return;
   }
+  delete memoryContentCache[listId];
 }
 
 export async function fetchLexiconCatalog(): Promise<{
@@ -253,9 +247,9 @@ export async function fetchLexiconList(
 export async function loadEnabledSections(
   enabledIds: string[]
 ): Promise<BuilderSection[]> {
+  const loaded = await Promise.all(enabledIds.map((id) => fetchLexiconList(id)));
   const sections: BuilderSection[] = [];
-  for (const id of enabledIds) {
-    const content = await fetchLexiconList(id);
+  for (const content of loaded) {
     if (!content || !content.items?.length) continue;
     sections.push({
       key: content.id,
