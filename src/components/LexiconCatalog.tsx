@@ -54,7 +54,7 @@ export function LexiconFilterBar({
   if (!allTags.length && !untagged) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-[10px] text-neutral-500 mr-0.5">过滤</span>
+      <span className="text-[10px] text-neutral-500 mr-0.5">过滤（需同时包含）</span>
       {chip("", "全部", active.length === 0)}
       {untagged && chip("__none__", "未分组", active.includes("__none__"))}
       {allTags.map((t) => chip(t, t, active.includes(t)))}
