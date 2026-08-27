@@ -410,11 +410,8 @@ export function listMatchesFilter(
 ): boolean {
   if (!active.length) return true;
   const tags = list.filterTags || [];
-  const wantUntagged = active.includes("__none__");
-  const named = active.filter((t) => t !== "__none__");
-  if (wantUntagged && named.length === 0) return tags.length === 0;
-  if (wantUntagged) return false;
-  return named.every((t) => tags.includes(t));
+  if (tags.length === 0) return active.includes("__none__");
+  return tags.every((t) => active.includes(t));
 }
 
 export function loadFilterTags(): string[] {
