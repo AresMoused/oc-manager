@@ -454,6 +454,43 @@ export async function updateListMeta(opts: {
   return { ok: true, message: "已更新列表信息", index };
 }
 
+export async function bulkUpdateFilterTags(opts: {
+  listIds: string[];
+  mode: "set" | "add" | "remove" | "clear";
+  tags?: string[];
+}): Promise<{ ok: boolean; message: string; index?: LexiconIndex; updated: number }> {
+  const ids = [...new Set((opts.listIds || []).map((id) => String(id).trim()).filter(Boolean))];
+  if (!ids.length) return { ok: false, message: "未选择列表", updated: 0 };
+  const incoming = [...new Set((opts.tags || []).map((t) => String(t).trim()).filter(Boolean))];
+  if (opts.mode !== "clear" && !incoming.length) {
+    return { ok: false, message: "请填写标签", updated: 0 };
+  }
+  const index = await getLexiconIndex();
+  const wanted = new Set(ids);
+  let updated = 0;
+  for (const cat of index.categories) {
+    for (const li of cat.lists) {
+      if (!wanted.has(li.id)) continue;
+      const cur = [...(li.filterTags || [])];
+      let next: string[] = cur;
+      if (opts.mode === "clear") next = [];
+      else if (opts.mode === "set") next = incoming;
+      else if (opts.mode === "add") next = [...new Set([...cur, ...incoming])];
+      else if (opts.mode === "remove") next = cur.filter((t) => !incoming.includes(t));
+      if (next.length) li.filterTags = next;
+      else delete li.filterTags;
+      updated += 1;
+    }
+  }
+  if (!updated) return { ok: false, message: "找不到所选列表", updated: 0 };
+  await writeIndex(index);
+  const verb =
+    opts.mode === "clear" ? "已清空" :
+    opts.mode === "add" ? "已追加" :
+    opts.mode === "remove" ? "已移除" : "已设为";
+  return { ok: true, message: `${verb} ${updated} 个列表的过滤标签`, index, updated };
+}
+
 export async function updateListContent(
   listId: string,
   items: LexiconItem[],

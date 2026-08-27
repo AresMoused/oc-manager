@@ -9,6 +9,7 @@ import {
   reorderCategories,
   renameCategory,
   publishListDirect,
+  bulkUpdateFilterTags,
 } from "@/lib/lexiconServer";
 
 export const runtime = "nodejs";
@@ -22,7 +23,7 @@ export const dynamic = "force-dynamic";
  * - update-content: { listId, items: [{name,tags,...}], label? }
  * - reorder: { categories: [{id,label,lists:[{id,label,...}]}] }
  * - rename-category: { categoryId, label }
- * - publish-direct: { categoryId, categoryLabel?, label, items, icon?, desc? }
+ * - bulk-filter-tags: { listIds, mode: "set"|"add"|"remove"|"clear", filterTags? }
  */
 export async function POST(req: NextRequest) {
   try {
@@ -116,6 +117,25 @@ export async function POST(req: NextRequest) {
         desc: body.desc,
         listId: body.listId,
       });
+      if (!result.ok) return NextResponse.json(result, { status: 400 });
+      return NextResponse.json(result);
+    }
+
+    if (action === "bulk-filter-tags") {
+      const listIds = Array.isArray(body.listIds)
+        ? body.listIds.map((x: unknown) => String(x))
+        : [];
+      const modeRaw = String(body.mode || "set");
+      const mode =
+        modeRaw === "add" || modeRaw === "remove" || modeRaw === "clear"
+          ? modeRaw
+          : "set";
+      const tags = Array.isArray(body.filterTags)
+        ? body.filterTags.map((x: unknown) => String(x))
+        : typeof body.filterTags === "string"
+          ? body.filterTags.split(/[,，;；]/).map((s: string) => s.trim()).filter(Boolean)
+          : [];
+      const result = await bulkUpdateFilterTags({ listIds, mode, tags });
       if (!result.ok) return NextResponse.json(result, { status: 400 });
       return NextResponse.json(result);
     }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
+  collectFilterTags,
   fetchLexiconCatalog,
   invalidateLexiconContentCache,
   type LexiconIndex,
@@ -39,6 +40,56 @@ export default function GeneratorAdminPanel(props: {
   const [editRaw, setEditRaw] = useState<{ listId: string; label: string; raw: string } | null>(null);
   const [editMeta, setEditMeta] = useState<{ listId: string; label: string; categoryId: string; categoryLabel: string; filterTags: string } | null>(null);
   const [editCat, setEditCat] = useState<{ id: string; label: string } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkTags, setBulkTags] = useState("");
+
+  const allPublicIds = useMemo(
+    () => (index?.categories || []).flatMap((c) => c.lists.map((l) => l.id)),
+    [index]
+  );
+  const knownTags = useMemo(
+    () => collectFilterTags((index?.categories || []).flatMap((c) => c.lists)),
+    [index]
+  );
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+  const toggleCategorySelected = (ids: string[]) => {
+    setSelectedIds((prev) => {
+      const allOn = ids.every((id) => prev.includes(id));
+      if (allOn) return prev.filter((id) => !ids.includes(id));
+      return [...new Set([...prev, ...ids])];
+    });
+  };
+
+  const runBulkTags = async (mode: "set" | "add" | "remove" | "clear") => {
+    if (!selectedIds.length) return toastMsg("请先勾选列表");
+    if (mode !== "clear" && !bulkTags.trim()) return toastMsg("请填写标签");
+    setAdminBusy(true);
+    try {
+      const res = await fetch("/api/lexicon/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "bulk-filter-tags",
+          listIds: selectedIds,
+          mode,
+          filterTags: bulkTags,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) { toastMsg(j.error || j.message || "批量更新失败"); return; }
+      if (j.index) await applyIndex(j.index);
+      else {
+        const cat = await fetchLexiconCatalog();
+        setIndex(cat.index);
+      }
+      toastMsg(j.message || "已更新");
+    } finally { setAdminBusy(false); }
+  };
 
   const applyIndex = async (next: LexiconIndex) => {
     setIndex(next);
@@ -216,8 +267,50 @@ export default function GeneratorAdminPanel(props: {
           </div>
 
           <div className="space-y-2">
-            <div className="text-xs text-neutral-400">公共列表</div>
-            <div className="text-[10px] text-neutral-600">分类可上下排序、改名；列表可在分类内排序。</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-xs text-neutral-400">公共列表</div>
+              <button
+                type="button"
+                className="text-[11px] px-1.5 py-0.5 rounded border border-neutral-700 text-neutral-400"
+                onClick={() =>
+                  setSelectedIds((prev) =>
+                    prev.length === allPublicIds.length ? [] : allPublicIds
+                  )
+                }
+              >
+                {selectedIds.length === allPublicIds.length && allPublicIds.length
+                  ? "取消全选"
+                  : "全选"}
+              </button>
+              {selectedIds.length > 0 && (
+                <span className="text-[11px] text-amber-300">已选 {selectedIds.length}</span>
+              )}
+            </div>
+            <div className="text-[10px] text-neutral-600">分类可上下排序、改名；列表可在分类内排序。勾选后可批量改过滤标签。</div>
+            {selectedIds.length > 0 && (
+              <div className="border border-amber-900/40 rounded-lg p-2 space-y-1.5 bg-amber-950/10">
+                <div className="text-[11px] text-amber-200/90">批量过滤标签 · {selectedIds.length} 个列表</div>
+                <input
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs"
+                  list="lexicon-filter-tag-suggestions"
+                  value={bulkTags}
+                  onChange={(e) => setBulkTags(e.target.value)}
+                  placeholder="标签，逗号分隔，例如：基础, NSFW"
+                />
+                <datalist id="lexicon-filter-tag-suggestions">
+                  {knownTags.map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" disabled={adminBusy} className="text-[11px] px-2 py-0.5 rounded border border-emerald-800 text-emerald-300 disabled:opacity-40" onClick={() => void runBulkTags("set")}>设为这些标签</button>
+                  <button type="button" disabled={adminBusy} className="text-[11px] px-2 py-0.5 rounded border border-sky-800 text-sky-300 disabled:opacity-40" onClick={() => void runBulkTags("add")}>追加</button>
+                  <button type="button" disabled={adminBusy} className="text-[11px] px-2 py-0.5 rounded border border-amber-800 text-amber-300 disabled:opacity-40" onClick={() => void runBulkTags("remove")}>移除这些标签</button>
+                  <button type="button" disabled={adminBusy} className="text-[11px] px-2 py-0.5 rounded border border-rose-900/60 text-rose-400 disabled:opacity-40" onClick={() => void runBulkTags("clear")}>清空标签</button>
+                  <button type="button" className="text-[11px] px-2 py-0.5 rounded border border-neutral-700 text-neutral-400" onClick={() => setSelectedIds([])}>取消选择</button>
+                </div>
+              </div>
+            )}
             {(index?.categories || []).map((cat, catIdx) => (
               <div key={cat.id} className="border border-neutral-800 rounded-lg p-2 space-y-1">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -242,11 +335,24 @@ export default function GeneratorAdminPanel(props: {
                     <>
                       <span className="text-xs text-neutral-200 font-medium flex-1 min-w-[4rem]">{cat.label}</span>
                       <button type="button" className="px-1.5 py-0.5 rounded border border-sky-800 text-sky-300 text-[11px]" onClick={() => setEditCat({ id: cat.id, label: cat.label })}>改名</button>
+                      <label className="ml-auto text-[10px] text-neutral-500 flex items-center gap-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={cat.lists.length > 0 && cat.lists.every((l) => selectedIds.includes(l.id))}
+                          onChange={() => toggleCategorySelected(cat.lists.map((l) => l.id))}
+                        />
+                        本分类
+                      </label>
                     </>
                   )}
                 </div>
                 {cat.lists.map((li, liIdx) => (
                   <div key={li.id} className="flex flex-wrap items-center gap-1.5 pl-2 text-[11px]">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(li.id)}
+                      onChange={() => toggleSelected(li.id)}
+                    />
                     <span className="text-neutral-300 min-w-[4rem]">{li.label}</span>
                     {(li.filterTags || []).length > 0 && (
                       <span className="text-[10px] text-neutral-500">{(li.filterTags || []).join(", ")}</span>
