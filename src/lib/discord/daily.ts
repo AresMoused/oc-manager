@@ -68,9 +68,11 @@ export async function getOrCreateToday(force = false): Promise<{
 export async function postTodayPrompt(force = false): Promise<{
   rec: DailyRecord;
   roll: InspireRoll;
+  posted: boolean;
 }> {
   const { rec, roll, created } = await getOrCreateToday(force);
   const channelId = discordDailyChannelId();
+  let posted = false;
   if (channelId && (created || force || !rec.promptMessageId)) {
     const msg = await postChannelMessage(
       channelId,
@@ -78,8 +80,9 @@ export async function postTodayPrompt(force = false): Promise<{
     );
     rec.promptMessageId = msg.id;
     await saveDaily(rec);
+    posted = true;
   }
-  return { rec, roll };
+  return { rec, roll, posted };
 }
 
 export async function announceResults(date: string): Promise<void> {
@@ -127,20 +130,50 @@ export async function announceResults(date: string): Promise<void> {
   await saveDaily(rec);
 }
 
-export async function runMidnightJob(): Promise<{
+export async function runMidnightJob(opts?: {
+  forceAnnounce?: boolean;
+  forcePost?: boolean;
+}): Promise<{
   settled: string;
   posted: string;
   code: string;
+  announced: boolean;
+  postedPrompt: boolean;
+  skippedAnnounce?: string;
+  channelConfigured: boolean;
 }> {
   const today = hktDate();
   const yday = hktYesterday(today);
-  try {
-    await announceResults(yday);
-  } catch (e) {
-    console.error("announceResults", yday, e);
+  const channelId = discordDailyChannelId();
+  let announced = false;
+  let skippedAnnounce: string | undefined;
+  if (!channelId) {
+    skippedAnnounce = "DISCORD_DAILY_CHANNEL_ID missing";
+    console.error("runMidnightJob", skippedAnnounce);
+  } else {
+    const yrec = await getDaily(yday);
+    if (yrec?.resultMessageId && !opts?.forceAnnounce) {
+      skippedAnnounce = `already-settled:${yrec.resultMessageId}`;
+    } else {
+      try {
+        await announceResults(yday);
+        announced = true;
+      } catch (e) {
+        console.error("announceResults", yday, e);
+        skippedAnnounce = e instanceof Error ? e.message : "announce-failed";
+      }
+    }
   }
-  const { rec } = await postTodayPrompt(false);
-  return { settled: yday, posted: today, code: rec.code };
+  const { rec, posted } = await postTodayPrompt(!!opts?.forcePost);
+  return {
+    settled: yday,
+    posted: today,
+    code: rec.code,
+    announced,
+    postedPrompt: posted,
+    skippedAnnounce,
+    channelConfigured: !!channelId,
+  };
 }
 
 export function firstMedia(msg: {

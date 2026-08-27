@@ -20,8 +20,8 @@ const COMMANDS = [
   },
   {
     name: "每日管理",
-    description: "管理员：重抽今日题或改投票表情",
-    description_localizations: { "zh-TW": "管理員：重抽今日題或改投票表情" },
+    description: "管理员：重抽、改投票表情、手动结算",
+    description_localizations: { "zh-TW": "管理員：重抽、改投票表情、手動結算" },
     options: [
       {
         type: 1,
@@ -41,6 +41,25 @@ const COMMANDS = [
             description: "一个表情，例如 ❤️",
             description_localizations: { "zh-TW": "一個表情，例如 ❤️" },
             required: true,
+          },
+        ],
+      },
+      {
+        type: 1,
+        name: "结算",
+        description: "手动结算昨天并发布今日题（等同香港 0 点任务）",
+        description_localizations: {
+          "zh-TW": "手動結算昨天並發布今日題（等同香港 0 點任務）",
+        },
+        options: [
+          {
+            type: 5,
+            name: "强制",
+            description: "即使已经结算/出题也再发一次",
+            description_localizations: {
+              "zh-TW": "即使已經結算/出題也再發一次",
+            },
+            required: false,
           },
         ],
       },

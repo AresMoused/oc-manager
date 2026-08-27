@@ -4,7 +4,7 @@ import { isDiscordAdmin } from "@/lib/admin";
 import { dailyViewPayload, inspirePayload } from "@/lib/discord/embeds";
 import { verifyDiscordSignature } from "@/lib/discord/verify";
 import { editInteractionOriginal } from "@/lib/discord/rest";
-import { getOrCreateToday, postTodayPrompt, votingEmoji } from "@/lib/discord/daily";
+import { getOrCreateToday, postTodayPrompt, runMidnightJob, votingEmoji } from "@/lib/discord/daily";
 import { saveBotConfig, saveRoll, enqueueEphemeral } from "@/lib/discord/botStore";
 import { hktDate, rollInspire } from "@/lib/inspire";
 
@@ -78,6 +78,40 @@ async function handleDaily(i: Interaction, token: string) {
     }
     await saveBotConfig({ emoji });
     await fill(token, { content: `投票表情已设为 ${emoji}` });
+    return;
+  }
+  if (sub === "结算") {
+    if (!isDiscordAdmin(who.id, who.roles)) {
+      await fill(token, { content: "只有管理员可以手动结算。" });
+      return;
+    }
+    const force = i.data?.options?.[0]?.options?.some(
+      (o) => o.name === "强制" && o.value === true
+    );
+    try {
+      const result = await runMidnightJob({
+        forceAnnounce: !!force,
+        forcePost: !!force,
+      });
+      const settleNote = result.announced
+        ? "（已公布结果）"
+        : result.skippedAnnounce
+          ? `（跳过：${result.skippedAnnounce}）`
+          : "";
+      const lines = [
+        force ? "已强制跑完每日任务。" : "已执行每日结算。",
+        `结算日期：\`${result.settled}\`${settleNote}`,
+        `今日：\`${result.posted}\`  \`#${result.code}\`${result.postedPrompt ? "（已发到频道）" : "（频道里已有今日题，未重发）"}`,
+      ];
+      if (!result.channelConfigured) {
+        lines.push("警告：未配置 DISCORD_DAILY_CHANNEL_ID，无法发到频道。");
+      }
+      await fill(token, { content: lines.join("\n") });
+    } catch (e) {
+      await fill(token, {
+        content: `结算失败：${e instanceof Error ? e.message : "unknown"}`,
+      });
+    }
     return;
   }
   const { roll } = await getOrCreateToday(false);
