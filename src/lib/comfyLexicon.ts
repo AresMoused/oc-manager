@@ -9,8 +9,10 @@ import {
   loadFixed,
   loadLocalLists,
   loadLocked,
+  loadSelected,
   pickRandomSelected,
   resolveEnabledIds,
+  saveSelected,
 } from "@/lib/lexicon";
 
 export async function loadLexiconBuilder(): Promise<BuilderData | null> {
@@ -49,6 +51,15 @@ export async function loadLexiconBuilder(): Promise<BuilderData | null> {
 
 export function rollRandomCharacter(data: BuilderData | null): string | null {
   if (!data || !data.sections.length) return null;
-  const selected = pickRandomSelected(data.sections, loadLocked());
-  return composeFromSections(data.fixed || "1girl, ", data.sections, selected).trim() || null;
+  const selected = pickRandomSelected(
+    data.sections,
+    loadLocked(),
+    loadSelected()
+  );
+  saveSelected(selected);
+  return composeFromSections(
+    data.fixed || "1girl, ",
+    data.sections,
+    selected
+  ).trim() || null;
 }

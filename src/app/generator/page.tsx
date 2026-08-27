@@ -9,11 +9,12 @@ import type { BuilderSection } from "@/lib/promptBuilder";
 import { loadParams, saveParams } from "@/lib/comfyConfig";
 import {
   abandonLegacyPresets, buildEnabledBuilderData, composeFromSections,
-  fetchLexiconCatalog, loadEnabledMap, loadFixed, loadLocalLists,
+  fetchLexiconCatalog, loadEnabledMap, loadFilterTags, loadFixed, loadLocalLists,
   loadLocked, loadSelected, pickRandomSelected, resolveEnabledIds,
-  saveEnabledMap, saveFixed, saveLocked, saveSelected, setListEnabled,
+  saveEnabledMap, saveFilterTags, saveFixed, saveLocked, saveSelected, setListEnabled,
   type LexiconIndex, type LocalLexiconList,
 } from "@/lib/lexicon";
+import { LexiconCatalogBody, LexiconFilterBar } from "@/components/LexiconCatalog";
 
 function parseItemsRaw(raw: string) {
   return raw.split(/\r?\n/).filter(Boolean).map((line) => {
@@ -45,6 +46,7 @@ export default function GeneratorPage() {
   const [upRaw, setUpRaw] = useState("");
   const [upPublish, setUpPublish] = useState(false);
   const [userName, setUserName] = useState("");
+  const [filterTags, setFilterTags] = useState<string[]>([]);
 
   const toastMsg = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2200); };
 
@@ -72,6 +74,7 @@ export default function GeneratorPage() {
         }
         const fx = loadFixed(idx.fixed || "1girl, ");
         setFixed(fx); setSelected(loadSelected()); setLocked(loadLocked());
+        setFilterTags(loadFilterTags());
         const open: Record<string, boolean> = {};
         idx.categories.forEach((c) => { open[c.id] = true; });
         setOpenCats(open);
@@ -104,7 +107,7 @@ export default function GeneratorPage() {
     for (const l of localLists) {
       let c = list.find((x) => x.id === l.categoryId);
       if (!c) { c = { id: l.categoryId, label: l.categoryLabel, lists: [] }; list.push(c); }
-      if (!c.lists.some((x) => x.id === l.id)) c.lists.push({ id: l.id, label: l.label + "（本地）", path: "" });
+      if (!c.lists.some((x) => x.id === l.id)) c.lists.push({ id: l.id, label: l.label + "（本地）", path: "", filterTags: l.filterTags });
     }
     return list;
   }, [index, localLists]);
@@ -163,28 +166,24 @@ export default function GeneratorPage() {
             <span className="text-xs text-neutral-400">{catalogOpen ? "▲" : "▼"}</span>
           </button>
           {catalogOpen && (
-            <div className="px-4 pb-4 border-t border-neutral-800 pt-3 space-y-2">
+            <div className="px-4 pb-4 border-t border-neutral-800 pt-3 space-y-3">
               {loading && <p className="text-xs text-neutral-500">加载中…</p>}
-              {cats.map((cat) => (
-                <div key={cat.id}>
-                  <button type="button" className="text-xs text-neutral-300 mb-1" onClick={() => setOpenCats((p) => ({ ...p, [cat.id]: !p[cat.id] }))}>
-                    {openCats[cat.id] !== false ? "▼" : "▶"} {cat.label}
-                  </button>
-                  {openCats[cat.id] !== false && (
-                    <div className="flex flex-wrap gap-2 pl-3">
-                      {cat.lists.map((li) => {
-                        const on = enabledIds.includes(li.id);
-                        return (
-                          <button key={li.id} type="button" onClick={() => void toggle(li.id)}
-                            className={`px-2.5 py-1 text-xs rounded-lg border ${on ? "border-emerald-700 text-emerald-200 bg-emerald-950/30" : "border-neutral-800 text-neutral-500"}`}>
-                            {on ? "✓ " : "○ "}{li.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ))}
+              <LexiconFilterBar
+                cats={cats}
+                active={filterTags}
+                onChange={(next) => {
+                  setFilterTags(next);
+                  saveFilterTags(next);
+                }}
+              />
+              <LexiconCatalogBody
+                cats={cats}
+                enabledIds={enabledIds}
+                openCats={openCats}
+                onToggleCat={(id) => setOpenCats((p) => ({ ...p, [id]: p[id] === false }))}
+                onToggleList={(id) => void toggle(id)}
+                activeFilter={filterTags}
+              />
             </div>
           )}
         </div>

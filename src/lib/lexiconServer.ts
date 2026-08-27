@@ -24,6 +24,7 @@ export interface LexiconListMeta {
   path: string;
   icon?: string;
   desc?: string;
+  filterTags?: string[];
 }
 
 export interface LexiconCategory {
@@ -395,6 +396,7 @@ export async function updateListMeta(opts: {
   categoryLabel?: string;
   icon?: string;
   desc?: string;
+  filterTags?: string[];
 }): Promise<{ ok: boolean; message: string; index?: LexiconIndex }> {
   const safe = opts.listId.replace(/^\/+/, "").replace(/\.\./g, "");
   const index = await getLexiconIndex();
@@ -415,6 +417,10 @@ export async function updateListMeta(opts: {
   if (opts.label !== undefined) foundMeta.label = String(opts.label).trim() || foundMeta.label;
   if (opts.icon !== undefined) foundMeta.icon = opts.icon;
   if (opts.desc !== undefined) foundMeta.desc = opts.desc;
+  if (opts.filterTags !== undefined) {
+    foundMeta.filterTags = [...new Set(opts.filterTags.map((t) => String(t).trim()).filter(Boolean))];
+    if (!foundMeta.filterTags.length) delete foundMeta.filterTags;
+  }
 
   const targetName = opts.categoryId?.trim() || opts.categoryLabel?.trim();
   if (targetName) {

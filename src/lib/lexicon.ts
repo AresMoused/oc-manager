@@ -17,6 +17,8 @@ export interface LexiconListMeta {
   path: string;
   icon?: string;
   desc?: string;
+  /** Catalog filter tags (not prompt tags) */
+  filterTags?: string[];
 }
 
 export interface LexiconCategory {
@@ -38,6 +40,7 @@ export interface LexiconListContent {
   desc?: string;
   items: LexiconItem[];
   local?: boolean;
+  filterTags?: string[];
 }
 
 export interface LocalLexiconList extends LexiconListContent {
@@ -66,6 +69,7 @@ const SELECTED_KEY = "oc-lexicon-selected-v2";
 const LOCKED_KEY = "oc-lexicon-locked-v2";
 const FIXED_KEY = "oc-lexicon-fixed-v2";
 const CONTENT_CACHE_KEY = "oc-lexicon-content-cache-v2";
+const FILTER_TAGS_KEY = "oc-lexicon-filter-tags-v1";
 
 /** Wipe legacy whole-package preset keys once */
 export function abandonLegacyPresets() {
@@ -383,4 +387,48 @@ export function composeFromSections(
     }
   }
   return out;
+}
+
+export function parseFilterTags(raw: string | string[] | undefined | null): string[] {
+  const parts = Array.isArray(raw)
+    ? raw
+    : String(raw || "").split(/[,，;；|]/);
+  return [...new Set(parts.map((s) => s.trim()).filter(Boolean))];
+}
+
+export function collectFilterTags(
+  lists: { filterTags?: string[] }[]
+): string[] {
+  const set = new Set<string>();
+  for (const l of lists) for (const t of l.filterTags || []) set.add(t);
+  return [...set].sort((a, b) => a.localeCompare(b, "zh"));
+}
+
+export function listMatchesFilter(
+  list: { filterTags?: string[] },
+  active: string[]
+): boolean {
+  if (!active.length) return true;
+  const tags = list.filterTags || [];
+  const wantUntagged = active.includes("__none__");
+  const named = active.filter((t) => t !== "__none__");
+  if (wantUntagged && tags.length === 0) return true;
+  return named.some((t) => tags.includes(t));
+}
+
+export function loadFilterTags(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(FILTER_TAGS_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveFilterTags(tags: string[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(FILTER_TAGS_KEY, JSON.stringify(tags));
 }

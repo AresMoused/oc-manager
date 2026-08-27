@@ -16,6 +16,7 @@ import {
 } from "@/lib/comfyConfig";
 import type { BuilderData } from "@/lib/promptBuilder";
 import { loadLexiconBuilder, rollRandomCharacter as rollLexicon } from "@/lib/comfyLexicon";
+import LexiconEnableModal from "@/components/LexiconEnableModal";
 
 function newId() { return crypto.randomUUID(); }
 
@@ -51,6 +52,7 @@ export default function ComfyView() {
   const [builder, setBuilder] = useState<BuilderData | null>(null);
   const [randomEnabled, setRandomEnabled] = useState(true);
   const [randomLocked, setRandomLocked] = useState(false);
+  const [lexiconModalOpen, setLexiconModalOpen] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -377,13 +379,14 @@ export default function ComfyView() {
                       className="text-[11px] px-2 py-0.5 rounded border border-purple-700/50 text-purple-300 hover:bg-purple-950/30 disabled:opacity-40">
                       🎲 立即随机
                     </button>
-                    <Link
-                      href="/generator"
+                    <button
+                      type="button"
+                      onClick={() => setLexiconModalOpen(true)}
                       className="text-[11px] px-2 py-0.5 rounded border border-sky-700/50 text-sky-300 hover:bg-sky-950/30"
-                      title="在角色外观生成器中调整词库与选项"
+                      title="开关参与随机的词库"
                     >
-                      ✎ 去外观生成器修改
-                    </Link>
+                      ✎ 词库开关
+                    </button>
                   </div>
                 </div>
                 <textarea className={`${inp} min-h-[88px] resize-y border-purple-800/40`} value={params.prompt_character}
@@ -705,6 +708,12 @@ export default function ComfyView() {
           </div>
         </div>
       )}
+
+      <LexiconEnableModal
+        open={lexiconModalOpen}
+        onClose={() => setLexiconModalOpen(false)}
+        onApplied={(data) => setBuilder(data)}
+      />
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full bg-white text-black text-sm shadow-lg">{toast}</div>

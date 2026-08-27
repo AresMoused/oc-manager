@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
  * POST actions:
  * - delete: { listId }
  * - set-default: { enabledListIds }
- * - update-meta: { listId, label?, categoryId?, categoryLabel?, icon?, desc? }
+ * - update-meta: { listId, label?, categoryId?, categoryLabel?, icon?, desc?, filterTags? }
  * - update-content: { listId, items: [{name,tags,...}], label? }
  * - reorder: { categories: [{id,label,lists:[{id,label,...}]}] }
  * - rename-category: { categoryId, label }
@@ -63,6 +63,11 @@ export async function POST(req: NextRequest) {
         categoryLabel: body.categoryLabel,
         icon: body.icon,
         desc: body.desc,
+        filterTags: Array.isArray(body.filterTags)
+          ? body.filterTags.map((x: unknown) => String(x))
+          : typeof body.filterTags === "string"
+            ? body.filterTags.split(/[,，;；]/).map((s: string) => s.trim()).filter(Boolean)
+            : undefined,
       });
       if (!result.ok) return NextResponse.json(result, { status: 404 });
       return NextResponse.json(result);

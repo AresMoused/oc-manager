@@ -37,7 +37,7 @@ export default function GeneratorAdminPanel(props: {
   const [upCat, setUpCat] = useState("");
   const [upRaw, setUpRaw] = useState("");
   const [editRaw, setEditRaw] = useState<{ listId: string; label: string; raw: string } | null>(null);
-  const [editMeta, setEditMeta] = useState<{ listId: string; label: string; categoryId: string; categoryLabel: string } | null>(null);
+  const [editMeta, setEditMeta] = useState<{ listId: string; label: string; categoryId: string; categoryLabel: string; filterTags: string } | null>(null);
   const [editCat, setEditCat] = useState<{ id: string; label: string } | null>(null);
 
   const applyIndex = async (next: LexiconIndex) => {
@@ -248,9 +248,12 @@ export default function GeneratorAdminPanel(props: {
                 {cat.lists.map((li, liIdx) => (
                   <div key={li.id} className="flex flex-wrap items-center gap-1.5 pl-2 text-[11px]">
                     <span className="text-neutral-300 min-w-[4rem]">{li.label}</span>
+                    {(li.filterTags || []).length > 0 && (
+                      <span className="text-[10px] text-neutral-500">{(li.filterTags || []).join(", ")}</span>
+                    )}
                     <button type="button" disabled={adminBusy || liIdx === 0} className="px-1.5 py-0.5 rounded border border-neutral-700 text-neutral-400 disabled:opacity-30" onClick={() => void moveList(li.id, -1)}>↑</button>
                     <button type="button" disabled={adminBusy || liIdx === cat.lists.length - 1} className="px-1.5 py-0.5 rounded border border-neutral-700 text-neutral-400 disabled:opacity-30" onClick={() => void moveList(li.id, 1)}>↓</button>
-                    <button type="button" className="px-1.5 py-0.5 rounded border border-sky-800 text-sky-300" onClick={() => setEditMeta({ listId: li.id, label: li.label, categoryId: cat.id, categoryLabel: cat.label })}>改名/分类</button>
+                    <button type="button" className="px-1.5 py-0.5 rounded border border-sky-800 text-sky-300" onClick={() => setEditMeta({ listId: li.id, label: li.label, categoryId: cat.id, categoryLabel: cat.label, filterTags: (li.filterTags || []).join(", ") })}>改名/分类</button>
                     <button type="button" disabled={adminBusy} className="px-1.5 py-0.5 rounded border border-violet-800 text-violet-300" onClick={async () => {
                       setAdminBusy(true);
                       try {
@@ -298,6 +301,13 @@ export default function GeneratorAdminPanel(props: {
               onChange={(e) => setEditMeta({ ...editMeta, categoryLabel: e.target.value, categoryId: e.target.value })}
               placeholder="分类名称（输入新名称即自动创建）"
             />
+            <input
+              className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm"
+              value={editMeta.filterTags}
+              onChange={(e) => setEditMeta({ ...editMeta, filterTags: e.target.value })}
+              placeholder="过滤标签，逗号分隔，例如：基础, NSFW"
+            />
+            <p className="text-[10px] text-neutral-500">标签用于词库过滤器，可隐藏一部分列表。</p>
             <div className="flex justify-end gap-2">
               <button type="button" className="text-neutral-400 text-sm" onClick={() => setEditMeta(null)}>取消</button>
               <button type="button" disabled={adminBusy} className="bg-purple-600 text-white text-sm px-3 py-1 rounded" onClick={async () => {
@@ -306,7 +316,7 @@ export default function GeneratorAdminPanel(props: {
                   const res = await fetch("/api/lexicon/manage", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ action: "update-meta", listId: editMeta.listId, label: editMeta.label, categoryId: editMeta.categoryId, categoryLabel: editMeta.categoryLabel }),
+                    body: JSON.stringify({ action: "update-meta", listId: editMeta.listId, label: editMeta.label, categoryId: editMeta.categoryId, categoryLabel: editMeta.categoryLabel, filterTags: editMeta.filterTags }),
                   });
                   const j = await res.json();
                   if (!res.ok) { toastMsg(j.error || "更新失败"); return; }
