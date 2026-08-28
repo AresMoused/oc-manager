@@ -5,13 +5,16 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import GeneratorAdminPanel from "@/components/GeneratorAdminPanel";
+import LexiconLocalPanel from "@/components/LexiconLocalPanel";
+import LexiconOrderModal from "@/components/LexiconOrderModal";
 import type { BuilderSection } from "@/lib/promptBuilder";
 import { loadParams, saveParams } from "@/lib/comfyConfig";
 import {
   abandonLegacyPresets, buildEnabledBuilderData, composeFromSections,
   fetchLexiconCatalog, loadEnabledMap, loadFilterTags, loadFixed, loadLocalLists,
   loadLocked, loadSelected, pickRandomSelected, resolveEnabledIds,
-  saveEnabledMap, saveFilterTags, saveFixed, saveLocked, saveSelected, setListEnabled,
+  saveEnabledMap, saveEnabledOrder, saveFilterTags, saveFixed, saveLocked, saveSelected,
+  setListEnabled, syncEnabledOrder,
   type LexiconIndex, type LocalLexiconList,
 } from "@/lib/lexicon";
 import { LexiconCatalogBody, LexiconFilterBar } from "@/components/LexiconCatalog";
@@ -47,6 +50,8 @@ export default function GeneratorPage() {
   const [upPublish, setUpPublish] = useState(false);
   const [userName, setUserName] = useState("");
   const [filterTags, setFilterTags] = useState<string[]>([]);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
 
   const toastMsg = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2200); };
 
@@ -95,6 +100,7 @@ export default function GeneratorPage() {
       } catch (e) {
         toastMsg(e instanceof Error ? e.message : "加载失败");
       } finally {
+        setAuthReady(true);
         setLoading(false);
       }
     })();
@@ -116,10 +122,11 @@ export default function GeneratorPage() {
     const on = !enabledIds.includes(id);
     setListEnabled(id, on);
     const next = on ? [...enabledIds, id] : enabledIds.filter((x) => x !== id);
-    setEnabledIds(next);
+    const ordered = syncEnabledOrder(next);
+    setEnabledIds(ordered);
     const map = loadEnabledMap() || {};
     map[id] = on; saveEnabledMap(map);
-    await reload(next, fixed);
+    await reload(ordered, fixed);
     toastMsg(on ? "已启动" : "已关闭");
   };
 
@@ -133,6 +140,7 @@ export default function GeneratorPage() {
             <button onClick={async () => { try { await navigator.clipboard.writeText(prompt); toastMsg("已复制"); } catch { toastMsg("失败"); } }} className="px-3 py-1.5 text-sm rounded-lg bg-purple-600 text-white">复制</button>
             <button onClick={() => { if (!prompt.trim()) return toastMsg("为空"); const cur = loadParams(); saveParams({ ...cur, prompt_character: prompt.trim() }); toastMsg("已写入抽卡姬"); }} className="px-3 py-1.5 text-sm rounded-lg border border-sky-700 text-sky-300">导入到抽卡姬</button>
             <Link href="/comfy" className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300">抽卡姬</Link>
+            <button onClick={() => setOrderOpen(true)} disabled={!sections.length} className="px-3 py-1.5 text-sm rounded-lg border border-amber-800/70 text-amber-200 disabled:opacity-40">排列</button>
             <button onClick={() => { const n = pickRandomSelected(sections, locked, selected); setSelected(n); saveSelected(n); }} disabled={!sections.length} className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300 disabled:opacity-40">随机</button>
             <button onClick={() => {
               if (!loggedIn) return toastMsg("请先登录后再上传");
@@ -208,8 +216,19 @@ export default function GeneratorPage() {
           </div>
         ))}
 
-        {loggedIn && !isAdmin && (
-          <p className="text-[11px] text-neutral-600">当前账号不是管理员。请在 Vercel 设置 ADMIN_USER_IDS 为你的 Discord 用户 ID 后重新部署。</p>
+        {authReady && !isAdmin && (
+          <LexiconLocalPanel
+            lists={localLists}
+            setLists={setLocalLists}
+            categories={(index?.categories || []).map((c) => ({ id: c.id, label: c.label }))}
+            onDeleted={(id) => {
+              const next = syncEnabledOrder(enabledIds.filter((x) => x !== id));
+              setEnabledIds(next);
+              void reload(next, fixed);
+            }}
+            onChanged={() => { void reload(enabledIds, fixed); }}
+            toastMsg={toastMsg}
+          />
         )}
 
         {isAdmin && (
@@ -299,7 +318,7 @@ export default function GeneratorPage() {
                 upsertLocalList(list);
                 setLocalLists(loadLocalLists());
                 setListEnabled(list.id, true);
-                const next = [...enabledIds, list.id];
+                const next = syncEnabledOrder([...enabledIds, list.id]);
                 setEnabledIds(next);
                 const map = loadEnabledMap() || {};
                 map[list.id] = true;
@@ -328,6 +347,17 @@ export default function GeneratorPage() {
           </div>
         </div>
       )}
+
+      <LexiconOrderModal
+        open={orderOpen}
+        items={sections.map((s) => ({ id: s.key, label: s.label }))}
+        onClose={() => setOrderOpen(false)}
+        onChange={(ids) => {
+          saveEnabledOrder(ids);
+          setEnabledIds(ids);
+          void reload(ids, fixed);
+        }}
+      />
 
       {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-white text-black text-sm">{toast}</div>}
     </div>

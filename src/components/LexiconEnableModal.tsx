@@ -14,6 +14,7 @@ import {
   saveEnabledMap,
   saveFilterTags,
   setListEnabled,
+  syncEnabledOrder,
   type LocalLexiconList,
   type LexiconIndex,
 } from "@/lib/lexicon";
@@ -96,7 +97,7 @@ export default function LexiconEnableModal({
   const toggleList = async (id: string) => {
     const on = !enabledIds.includes(id);
     setListEnabled(id, on);
-    const next = on ? [...enabledIds, id] : enabledIds.filter((x) => x !== id);
+    const next = syncEnabledOrder(on ? [...enabledIds, id] : enabledIds.filter((x) => x !== id));
     setEnabledIds(next);
     const map = loadEnabledMap() || {};
     map[id] = on;

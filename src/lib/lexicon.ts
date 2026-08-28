@@ -70,6 +70,7 @@ const LOCKED_KEY = "oc-lexicon-locked-v2";
 const FIXED_KEY = "oc-lexicon-fixed-v2";
 const CONTENT_CACHE_KEY = "oc-lexicon-content-cache-v2";
 const FILTER_TAGS_KEY = "oc-lexicon-filter-tags-v1";
+const ORDER_KEY = "oc-lexicon-enabled-order-v1";
 
 /** Wipe legacy whole-package preset keys once */
 export function abandonLegacyPresets() {
@@ -110,6 +111,35 @@ export function upsertLocalList(list: LocalLexiconList) {
 
 export function deleteLocalList(id: string) {
   saveLocalLists(loadLocalLists().filter((x) => x.id !== id));
+  setListEnabled(id, false);
+  const order = loadEnabledOrder().filter((x) => x !== id);
+  saveEnabledOrder(order);
+}
+
+export function loadEnabledOrder(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(ORDER_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveEnabledOrder(ids: string[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(ORDER_KEY, JSON.stringify(ids));
+}
+
+/** Keep saved order, append newly enabled ids, drop missing ones. */
+export function syncEnabledOrder(enabledIds: string[]): string[] {
+  const set = new Set(enabledIds);
+  const next = loadEnabledOrder().filter((id) => set.has(id));
+  for (const id of enabledIds) if (!next.includes(id)) next.push(id);
+  saveEnabledOrder(next);
+  return next;
 }
 
 export function loadEnabledMap(): Record<string, boolean> | null {
@@ -139,10 +169,10 @@ export function resolveEnabledIds(
   defaultIds: string[]
 ): string[] {
   const saved = loadEnabledMap();
-  if (!saved) {
-    return allIds.filter((id) => defaultIds.includes(id));
-  }
-  return allIds.filter((id) => saved[id] === true);
+  const enabled = saved
+    ? allIds.filter((id) => saved[id] === true)
+    : allIds.filter((id) => defaultIds.includes(id));
+  return syncEnabledOrder(enabled);
 }
 
 export function loadSelected(): Record<string, number> {
