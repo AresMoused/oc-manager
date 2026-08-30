@@ -167,6 +167,7 @@ export default function GeneratorPage() {
               selected={selected}
               prompt={prompt}
               onReorder={applyTokenOrder}
+              onCopied={() => toastMsg("已复制这一段")}
             />
             <div className="flex flex-wrap gap-1.5 sm:flex-col sm:w-[7.5rem] shrink-0">
             <button onClick={async () => { try { await navigator.clipboard.writeText(prompt); toastMsg("已复制"); } catch { toastMsg("失败"); } }} className="px-3 py-1.5 text-sm rounded-lg bg-purple-600 text-white">复制</button>
