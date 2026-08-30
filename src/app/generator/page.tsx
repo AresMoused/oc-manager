@@ -6,15 +6,16 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import GeneratorAdminPanel from "@/components/GeneratorAdminPanel";
 import LexiconLocalPanel from "@/components/LexiconLocalPanel";
-import LexiconOrderModal from "@/components/LexiconOrderModal";
+import PromptTokenBoxes from "@/components/PromptTokenBoxes";
 import type { BuilderSection } from "@/lib/promptBuilder";
 import {
-  abandonLegacyPresets, buildEnabledBuilderData, composeFromSections,
-  fetchLexiconCatalog, loadEnabledMap, loadFilterTags, loadFixed, loadLocalLists,
-  loadLocked, loadSelected, pickRandomSelected, resolveEnabledIds,
-  saveEnabledMap, saveEnabledOrder, saveFilterTags, saveFixed, saveLocked, saveSelected,
-  setListEnabled, syncEnabledOrder,
-  type LexiconIndex, type LocalLexiconList,
+  abandonLegacyPresets, buildEnabledBuilderData,
+  composeFromTokens, fetchLexiconCatalog, joinFixedParts, loadEnabledMap,
+  loadFilterTags, loadFixed, loadLocalLists, loadLocked, loadSelected, loadTokenOrder,
+  pickRandomSelected, reconcileTokens, resolveEnabledIds,
+  saveEnabledMap, saveFilterTags, saveFixed, saveLocked, saveSelected,
+  saveTokenOrder, setListEnabled, syncEnabledOrder,
+  type LexiconIndex, type LocalLexiconList, type PromptToken,
 } from "@/lib/lexicon";
 import { LexiconCatalogBody, LexiconFilterBar } from "@/components/LexiconCatalog";
 
@@ -49,7 +50,7 @@ export default function GeneratorPage() {
   const [upPublish, setUpPublish] = useState(false);
   const [userName, setUserName] = useState("");
   const [filterTags, setFilterTags] = useState<string[]>([]);
-  const [orderOpen, setOrderOpen] = useState(false);
+  const [tokens, setTokens] = useState<PromptToken[]>([]);
   const [authReady, setAuthReady] = useState(false);
 
   const toastMsg = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2200); };
@@ -105,7 +106,32 @@ export default function GeneratorPage() {
     })();
   }, [reload]);
 
-  const prompt = useMemo(() => composeFromSections(fixed, sections, selected), [fixed, sections, selected]);
+  useEffect(() => {
+    setTokens((prev) => {
+      const base = prev.length ? prev : loadTokenOrder();
+      const next = reconcileTokens(base, fixed, sections, selected);
+      if (JSON.stringify(next) === JSON.stringify(prev)) return prev;
+      saveTokenOrder(next);
+      return next;
+    });
+  }, [fixed, sections, selected]);
+
+  const prompt = useMemo(
+    () => composeFromTokens(tokens, sections, selected),
+    [tokens, sections, selected]
+  );
+
+  const applyTokenOrder = (next: PromptToken[]) => {
+    setTokens(next);
+    saveTokenOrder(next);
+    const fx = joinFixedParts(
+      next.filter((t): t is Extract<PromptToken, { kind: "fixed" }> => t.kind === "fixed").map((t) => t.text)
+    );
+    if (fx !== fixed) {
+      setFixed(fx);
+      saveFixed(fx);
+    }
+  };
 
   const cats = useMemo(() => {
     const list = index ? index.categories.map((c) => ({ ...c, lists: [...c.lists] })) : [];
@@ -133,11 +159,17 @@ export default function GeneratorPage() {
     <div className="min-h-screen flex flex-col">
       <Navbar />
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-6 space-y-4">
-        <div className="sticky top-14 z-40 -mx-4 px-4 py-3 bg-[#0a0a0a]/95 backdrop-blur border-b border-neutral-800 flex flex-col sm:flex-row gap-2">
-          <div className="flex-1 font-mono text-xs text-neutral-400 bg-[#111] border border-neutral-800 rounded-lg px-3 py-2 max-h-16 overflow-y-auto break-all">{prompt || "（未选择）"}</div>
-          <div className="flex flex-wrap gap-1.5">
+        <div className="sticky top-14 z-40 -mx-4 px-4 py-3 bg-[#0a0a0a]/95 backdrop-blur border-b border-neutral-800 flex flex-col gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <PromptTokenBoxes
+              tokens={tokens}
+              sections={sections}
+              selected={selected}
+              prompt={prompt}
+              onReorder={applyTokenOrder}
+            />
+            <div className="flex flex-wrap gap-1.5 sm:flex-col sm:w-[7.5rem] shrink-0">
             <button onClick={async () => { try { await navigator.clipboard.writeText(prompt); toastMsg("已复制"); } catch { toastMsg("失败"); } }} className="px-3 py-1.5 text-sm rounded-lg bg-purple-600 text-white">复制</button>
-            <button onClick={() => setOrderOpen(true)} disabled={!sections.length} className="px-3 py-1.5 text-sm rounded-lg border border-amber-800/70 text-amber-200 disabled:opacity-40">排列</button>
             <button onClick={() => { const n = pickRandomSelected(sections, locked, selected); setSelected(n); saveSelected(n); }} disabled={!sections.length} className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300 disabled:opacity-40">随机</button>
             <button onClick={() => {
               const n: Record<string, number> = {};
@@ -155,6 +187,7 @@ export default function GeneratorPage() {
               setUpPublish(false);
               setUploadOpen(true);
             }} className="px-3 py-1.5 text-sm rounded-lg border border-sky-800 text-sky-300">上传列表</button>
+            </div>
           </div>
         </div>
 
@@ -164,9 +197,13 @@ export default function GeneratorPage() {
           <p className="text-neutral-500 text-sm">CDN 词库 · 启动后才参与随机</p>
         </div>
 
-        <div className="bg-[#111] border border-neutral-800 rounded-xl p-3 flex gap-2 items-center">
-          <span className="text-[11px] text-neutral-500">fixed:</span>
-          <input className="flex-1 bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs font-mono" value={fixed} onChange={(e) => { setFixed(e.target.value); saveFixed(e.target.value); }} />
+        <div className="bg-[#111] border border-neutral-800 rounded-xl p-3 space-y-1">
+          <span className="text-[11px] text-neutral-500">fixed（逗号分段，出现在中文标签里）</span>
+          <textarea
+            className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs font-mono resize-y min-h-[40px]"
+            value={fixed}
+            onChange={(e) => { setFixed(e.target.value); saveFixed(e.target.value); }}
+          />
         </div>
 
         <div className="bg-[#111] border border-neutral-800 rounded-xl overflow-hidden">
@@ -353,17 +390,6 @@ export default function GeneratorPage() {
           </div>
         </div>
       )}
-
-      <LexiconOrderModal
-        open={orderOpen}
-        items={sections.map((s) => ({ id: s.key, label: s.label }))}
-        onClose={() => setOrderOpen(false)}
-        onChange={(ids) => {
-          saveEnabledOrder(ids);
-          setEnabledIds(ids);
-          void reload(ids, fixed);
-        }}
-      />
 
       {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-white text-black text-sm">{toast}</div>}
     </div>

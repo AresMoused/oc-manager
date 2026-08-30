@@ -71,6 +71,7 @@ const FIXED_KEY = "oc-lexicon-fixed-v2";
 const CONTENT_CACHE_KEY = "oc-lexicon-content-cache-v2";
 const FILTER_TAGS_KEY = "oc-lexicon-filter-tags-v1";
 const ORDER_KEY = "oc-lexicon-enabled-order-v1";
+const TOKEN_ORDER_KEY = "oc-lexicon-token-order-v1";
 
 /** Wipe legacy whole-package preset keys once */
 export function abandonLegacyPresets() {
@@ -411,6 +412,130 @@ export function composeFromSections(
     }
   }
   return out;
+}
+
+export type PromptToken =
+  | { kind: "fixed"; id: string; text: string }
+  | { kind: "pick"; id: string; sectionKey: string };
+
+export function splitFixedParts(fixed: string): string[] {
+  return String(fixed || "")
+    .split(/[,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+export function joinFixedParts(parts: string[]): string {
+  if (!parts.length) return "";
+  return parts.join(", ") + ", ";
+}
+
+export function withTagComma(tags: string): string {
+  const t = String(tags || "").trim();
+  if (!t) return "";
+  return /,\s*$/.test(t) ? t.endsWith(" ") ? t : t + " " : t + ", ";
+}
+
+export function tokenPromptText(
+  token: PromptToken,
+  sections: BuilderSection[],
+  selected: Record<string, number>
+): string {
+  if (token.kind === "fixed") return withTagComma(token.text);
+  const sec = sections.find((s) => s.key === token.sectionKey);
+  const idx = selected[token.sectionKey];
+  if (!sec || idx == null || idx < 0 || !sec.items[idx]) return "";
+  return withTagComma(sec.items[idx].tags || "");
+}
+
+export function tokenLabel(
+  token: PromptToken,
+  sections: BuilderSection[],
+  selected: Record<string, number>
+): string {
+  if (token.kind === "fixed") return token.text;
+  const sec = sections.find((s) => s.key === token.sectionKey);
+  const idx = selected[token.sectionKey];
+  if (!sec || idx == null || idx < 0 || !sec.items[idx]) return sec?.label || token.sectionKey;
+  return sec.items[idx].name || sec.label;
+}
+
+export function composeFromTokens(
+  tokens: PromptToken[],
+  sections: BuilderSection[],
+  selected: Record<string, number>
+): string {
+  return tokens.map((t) => tokenPromptText(t, sections, selected)).join("");
+}
+
+export function loadTokenOrder(): PromptToken[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(TOKEN_ORDER_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((t) => t && (t.kind === "fixed" || t.kind === "pick")) as PromptToken[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveTokenOrder(tokens: PromptToken[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(TOKEN_ORDER_KEY, JSON.stringify(tokens));
+}
+
+function newTokenId(prefix: string) {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Keep custom order; refresh fixed fragments; drop stale picks; append new picks. */
+export function reconcileTokens(
+  prev: PromptToken[],
+  fixed: string,
+  sections: BuilderSection[],
+  selected: Record<string, number>
+): PromptToken[] {
+  const parts = splitFixedParts(fixed);
+  const selectedKeys = new Set(
+    sections
+      .map((s) => s.key)
+      .filter((k) => selected[k] != null && selected[k]! >= 0)
+  );
+
+  const next: PromptToken[] = [];
+  let partI = 0;
+  const seenPick = new Set<string>();
+  for (const t of prev) {
+    if (t.kind === "fixed") {
+      if (partI < parts.length) {
+        next.push({ kind: "fixed", id: t.id || newTokenId("f"), text: parts[partI]! });
+        partI += 1;
+      }
+      continue;
+    }
+    if (!selectedKeys.has(t.sectionKey) || seenPick.has(t.sectionKey)) continue;
+    seenPick.add(t.sectionKey);
+    next.push({ kind: "pick", id: `pick:${t.sectionKey}`, sectionKey: t.sectionKey });
+  }
+  if (partI < parts.length) {
+    const extras: PromptToken[] = [];
+    while (partI < parts.length) {
+      extras.push({ kind: "fixed", id: newTokenId("f"), text: parts[partI]! });
+      partI += 1;
+    }
+    let lastFixed = -1;
+    for (let i = 0; i < next.length; i++) {
+      if (next[i]!.kind === "fixed") lastFixed = i;
+    }
+    next.splice(lastFixed + 1, 0, ...extras);
+  }
+  for (const s of sections) {
+    if (!selectedKeys.has(s.key) || seenPick.has(s.key)) continue;
+    next.push({ kind: "pick", id: `pick:${s.key}`, sectionKey: s.key });
+  }
+  return next;
 }
 
 export function parseFilterTags(raw: string | string[] | undefined | null): string[] {
