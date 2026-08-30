@@ -8,7 +8,6 @@ import GeneratorAdminPanel from "@/components/GeneratorAdminPanel";
 import LexiconLocalPanel from "@/components/LexiconLocalPanel";
 import LexiconOrderModal from "@/components/LexiconOrderModal";
 import type { BuilderSection } from "@/lib/promptBuilder";
-import { loadParams, saveParams } from "@/lib/comfyConfig";
 import {
   abandonLegacyPresets, buildEnabledBuilderData, composeFromSections,
   fetchLexiconCatalog, loadEnabledMap, loadFilterTags, loadFixed, loadLocalLists,
@@ -138,10 +137,15 @@ export default function GeneratorPage() {
           <div className="flex-1 font-mono text-xs text-neutral-400 bg-[#111] border border-neutral-800 rounded-lg px-3 py-2 max-h-16 overflow-y-auto break-all">{prompt || "（未选择）"}</div>
           <div className="flex flex-wrap gap-1.5">
             <button onClick={async () => { try { await navigator.clipboard.writeText(prompt); toastMsg("已复制"); } catch { toastMsg("失败"); } }} className="px-3 py-1.5 text-sm rounded-lg bg-purple-600 text-white">复制</button>
-            <button onClick={() => { if (!prompt.trim()) return toastMsg("为空"); const cur = loadParams(); saveParams({ ...cur, prompt_character: prompt.trim() }); toastMsg("已写入抽卡姬"); }} className="px-3 py-1.5 text-sm rounded-lg border border-sky-700 text-sky-300">导入到抽卡姬</button>
-            <Link href="/comfy" className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300">抽卡姬</Link>
             <button onClick={() => setOrderOpen(true)} disabled={!sections.length} className="px-3 py-1.5 text-sm rounded-lg border border-amber-800/70 text-amber-200 disabled:opacity-40">排列</button>
             <button onClick={() => { const n = pickRandomSelected(sections, locked, selected); setSelected(n); saveSelected(n); }} disabled={!sections.length} className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300 disabled:opacity-40">随机</button>
+            <button onClick={() => {
+              const n: Record<string, number> = {};
+              for (const s of sections) n[s.key] = -1;
+              setSelected(n);
+              saveSelected(n);
+              toastMsg("已重置选择");
+            }} disabled={!sections.length} className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300 disabled:opacity-40">重置选择</button>
             <button onClick={() => {
               if (!loggedIn) return toastMsg("请先登录后再上传");
               const first = index?.categories[0]?.id || "user";
@@ -241,6 +245,8 @@ export default function GeneratorPage() {
             reload={reload}
             pending={pending}
             setPending={setPending}
+            localLists={localLists}
+            setLocalLists={setLocalLists}
             toastMsg={toastMsg}
           />
         )}

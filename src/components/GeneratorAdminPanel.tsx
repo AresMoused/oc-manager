@@ -5,9 +5,12 @@ import {
   collectFilterTags,
   fetchLexiconCatalog,
   invalidateLexiconContentCache,
+  syncEnabledOrder,
   type LexiconIndex,
   type LexiconCategory,
+  type LocalLexiconList,
 } from "@/lib/lexicon";
+import LexiconLocalPanel from "@/components/LexiconLocalPanel";
 
 type PendingRow = { id: string; label: string; listId: string; submitterName: string };
 
@@ -29,9 +32,11 @@ export default function GeneratorAdminPanel(props: {
   reload: (ids: string[], fx: string) => Promise<void>;
   pending: PendingRow[];
   setPending: (v: PendingRow[] | ((p: PendingRow[]) => PendingRow[])) => void;
+  localLists: LocalLexiconList[];
+  setLocalLists: (v: LocalLexiconList[]) => void;
   toastMsg: (m: string) => void;
 }) {
-  const { index, setIndex, enabledIds, setEnabledIds, fixed, reload, pending, setPending, toastMsg } = props;
+  const { index, setIndex, enabledIds, setEnabledIds, fixed, reload, pending, setPending, localLists, setLocalLists, toastMsg } = props;
   const [adminOpen, setAdminOpen] = useState(true);
   const [adminBusy, setAdminBusy] = useState(false);
   const [upLabel, setUpLabel] = useState("");
@@ -182,6 +187,18 @@ export default function GeneratorAdminPanel(props: {
       </button>
       {adminOpen && (
         <div className="px-4 pb-4 border-t border-amber-900/40 space-y-4 pt-3">
+          <LexiconLocalPanel
+            lists={localLists}
+            setLists={setLocalLists}
+            categories={(index?.categories || []).map((c) => ({ id: c.id, label: c.label }))}
+            onDeleted={(id) => {
+              const next = syncEnabledOrder(enabledIds.filter((x) => x !== id));
+              setEnabledIds(next);
+              void reload(next, fixed);
+            }}
+            onChanged={() => { void reload(enabledIds, fixed); }}
+            toastMsg={toastMsg}
+          />
           <div className="border border-neutral-800 rounded-lg p-3 space-y-2">
             <div className="text-xs text-amber-200/90 font-medium">管理员直接发布（跳过审核）</div>
             <input className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm" placeholder="列表名称" value={upLabel} onChange={(e) => setUpLabel(e.target.value)} />
