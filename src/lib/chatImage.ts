@@ -2,7 +2,7 @@ import type { Character } from "@/lib/types";
 import type { AiApiConfig, AiModelParams } from "@/lib/aiConfig";
 import { appearanceOf, composeAppearancePrompt } from "@/lib/appearance";
 import { runSavedComfyJob } from "@/lib/comfyConfig";
-import { writeImagePrompt } from "@/lib/imagePrompt";
+import { writeImagePrompt, resolveComfyPrompt } from "@/lib/imagePrompt";
 
 function snapshotPrompt(c: Character): string {
   const list = c.prompts || [];
@@ -48,6 +48,8 @@ export async function generateCharacterStill(
     });
     prompt = written.prompt;
   }
+  const roster = llm?.characters?.length ? llm.characters : [c];
+  prompt = resolveComfyPrompt(prompt, roster);
   if (!prompt.trim()) throw new Error(`${c.name} 还没有外观提示词`);
   const ov: Parameters<typeof runSavedComfyJob>[0] = { prompt_character: prompt, prompt_suffix: "" };
   const app = appearanceOf(c);

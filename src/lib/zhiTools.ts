@@ -2,7 +2,7 @@
 
 import type { AppearanceProfile, Character, OutfitPreset, StoredPrompt } from "@/lib/types";
 import type { AiApiConfig, AiModelParams } from "@/lib/aiConfig";
-import { writeImagePrompt } from "@/lib/imagePrompt";
+import { writeImagePrompt, resolveComfyPrompt } from "@/lib/imagePrompt";
 import type { WorldMeta } from "@/lib/worlds";
 import type { LoreMap, WorldLore } from "@/lib/worldLore";
 import { getLore, emptyLore } from "@/lib/worldLore";
@@ -266,7 +266,7 @@ export async function runQueries(
           try {
             const written = await writeImagePrompt({
               character: c,
-              characters: c ? [c] : ctx.characters.slice(0, 4),
+              characters: ctx.characters,
               extra,
               scene: extra,
               history: ctx.historyText,
@@ -286,6 +286,7 @@ export async function runQueries(
           }
         }
         ctx.onStatus("抽卡姬出图中…");
+        ov.prompt_character = resolveComfyPrompt(String(ov.prompt_character || extra), ctx.characters);
         pushDebugLog({
           source: ctx.logSource || "陪玩姬",
           kind: "tool",

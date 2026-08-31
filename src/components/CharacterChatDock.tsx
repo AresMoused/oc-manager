@@ -337,7 +337,7 @@ export default function CharacterChatDock({
       const queries = extractSystemQueries(raw).filter((q) => String(q.skill || q.type) !== "generate_image");
       if (queries.length) {
         const result = await runQueries(queries, {
-          characters: present.length ? present : [host],
+          characters,
           pageCharacter: host,
           pathname: `/character/${host.id}`,
           signal: ac.signal,
@@ -379,7 +379,7 @@ export default function CharacterChatDock({
             params,
             history: nextMsgs.map((m) => `${m.speakerName}: ${m.content}`).join("\n").slice(-4000),
             userLine: text,
-            characters: present.length ? present : [host],
+            characters,
           });
           setSession((s) => ({
             ...s,

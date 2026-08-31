@@ -3,7 +3,7 @@
 import type { Character } from "@/lib/types";
 import type { AiApiConfig, AiModelParams, ChatMessage } from "@/lib/aiConfig";
 import { completeChat } from "@/lib/aiConfig";
-import { appearanceOf, appearanceSummary, composeAppearancePrompt } from "@/lib/appearance";
+import { appearanceOf, appearanceSummary, composeAppearancePrompt, findOutfit, layerText } from "@/lib/appearance";
 import { packForImage, type ContextPack } from "@/lib/contextPacks";
 import { pushDebugLog } from "@/lib/debugLog";
 
@@ -41,52 +41,123 @@ export function outfitListBlock(chars: Character[]): string {
 }
 
 export function expandImageMacros(text: string, chars: Character[]): string {
-  return String(text || "").replace(/\$(\{[\s\S]*?\})\$/g, (_, raw: string) => {
-    try {
-      const o = JSON.parse(raw) as {
-        name?: string;
-        angle?: string;
-        upperBody?: string;
-        lowerBody?: string;
-      };
-      const name = String(o.name || "").toLowerCase();
-      const angle = /back/.test(String(o.angle || "")) ? "back" : "front";
-      const outfitChar = chars.find((c) =>
-        appearanceOf(c).outfits.some(
-          (x) =>
-            x.nameCN.toLowerCase() === name ||
-            x.nameEN.toLowerCase() === name
-        )
+  return String(text || "").replace(/\$(\{[\s\S]*?\})\$?/g, (_, raw: string) => expandOneMacro(raw, chars));
+}
+
+export function resolveComfyPrompt(text: string, chars: Character[]): string {
+  let s = expandImageMacros(text, chars);
+  s = s.replace(/\$\{[\s\S]*?\}/g, "");
+  s = s.replace(/\{Artist\}/gi, "");
+  s = s.replace(/\s+,/g, ",").replace(/,(?:\s*,)+/g, ",").replace(/^,\s*|,\s*$/g, "");
+  return s.replace(/\s+/g, " ").trim();
+}
+
+function normName(s: string): string {
+  return s.trim().toLowerCase().replace(/[_\s-]+/g, "");
+}
+
+function findCharByMacro(chars: Character[], name: string): Character | undefined {
+  const n = name.trim().toLowerCase();
+  const compact = normName(name);
+  if (!n) return undefined;
+  return (
+    chars.find((c) => c.name.toLowerCase() === n) ||
+    chars.find((c) => {
+      const app = appearanceOf(c);
+      return app.nameEN.toLowerCase() === n || app.nameCN.toLowerCase() === n;
+    }) ||
+    chars.find((c) => c.name.toLowerCase().includes(n) || n.includes(c.name.toLowerCase())) ||
+    chars.find((c) => {
+      const app = appearanceOf(c);
+      return (
+        normName(app.nameEN) === compact ||
+        normName(app.nameCN) === compact ||
+        normName(c.name) === compact ||
+        normName(app.nameEN).includes(compact) ||
+        compact.includes(normName(app.nameEN))
       );
-      if (outfitChar && (o.upperBody === "visible" || o.lowerBody === "visible")) {
-        return composeAppearancePrompt(appearanceOf(outfitChar), {
-          angle,
-          skipOutfit: false,
-          outfitHint: o.name,
-        });
-      }
-      const c =
-        chars.find((x) => {
-          const app = appearanceOf(x);
-          return (
-            x.name.toLowerCase() === name ||
-            app.nameEN.toLowerCase() === name ||
-            app.nameCN.toLowerCase() === name
-          );
-        }) || chars[0];
-      if (!c) return "";
-      const upper = o.upperBody === "nsfw" ? "nsfw" : "sfw";
-      const lower =
-        o.lowerBody === "hidden" ? "hidden" : o.lowerBody === "nsfw" ? "nsfw" : "sfw";
-      return composeAppearancePrompt(appearanceOf(c), {
-        angle,
-        upper,
-        lower,
-        skipOutfit: true,
-      });
-    } catch {
-      return "";
+    })
+  );
+}
+
+function findOutfitOwner(chars: Character[], name: string) {
+  const n = name.trim().toLowerCase();
+  for (const c of chars) {
+    const hit = findOutfit(appearanceOf(c), name);
+    if (
+      hit &&
+      (hit.nameCN.toLowerCase() === n ||
+        hit.nameEN.toLowerCase() === n ||
+        hit.nameEN.toLowerCase().includes(n) ||
+        hit.nameCN.toLowerCase().includes(n))
+    ) {
+      return { c, outfit: hit };
     }
+  }
+  for (const c of chars) {
+    const hit = findOutfit(appearanceOf(c), name);
+    if (hit) return { c, outfit: hit };
+  }
+  return undefined;
+}
+
+function parseMacroObj(raw: string): {
+  name?: string;
+  angle?: string;
+  upperBody?: string;
+  lowerBody?: string;
+} | null {
+  const cleaned = raw.replace(/\\"/g, '"').replace(/\\'/g, "'").trim();
+  try {
+    return JSON.parse(cleaned) as {
+      name?: string;
+      angle?: string;
+      upperBody?: string;
+      lowerBody?: string;
+    };
+  } catch {
+    const get = (k: string) =>
+      cleaned.match(new RegExp(`${k}\\s*[:=]\\s*["']([^"']+)["']`, "i"))?.[1];
+    const name = get("name");
+    if (!name) return null;
+    return {
+      name,
+      angle: get("angle"),
+      upperBody: get("upperBody") || get("upper"),
+      lowerBody: get("lowerBody") || get("lower"),
+    };
+  }
+}
+
+function expandOneMacro(raw: string, chars: Character[]): string {
+  const o = parseMacroObj(raw);
+  if (!o?.name) return "";
+  const angle = /back/.test(String(o.angle || "")) ? "back" : "front";
+  const upper = String(o.upperBody || "").toLowerCase();
+  const lower = String(o.lowerBody || "").toLowerCase();
+  const looksLikeChar = /^(sfw|nsfw|hidden)?$/.test(upper) && /sfw|nsfw/.test(upper + lower);
+  if (!looksLikeChar && (upper === "visible" || lower === "visible" || (upper === "hidden" && lower === "hidden"))) {
+    const hit = findOutfitOwner(chars, o.name);
+    if (!hit) return "";
+    const parts: string[] = [];
+    if (upper !== "hidden") parts.push(layerText(hit.outfit.upper, angle));
+    if (lower !== "hidden") parts.push(layerText(hit.outfit.full, angle));
+    return parts.filter(Boolean).join(", ");
+  }
+  const c = findCharByMacro(chars, o.name);
+  if (!c) {
+    const hit = findOutfitOwner(chars, o.name);
+    if (!hit) return "";
+    const parts: string[] = [];
+    if (upper !== "hidden") parts.push(layerText(hit.outfit.upper, angle));
+    if (lower !== "hidden") parts.push(layerText(hit.outfit.full, angle));
+    return parts.filter(Boolean).join(", ");
+  }
+  return composeAppearancePrompt(appearanceOf(c), {
+    angle,
+    upper: upper === "nsfw" ? "nsfw" : "sfw",
+    lower: lower === "hidden" ? "hidden" : lower === "nsfw" ? "nsfw" : "sfw",
+    skipOutfit: true,
   });
 }
 
@@ -107,7 +178,7 @@ export function extractImagePrompt(raw: string, chars: Character[]): string {
         .map((l) => l.trim())
         .find((l) => l.length > 24 && /[a-z]/i.test(l) && l.includes(",")) || cleaned;
   }
-  return expandImageMacros(pick.replace(/\s+/g, " ").trim(), chars);
+  return resolveComfyPrompt(pick.replace(/\s+/g, " ").trim(), chars);
 }
 
 function packMessages(pack: ContextPack, vars: Record<string, string>): ChatMessage[] {

@@ -254,7 +254,7 @@ export default function ZhiHuiJiDock() {
               params,
               history: thread.messages.map((m) => `${m.role}: ${m.content}`).join("\n").slice(-4000),
               userLine: text,
-              characters: pageChar ? [pageChar] : characters.slice(0, 4),
+              characters,
             });
             lastCharId = subject.id;
             for (const url of job.urls) allImages.push({ url, characterId: subject.id });
