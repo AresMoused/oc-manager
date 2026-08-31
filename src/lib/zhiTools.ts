@@ -1,6 +1,8 @@
 /** 陪玩姬 tool protocol, aligned with 智绘姬 SystemQuery. */
 
 import type { AppearanceProfile, Character, OutfitPreset, StoredPrompt } from "@/lib/types";
+import type { AiApiConfig, AiModelParams } from "@/lib/aiConfig";
+import { writeImagePrompt } from "@/lib/imagePrompt";
 import type { WorldMeta } from "@/lib/worlds";
 import type { LoreMap, WorldLore } from "@/lib/worldLore";
 import { getLore, emptyLore } from "@/lib/worldLore";
@@ -130,6 +132,8 @@ export type ZhiToolCtx = {
   lastUserLine?: string;
   preferCharacter?: Character;
   canWrite?: boolean;
+  ai?: { config: AiApiConfig; params: AiModelParams };
+  historyText?: string;
 };
 
 export async function runQueries(
@@ -257,6 +261,31 @@ export async function runQueries(
           prompt_suffix: "",
         };
         if (app?.negative) ov.negative_prompt = app.negative;
+        if (ctx.ai) {
+          ctx.onStatus("陪玩姬写提示词…");
+          try {
+            const written = await writeImagePrompt({
+              character: c,
+              characters: c ? [c] : ctx.characters.slice(0, 4),
+              extra,
+              scene: extra,
+              history: ctx.historyText,
+              userLine: ctx.lastUserLine || extra,
+              config: ctx.ai.config,
+              params: ctx.ai.params,
+              signal: ctx.signal,
+              fallback: characterPrompt || extra,
+              source: ctx.logSource || "出图提示词",
+            });
+            if (written.prompt) {
+              ov.prompt_character = written.prompt;
+              usedLabel += ` · 预设 ${written.packName}`;
+            }
+          } catch (e) {
+            lines.push(`提示词生成失败，改用卡面组合：${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+        ctx.onStatus("抽卡姬出图中…");
         pushDebugLog({
           source: ctx.logSource || "陪玩姬",
           kind: "tool",

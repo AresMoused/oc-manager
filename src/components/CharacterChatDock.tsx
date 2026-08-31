@@ -41,10 +41,11 @@ import { type ZhiPendingChange } from "@/lib/zhiSkills";
 import ChatHtml from "@/components/ChatHtml";
 import ChatImage, { ImagePreview } from "@/components/ChatImage";
 import PresetEditor from "@/components/PresetEditor";
+import RequestTypesPanel from "@/components/RequestTypesPanel";
 import { useDockGeo } from "@/hooks/useDockGeo";
 
 type Panel = "none" | "settings" | "history" | "summary";
-type SettingsTab = "api" | "params" | "preset" | "persona" | "features";
+type SettingsTab = "api" | "params" | "preset" | "persona" | "types" | "features";
 
 function Avatar({ src, name, size = 32 }: { src?: string; name: string; size?: number }) {
   const letter = (name || "?").slice(0, 1);
@@ -342,6 +343,8 @@ export default function CharacterChatDock({
           lastUserLine: text,
           preferCharacter: pov,
           canWrite: canEditCard && !localOnly,
+          ai: { config: cfg, params },
+          historyText: nextMsgs.map((m) => `${m.speakerName}: ${m.content}`).join("\n").slice(-4000),
         });
         if (result.pending.length) setSkillPending(result.pending);
         if (result.images.length) {
@@ -366,7 +369,13 @@ export default function CharacterChatDock({
         const subject = present.find((c) => c.id !== pov.id) || host;
         ping(`出图中 · ${subject.name}`);
         try {
-          const job = await generateCharacterStill(subject, session.scene, ac.signal, "角色对话");
+          const job = await generateCharacterStill(subject, session.scene, ac.signal, "角色对话", {
+            config: cfg,
+            params,
+            history: nextMsgs.map((m) => `${m.speakerName}: ${m.content}`).join("\n").slice(-4000),
+            userLine: text,
+            characters: present.length ? present : [host],
+          });
           setSession((s) => ({
             ...s,
             messages: [
@@ -603,6 +612,7 @@ export default function CharacterChatDock({
                         ["params", "参数"],
                         ["preset", "预设"],
                         ["persona", "人设"],
+                        ["types", "类型"],
                         ["features", "功能"],
                       ] as [SettingsTab, string][]).map(([k, lab]) => (
                         <button
@@ -712,11 +722,12 @@ export default function CharacterChatDock({
                           />
                         </>
                       )}
+                      {setTab === "types" && <RequestTypesPanel onPing={ping} />}
                       {setTab === "features" && (
                         <>
                           <label className="flex items-center gap-2 text-neutral-300">
                             <input type="checkbox" checked={!!session.autoImage} onChange={(e) => setSession((s) => ({ ...s, autoImage: e.target.checked }))} />
-                            每轮对话自动出一张图（用对方角色卡提示词）
+                            每轮对话自动出一张图（先让陪玩姬按「展示/正文出图」预设写提示词）
                           </label>
                           <label className="flex items-center gap-2 text-neutral-300">
                             <input type="checkbox" checked={session.autoSummary} onChange={(e) => setSession((s) => ({ ...s, autoSummary: e.target.checked }))} />

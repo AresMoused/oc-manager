@@ -43,12 +43,13 @@ import { pendingFromApply, type ZhiPendingChange } from "@/lib/zhiSkills";
 import ChatHtml from "@/components/ChatHtml";
 import ChatImage, { ImagePreview } from "@/components/ChatImage";
 import PresetEditor from "@/components/PresetEditor";
+import RequestTypesPanel from "@/components/RequestTypesPanel";
 import { generateCharacterStill } from "@/lib/chatImage";
 import type { Character, GalleryImage } from "@/lib/types";
 import { useDockGeo } from "@/hooks/useDockGeo";
 
 type Panel = "none" | "settings" | "history";
-type Tab = "api" | "params" | "persona" | "preset" | "features";
+type Tab = "api" | "params" | "persona" | "preset" | "types" | "features";
 
 export default function ZhiHuiJiDock() {
   const pathname = usePathname() || "/";
@@ -230,6 +231,8 @@ export default function ZhiHuiJiDock() {
           worlds,
           lore,
           canWrite: !onShare,
+          ai: { config: cfg, params },
+          historyText: hist.map((m) => `${m.role}: ${m.content}`).join("\n").slice(-4000),
         });
         lastCharId = result.characterId || lastCharId;
         allPending.push(...result.pending);
@@ -242,7 +245,13 @@ export default function ZhiHuiJiDock() {
         if (subject) {
           setStatus(`出图中 · ${subject.name}`);
           try {
-            const job = await generateCharacterStill(subject, "", ac.signal, "陪玩姬");
+            const job = await generateCharacterStill(subject, "", ac.signal, "陪玩姬", {
+              config: cfg,
+              params,
+              history: thread.messages.map((m) => `${m.role}: ${m.content}`).join("\n").slice(-4000),
+              userLine: text,
+              characters: pageChar ? [pageChar] : characters.slice(0, 4),
+            });
             lastCharId = subject.id;
             for (const url of job.urls) allImages.push({ url, characterId: subject.id });
           } catch (e) {
@@ -437,6 +446,7 @@ export default function ZhiHuiJiDock() {
                         ["params", "参数"],
                         ["persona", "人设"],
                         ["preset", "预设"],
+                        ["types", "请求类型"],
                         ["features", "功能"],
                       ] as [Tab, string][]).map(([k, lab]) => (
                         <button key={k} type="button" className={`px-3 py-2 shrink-0 ${tab === k ? "text-fuchsia-300 border-b-2 border-fuchsia-500" : "text-neutral-500"}`} onClick={() => setTab(k)}>{lab}</button>
@@ -508,6 +518,7 @@ export default function ZhiHuiJiDock() {
                           onImported={(p) => ping(`已导入 ${p.entries.length} 条 / ${(p.regexes || []).length} 正则`)}
                         />
                       )}
+                      {tab === "types" && <RequestTypesPanel onPing={ping} />}
                       {tab === "features" && (
                         <>
                           <label className="flex items-center gap-2 text-neutral-300">
