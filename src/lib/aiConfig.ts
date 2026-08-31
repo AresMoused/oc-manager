@@ -188,9 +188,13 @@ export async function fetchModels(
   return Array.from(new Set(ids)).sort();
 }
 
+export type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ChatContentPart[];
 }
 
 function buildMessages(

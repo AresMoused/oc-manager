@@ -36,20 +36,34 @@ export interface ChatTurn {
   speakerId?: string;
   speakerName: string;
   content: string;
+  imageUrl?: string;
   at: string;
   summarized?: boolean;
 }
 
+export interface ChatSummary {
+  id: string;
+  at: string;
+  title: string;
+  description: string;
+  names: string[];
+}
+
 export interface ChatSession {
+  id: string;
   hostId: string;
+  title: string;
   participantIds: string[];
   povId: string;
   soloMode: SoloMode;
   scene: string;
   autoSummary: boolean;
   messages: ChatTurn[];
+  summaries: ChatSummary[];
   updatedAt: string;
 }
+
+type HostStore = { currentId: string; threads: ChatSession[] };
 
 function safeParse<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
@@ -91,28 +105,77 @@ export function saveChatPreset(p: ChatPresetFile | null) {
   else localStorage.setItem(PRESET_KEY, JSON.stringify(p));
 }
 
+export function loadHostStore(hostId: string): HostStore {
+  if (typeof window === "undefined") return { currentId: "", threads: [] };
+  const raw = safeParse<Record<string, unknown>>(localStorage.getItem(SESSION_KEY), {});
+  const entry = raw[hostId];
+  if (!entry || typeof entry !== "object") return { currentId: "", threads: [] };
+  const obj = entry as Record<string, unknown>;
+  if (Array.isArray(obj.threads)) {
+    return {
+      currentId: String(obj.currentId || ""),
+      threads: obj.threads as ChatSession[],
+    };
+  }
+  const legacy = entry as ChatSession;
+  if (legacy && Array.isArray(legacy.messages)) {
+    const thread: ChatSession = {
+      ...emptySession(hostId),
+      ...legacy,
+      id: legacy.id || crypto.randomUUID(),
+      title: legacy.title || "对话",
+      summaries: legacy.summaries || [],
+    };
+    return { currentId: thread.id, threads: [thread] };
+  }
+  return { currentId: "", threads: [] };
+}
+
+export function saveHostStore(hostId: string, store: HostStore) {
+  if (typeof window === "undefined") return;
+  const raw = safeParse<Record<string, unknown>>(localStorage.getItem(SESSION_KEY), {});
+  raw[hostId] = store;
+  localStorage.setItem(SESSION_KEY, JSON.stringify(raw));
+}
+
 export function loadChatSession(hostId: string): ChatSession | null {
-  if (typeof window === "undefined") return null;
-  const all = safeParse<Record<string, ChatSession>>(localStorage.getItem(SESSION_KEY), {});
-  return all[hostId] || null;
+  const store = loadHostStore(hostId);
+  return store.threads.find((t) => t.id === store.currentId) || store.threads[0] || null;
 }
 
 export function saveChatSession(session: ChatSession) {
-  if (typeof window === "undefined") return;
-  const all = safeParse<Record<string, ChatSession>>(localStorage.getItem(SESSION_KEY), {});
-  all[session.hostId] = { ...session, updatedAt: new Date().toISOString() };
-  localStorage.setItem(SESSION_KEY, JSON.stringify(all));
+  const store = loadHostStore(session.hostId);
+  const i = store.threads.findIndex((t) => t.id === session.id);
+  const next = { ...session, updatedAt: new Date().toISOString() };
+  if (i >= 0) store.threads[i] = next;
+  else store.threads.unshift(next);
+  store.currentId = session.id;
+  saveHostStore(session.hostId, store);
+}
+
+export function listChatThreads(hostId: string): ChatSession[] {
+  return loadHostStore(hostId).threads;
+}
+
+export function deleteChatThread(hostId: string, threadId: string) {
+  const store = loadHostStore(hostId);
+  store.threads = store.threads.filter((t) => t.id !== threadId);
+  if (store.currentId === threadId) store.currentId = store.threads[0]?.id || "";
+  saveHostStore(hostId, store);
 }
 
 export function emptySession(hostId: string): ChatSession {
   return {
+    id: crypto.randomUUID(),
     hostId,
+    title: "新对话",
     participantIds: [hostId],
     povId: hostId,
     soloMode: "mystery",
     scene: "",
     autoSummary: true,
     messages: [],
+    summaries: [],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -258,8 +321,9 @@ export function buildChatMessages(opts: {
   scene: string;
   history: ChatTurn[];
   userLine: string;
+  imageUrl?: string;
 }): ChatMessage[] {
-  const { preset, present, pov, soloMode, scene, history, userLine } = opts;
+  const { preset, present, pov, soloMode, scene, history, userLine, imageUrl } = opts;
   const others = present.filter((c) => c.id !== pov.id);
   const solo = present.length <= 1;
 
@@ -332,7 +396,18 @@ export function buildChatMessages(opts: {
     if (body.trim()) out.push({ role: e.role, content: body });
   }
   if (!historyPlaced) out.push(...histMsgs);
-  out.push({ role: "user", content: `【${pov.name}】\n${userLine}` });
+  const userText = `【${pov.name}】\n${userLine}`;
+  if (imageUrl) {
+    out.push({
+      role: "user",
+      content: [
+        { type: "text", text: userText },
+        { type: "image_url", image_url: { url: imageUrl } },
+      ],
+    });
+  } else {
+    out.push({ role: "user", content: userText });
+  }
   return out;
 }
 
