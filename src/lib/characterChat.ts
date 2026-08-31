@@ -3,11 +3,13 @@
 import type { Character, PreferenceItem, SheetModule, TimelineEvent } from "@/lib/types";
 import type { AiApiConfig, AiModelParams, ChatMessage } from "@/lib/aiConfig";
 import { defaultApiConfig, defaultModelParams } from "@/lib/aiConfig";
+import { applyRegexes, collectStRegexes, type ChatRegex } from "@/lib/chatRegex";
 
 const API_KEY = "oc-char-chat-api-v1";
 const PARAMS_KEY = "oc-char-chat-params-v1";
 const PRESET_KEY = "oc-char-chat-preset-v1";
 const SESSION_KEY = "oc-char-chat-sessions-v1";
+const PERSONA_KEY = "oc-char-chat-test-persona-v1";
 
 export type SoloMode = "monologue" | "mystery";
 
@@ -28,6 +30,7 @@ export interface ChatPresetFile {
   topP?: number;
   maxTokens?: number;
   entries: ChatPromptEntry[];
+  regexes: ChatRegex[];
 }
 
 export interface ChatTurn {
@@ -59,9 +62,15 @@ export interface ChatSession {
   scene: string;
   autoSummary: boolean;
   allowCardEdit: boolean;
+  useTestPersona: boolean;
   messages: ChatTurn[];
   summaries: ChatSummary[];
   updatedAt: string;
+}
+
+export interface TestPersona {
+  name: string;
+  body: string;
 }
 
 type HostStore = { currentId: string; threads: ChatSession[] };
@@ -97,13 +106,29 @@ export function saveChatParams(p: AiModelParams) {
 
 export function loadChatPreset(): ChatPresetFile | null {
   if (typeof window === "undefined") return null;
-  return safeParse<ChatPresetFile | null>(localStorage.getItem(PRESET_KEY), null);
+  const p = safeParse<ChatPresetFile | null>(localStorage.getItem(PRESET_KEY), null);
+  if (p && !p.regexes) p.regexes = [];
+  return p;
 }
 
 export function saveChatPreset(p: ChatPresetFile | null) {
   if (typeof window === "undefined") return;
   if (!p) localStorage.removeItem(PRESET_KEY);
   else localStorage.setItem(PRESET_KEY, JSON.stringify(p));
+}
+
+export function loadTestPersona(): TestPersona {
+  if (typeof window === "undefined") return { name: "玩家", body: "" };
+  return {
+    name: "玩家",
+    body: "",
+    ...safeParse<Partial<TestPersona>>(localStorage.getItem(PERSONA_KEY), {}),
+  };
+}
+
+export function saveTestPersona(p: TestPersona) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(PERSONA_KEY, JSON.stringify(p));
 }
 
 export function loadHostStore(hostId: string): HostStore {
@@ -176,6 +201,7 @@ export function emptySession(hostId: string): ChatSession {
     scene: "",
     autoSummary: true,
     allowCardEdit: true,
+    useTestPersona: false,
     messages: [],
     summaries: [],
     updatedAt: new Date().toISOString(),
@@ -211,6 +237,7 @@ export function parseSillyTavernPreset(raw: string): ChatPresetFile {
     maxTokens:
       typeof data.openai_max_tokens === "number" ? data.openai_max_tokens : undefined,
     entries,
+    regexes: collectStRegexes(data),
   };
 }
 
@@ -326,12 +353,17 @@ export function buildChatMessages(opts: {
   userLine: string;
   imageUrl?: string;
   allowCardEdit?: boolean;
+  testPersona?: TestPersona | null;
 }): ChatMessage[] {
-  const { preset, present, pov, soloMode, scene, history, userLine, imageUrl, allowCardEdit } = opts;
+  const { preset, present, pov, soloMode, scene, history, userLine, imageUrl, allowCardEdit, testPersona } = opts;
   const others = present.filter((c) => c.id !== pov.id);
   const solo = present.length <= 1;
+  const usingTest = !!(testPersona && testPersona.body.trim());
+  const playerName = usingTest ? testPersona!.name || "玩家" : pov.name;
 
-  const persona = `【玩家视角】\n你正在以「${pov.name}」的第一人称感官写其他角色与环境。不要代替 ${pov.name} 说话或做决定。\n\n${characterCardText(pov, present)}`;
+  const persona = usingTest
+    ? `【玩家视角·测试人设】\n玩家自称「${playerName}」。正式游玩请改用角色卡当人设。\n不要代替玩家说话或做决定。\n\n${testPersona!.body.trim()}`
+    : `【玩家视角】\n你正在以「${pov.name}」的第一人称感官写其他角色与环境。不要代替 ${pov.name} 说话或做决定。\n\n${characterCardText(pov, present)}`;
   const chars = others.length
     ? others.map((c) => characterCardText(c, present)).join("\n\n---\n\n")
     : characterCardText(pov, present);
@@ -346,11 +378,11 @@ export function buildChatMessages(opts: {
 
   let scenario = scene.trim() ? `当前场景：${scene.trim()}` : "";
   if (solo && soloMode === "monologue") {
-    scenario += `\n本场只有 ${pov.name}。请写环境与内心独白式回应，不要冒出第二个可对话的具名角色。`;
+    scenario += `\n本场只有 ${playerName}。请写环境与内心独白式回应，不要冒出第二个可对话的具名角色。`;
   } else if (solo && soloMode === "mystery") {
-    scenario += `\n本场只有 ${pov.name}。另一方是来源不明的神秘声音（不要给它固定真名），与 ${pov.name} 对话。`;
+    scenario += `\n本场只有 ${playerName}。另一方是来源不明的神秘声音（不要给它固定真名），与 ${playerName} 对话。`;
   } else if (others.length) {
-    scenario += `\n在场其他角色：${others.map((c) => c.name).join("、")}。只写他们的言行，不写 ${pov.name} 的行动。`;
+    scenario += `\n在场其他角色：${others.map((c) => c.name).join("、")}。只写他们的言行，不写 ${playerName} 的行动。`;
   }
 
   const hist = recentUnsummarized(history, 5);
@@ -358,19 +390,19 @@ export function buildChatMessages(opts: {
     role: t.role,
     content:
       t.role === "user"
-        ? `【${t.speakerName}】\n${t.content}`
-        : t.content,
+        ? applyRegexes(`【${t.speakerName}】\n${t.content}`, preset.regexes, "prompt")
+        : applyRegexes(t.content, preset.regexes, "prompt"),
   }));
 
   const inject: Record<string, string> = {
-    persona: persona,
+    persona,
     personadescription: persona,
     chardescription: `【在场角色卡】\n${chars}`,
     charpersonality: `【在场角色性格与模块】\n${chars}`,
     worldinfobefore: worldMem ? `【长期记忆·时间线】\n${worldMem}` : "",
     worldinfoafter: worldMem ? `【长期记忆·时间线】\n${worldMem}` : "",
     worldinfo: worldMem ? `【长期记忆·时间线】\n${worldMem}` : "",
-    scenario: scenario,
+    scenario,
     dialogueexamples: "",
   };
 
@@ -393,17 +425,17 @@ export function buildChatMessages(opts: {
     }
     if (e.marker) {
       const msg = fillSlot(e, extra);
-      if (msg) out.push(msg);
+      if (msg) out.push({ ...msg, content: applyRegexes(String(msg.content), preset.regexes, "prompt") });
       continue;
     }
     const body = extra ? `${e.content}\n${extra}` : e.content;
-    if (body.trim()) out.push({ role: e.role, content: body });
+    if (body.trim()) out.push({ role: e.role, content: applyRegexes(body, preset.regexes, "prompt") });
   }
   if (allowCardEdit) {
     out.push({ role: "system", content: APPLY_INSTRUCTION });
   }
   if (!historyPlaced) out.push(...histMsgs);
-  const userText = `【${pov.name}】\n${userLine}`;
+  const userText = applyRegexes(`【${playerName}】\n${userLine}`, preset.regexes, "prompt");
   if (imageUrl) {
     out.push({
       role: "user",

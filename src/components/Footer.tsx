@@ -32,6 +32,12 @@ export default function Footer() {
         </div>
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
           <a
+            href="/about"
+            className="hover:text-purple-400 transition"
+          >
+            关于
+          </a>
+          <a
             href="mailto:ares@aresmoused.com"
             className="hover:text-purple-400 transition"
           >

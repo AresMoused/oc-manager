@@ -22,7 +22,7 @@ import {
   loadChatParams,
   loadChatPreset,
   loadChatSession,
-  parseSillyTavernPreset,
+  loadTestPersona,
   parseSummaryJson,
   recentUnsummarized,
   resolveApplyTarget,
@@ -30,12 +30,16 @@ import {
   saveChatParams,
   saveChatPreset,
   saveChatSession,
+  saveTestPersona,
   toTimelineEvent,
   unsummarizedUserCount,
+  type TestPersona,
 } from "@/lib/characterChat";
+import ChatHtml from "@/components/ChatHtml";
+import PresetEditor from "@/components/PresetEditor";
 
 type Panel = "none" | "settings" | "history" | "summary";
-type SettingsTab = "api" | "params" | "preset" | "features";
+type SettingsTab = "api" | "params" | "preset" | "persona" | "features";
 
 function Avatar({ src, name, size = 32 }: { src?: string; name: string; size?: number }) {
   const letter = (name || "?").slice(0, 1);
@@ -82,11 +86,17 @@ export default function CharacterChatDock({
   characters,
   onWriteTimeline,
   onPatchCharacter,
+  localOnly = false,
+  canEditCard = true,
+  sessionKey,
 }: {
   host: Character;
   characters: Character[];
   onWriteTimeline: (charIds: string[], event: Omit<TimelineEvent, "id">) => void;
   onPatchCharacter: (id: string, patch: Partial<Character>) => void;
+  localOnly?: boolean;
+  canEditCard?: boolean;
+  sessionKey?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>("none");
@@ -103,10 +113,11 @@ export default function CharacterChatDock({
   const [toast, setToast] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [pending, setPending] = useState<{ msgId: string; patches: ApplyPatch[] } | null>(null);
+  const [testPersona, setTestPersona] = useState<TestPersona>({ name: "玩家", body: "" });
   const abortRef = useRef<AbortController | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
-  const presetFileRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLInputElement>(null);
+  const storeId = sessionKey || host.id;
 
   const worldMates = useMemo(() => {
     const same = characters.filter((c) => c.world && c.world === host.world);
@@ -117,11 +128,15 @@ export default function CharacterChatDock({
 
   useEffect(() => {
     setPreset(loadChatPreset());
-    const saved = loadChatSession(host.id);
-    setSession(saved || emptySession(host.id));
-    refreshThreads(host.id);
+    setTestPersona(loadTestPersona());
+    const saved = loadChatSession(storeId);
+    const s = saved || emptySession(storeId);
+    if (localOnly) s.autoSummary = saved?.autoSummary ?? false;
+    if (!canEditCard) s.allowCardEdit = false;
+    setSession(s);
+    refreshThreads(storeId);
     setPanel("none");
-  }, [host.id]);
+  }, [storeId, localOnly, canEditCard]);
 
   useEffect(() => {
     saveChatSession(session);
@@ -171,7 +186,7 @@ export default function CharacterChatDock({
       const parsed = parseSummaryJson(raw);
       if (!parsed) throw new Error("总结解析失败");
       const ev = toTimelineEvent(parsed, names);
-      onWriteTimeline(present.map((c) => c.id), ev);
+      if (!localOnly) onWriteTimeline(present.map((c) => c.id), ev);
       setSession((s) => ({
         ...s,
         messages: s.messages.map((m) =>
@@ -188,9 +203,9 @@ export default function CharacterChatDock({
           },
         ],
       }));
-      ping("已写入在场角色时间线");
+      ping(localOnly ? "已记入本机总结（不写时间线）" : "已写入在场角色时间线");
     },
-    [cfg, params, present, solo, session.soloMode, pov.name, onWriteTimeline]
+    [cfg, params, present, solo, session.soloMode, pov.name, onWriteTimeline, localOnly]
   );
 
   const send = async (presetText?: string) => {
@@ -213,7 +228,7 @@ export default function CharacterChatDock({
       id: crypto.randomUUID(),
       role: "user",
       speakerId: pov.id,
-      speakerName: pov.name,
+      speakerName: session.useTestPersona ? testPersona.name || "玩家" : pov.name,
       content: text || "（附图）",
       imageUrl: image || undefined,
       at: new Date().toISOString(),
@@ -255,7 +270,8 @@ export default function CharacterChatDock({
         history: nextMsgs,
         userLine: text || "（附图）",
         imageUrl: cfg.sendImages ? img || undefined : undefined,
-        allowCardEdit: session.allowCardEdit !== false,
+        allowCardEdit: canEditCard && session.allowCardEdit !== false,
+        testPersona: session.useTestPersona ? testPersona : null,
       });
       const raw = await completeChat({
         config: cfg,
@@ -274,7 +290,7 @@ export default function CharacterChatDock({
         finalMsgs = s.messages.map((m) => (m.id === asstId ? { ...m, content: raw } : m));
         return { ...s, messages: finalMsgs };
       });
-      const patches = session.allowCardEdit !== false ? extractApplyPatches(raw) : [];
+      const patches = canEditCard && session.allowCardEdit !== false ? extractApplyPatches(raw) : [];
       if (patches.length) setPending({ msgId: asstId, patches });
       if (session.autoSummary && unsummarizedUserCount(finalMsgs) >= 5) {
         try {
@@ -292,19 +308,25 @@ export default function CharacterChatDock({
   };
 
   const newChat = () => {
-    const s = emptySession(host.id);
+    const s = emptySession(storeId);
     s.participantIds = session.participantIds;
     s.povId = session.povId;
     s.soloMode = session.soloMode;
     s.scene = session.scene;
     s.autoSummary = session.autoSummary;
     s.allowCardEdit = session.allowCardEdit;
+    s.useTestPersona = session.useTestPersona;
     setSession(s);
     setPanel("none");
     ping("已新建聊天");
   };
 
   const applyPatches = (patches: ApplyPatch[]) => {
+    if (!canEditCard) {
+      ping("此分享页没有编辑权");
+      setPending(null);
+      return;
+    }
     for (const p of patches) {
       const target = resolveApplyTarget(p, present.length ? present : [host], host);
       const fields = fieldsFromPatch(p);
@@ -323,7 +345,7 @@ export default function CharacterChatDock({
         patch.prompts = [...(target.prompts || []), item];
       }
       if (Object.keys(patch).length) onPatchCharacter(target.id, patch);
-      if (p.addTimeline?.title) {
+      if (p.addTimeline?.title && !localOnly) {
         onWriteTimeline([target.id], {
           date: new Date().toISOString().slice(0, 10),
           title: p.addTimeline.title,
@@ -348,7 +370,7 @@ export default function CharacterChatDock({
         type="button"
         onClick={() => setOpen(true)}
         title="角色对话"
-        className="fixed bottom-5 right-5 z-[70] w-14 h-14 rounded-full bg-purple-600 text-white shadow-lg shadow-purple-900/40 hover:bg-purple-500 text-lg"
+        className="fixed bottom-5 right-20 z-[70] w-12 h-12 rounded-full bg-violet-700 text-white shadow-lg hover:bg-violet-600 text-base"
       >
         💬
       </button>
@@ -397,16 +419,20 @@ export default function CharacterChatDock({
                         {m.summarized ? " · 已总结" : ""}
                       </div>
                       <div
-                        className={`rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap border ${
+                        className={`rounded-2xl px-3 py-2 text-sm border ${
                           mine
-                            ? "bg-purple-600/20 border-purple-800/50 text-purple-50"
+                            ? "bg-purple-600/20 border-purple-800/50 text-purple-50 whitespace-pre-wrap"
                             : "bg-[#1c1c20] border-neutral-800 text-neutral-200"
                         }`}
                       >
                         {m.imageUrl && (
                           <img src={m.imageUrl} alt="" className="max-h-32 rounded-lg mb-1" />
                         )}
-                        {mine ? m.content : displayReply(m.content) || (busy ? "…" : "")}
+                        {mine ? (
+                          m.content
+                        ) : (
+                          <ChatHtml raw={m.content || (busy ? "…" : "")} regexes={preset?.regexes} />
+                        )}
                       </div>
                       {!mine && pending?.msgId === m.id && (
                         <div className="mt-1.5 space-y-1">
@@ -451,6 +477,7 @@ export default function CharacterChatDock({
                         ["api", "API"],
                         ["params", "参数"],
                         ["preset", "预设"],
+                        ["persona", "人设"],
                         ["features", "功能"],
                       ] as [SettingsTab, string][]).map(([k, lab]) => (
                         <button
@@ -515,40 +542,49 @@ export default function CharacterChatDock({
                         </>
                       )}
                       {setTab === "preset" && (
+                        <PresetEditor
+                          preset={preset}
+                          onChange={(p) => {
+                            setPreset(p);
+                            saveChatPreset(p);
+                          }}
+                          onImported={(p) => {
+                            persistParams({
+                              ...params,
+                              temperature: p.temperature ?? params.temperature,
+                              topP: p.topP ?? params.topP,
+                            });
+                            ping(`已导入 ${p.entries.length} 条 / ${(p.regexes || []).length} 正则`);
+                          }}
+                        />
+                      )}
+                      {setTab === "persona" && (
                         <>
-                          <p className="text-neutral-500">导入 SillyTavern Chat Completion JSON。开关默认跟文件走。</p>
-                          <div className="flex gap-2">
-                            <button type="button" className="px-2 py-1 rounded-lg border border-sky-800 text-sky-300" onClick={() => presetFileRef.current?.click()}>导入预设</button>
-                            {preset && <button type="button" className="text-rose-400" onClick={() => { saveChatPreset(null); setPreset(null); }}>清除</button>}
-                          </div>
-                          <input ref={presetFileRef} type="file" accept="application/json,.json" className="hidden" onChange={async (e) => {
-                            const f = e.target.files?.[0];
-                            e.target.value = "";
-                            if (!f) return;
-                            try {
-                              const parsed = parseSillyTavernPreset(await f.text());
-                              saveChatPreset(parsed);
-                              setPreset(parsed);
-                              persistParams({
-                                ...params,
-                                temperature: parsed.temperature ?? params.temperature,
-                                topP: parsed.topP ?? params.topP,
-                              });
-                              ping(`已导入 ${parsed.entries.length} 条`);
-                            } catch (err) {
-                              setError(err instanceof Error ? err.message : "导入失败");
-                            }
-                          }} />
-                          {preset ? preset.entries.map((ent) => (
-                            <label key={ent.id} className="flex items-start gap-2 border border-neutral-800 rounded-lg px-2 py-1">
-                              <input type="checkbox" className="mt-0.5" checked={ent.enabled} onChange={() => {
-                                const next = { ...preset, entries: preset.entries.map((x) => x.id === ent.id ? { ...x, enabled: !x.enabled } : x) };
-                                setPreset(next);
-                                saveChatPreset(next);
-                              }} />
-                              <span className="flex-1 text-neutral-200">{ent.name}<span className="text-neutral-600 ml-1">{ent.marker ? "槽位" : ent.role}</span></span>
-                            </label>
-                          )) : <p className="text-neutral-600">还没有预设</p>}
+                          <p className="text-neutral-500">测试用。正式请用角色卡当自己的人设（选玩家视角）。</p>
+                          <label className="flex items-center gap-2 text-neutral-300">
+                            <input type="checkbox" checked={!!session.useTestPersona} onChange={(e) => setSession((s) => ({ ...s, useTestPersona: e.target.checked }))} />
+                            用测试人设当玩家
+                          </label>
+                          <input
+                            className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1.5 text-neutral-200"
+                            placeholder="名称"
+                            value={testPersona.name}
+                            onChange={(e) => {
+                              const n = { ...testPersona, name: e.target.value };
+                              setTestPersona(n);
+                              saveTestPersona(n);
+                            }}
+                          />
+                          <textarea
+                            className="w-full min-h-[120px] bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1.5 text-neutral-200"
+                            placeholder="测试人设正文"
+                            value={testPersona.body}
+                            onChange={(e) => {
+                              const n = { ...testPersona, body: e.target.value };
+                              setTestPersona(n);
+                              saveTestPersona(n);
+                            }}
+                          />
                         </>
                       )}
                       {setTab === "features" && (
@@ -557,10 +593,13 @@ export default function CharacterChatDock({
                             <input type="checkbox" checked={session.autoSummary} onChange={(e) => setSession((s) => ({ ...s, autoSummary: e.target.checked }))} />
                             每 5 次对话自动写入时间线（{unsummarizedUserCount(session.messages)}/5）
                           </label>
+                          {canEditCard && (
                           <label className="flex items-center gap-2 text-neutral-300">
                             <input type="checkbox" checked={session.allowCardEdit !== false} onChange={(e) => setSession((s) => ({ ...s, allowCardEdit: e.target.checked }))} />
                             允许助手建议改角色卡（需确认后写入）
                           </label>
+                          )}
+                          {localOnly && <p className="text-neutral-500">分享页对话记忆只留在本机，不写时间线。</p>}
                           <p className="text-neutral-500">类似智绘姬帮改效果设定：补人设、按对话更新经历、生成外观提示词，点应用才会写进卡。</p>
                         </>
                       )}
@@ -578,9 +617,9 @@ export default function CharacterChatDock({
                           <div className="text-neutral-600">{(t.updatedAt || "").slice(0, 16).replace("T", " ")} · {t.messages.length} 条</div>
                         </button>
                         <button type="button" className="text-rose-400 px-1" onClick={() => {
-                          deleteChatThread(host.id, t.id);
-                          if (t.id === session.id) setSession(emptySession(host.id));
-                          refreshThreads(host.id);
+                          deleteChatThread(storeId, t.id);
+                          if (t.id === session.id) setSession(emptySession(storeId));
+                          refreshThreads(storeId);
                         }}>删</button>
                       </div>
                     ))}

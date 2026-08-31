@@ -9,6 +9,7 @@ import Timeline from "@/components/Timeline";
 import RelationshipsPanel from "@/components/RelationshipsPanel";
 import Gallery from "@/components/Gallery";
 import PromptBank from "@/components/PromptBank";
+import CharacterChatDock from "@/components/CharacterChatDock";
 import type { Character, GalleryImage, StoredPrompt } from "@/lib/types";
 import { CheckHost } from "@/systems/check/CheckHost";
 import DndRuleSheet from "@/systems/dnd5e/DndRuleSheet";
@@ -359,6 +360,20 @@ export default function SharedCharacterPage({
         )}
       </main>
       <Footer />
+      {character && (
+        <CharacterChatDock
+          host={character}
+          characters={characters}
+          localOnly
+          canEditCard={canEdit}
+          sessionKey={`share:${shareId}:${charId}`}
+          onWriteTimeline={() => {}}
+          onPatchCharacter={(cid, patch) => {
+            if (!canEdit) return;
+            if (cid === character.id) updateCharacter(patch);
+          }}
+        />
+      )}
     </div>
     </CheckHost>
   );
