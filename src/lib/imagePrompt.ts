@@ -8,73 +8,91 @@ import { packForImage, type ContextPack } from "@/lib/contextPacks";
 import { pushDebugLog } from "@/lib/debugLog";
 
 export function fillTemplate(text: string, vars: Record<string, string>): string {
-  return String(text || "").replace(/\{\{([^}]+)\}\}/g, (_, k) => vars[String(k).trim()] ?? "");
+  return String(text || "").replace(/\{\{([^}]+)\}\}/g, (full, k) => {
+    const key = String(k).trim();
+    return Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : full;
+  });
 }
 
-function layerDump(label: string, layer: { front: string; back: string }): string {
+/** 智绘姬：把内容填进 <角色信息>…</角色信息> 这类标记，而不是只替换 {{变量}}。 */
+export function fillMarkedBlocks(text: string, blocks: Record<string, string>): string {
+  let s = String(text || "");
+  for (const [tag, body] of Object.entries(blocks)) {
+    if (!body.trim()) continue;
+    const re = new RegExp(`(<${tag}>)([\\s\\S]*?)(</${tag}>)`, "gi");
+    s = s.replace(re, `$1\n${body}\n$3`);
+  }
+  return s;
+}
+
+function layerLines(prefix: string, layer: { front: string; back: string }): string[] {
   const f = layer.front.trim();
   const b = layer.back.trim();
-  if (!f && !b) return "";
-  return [`${label}正: ${f || "—"}`, b ? `${label}背: ${b}` : ""].filter(Boolean).join("\n");
+  if (!f && !b) return [];
+  return [`${prefix}.front: ${f || "—"}`, b ? `${prefix}.back: ${b}` : ""].filter(Boolean);
 }
 
-/** Full appearance layers + outfits + prompt snapshots for 陪玩姬 to write image tags. */
-export function characterPromptDossier(c: Character): string {
+/** 智绘姬 角色启用列表：分层字段 + 可调用 name。 */
+export function characterAppearanceBlock(c: Character): string {
   const app = appearanceOf(c);
-  const en = app.nameEN || c.name;
+  const en = (app.nameEN || c.name).trim() || c.name;
+  const cn = (app.nameCN || c.name).trim() || c.name;
   const lines: string[] = [
-    `【${c.name} / ${en}】`,
-    app.negative ? `negative: ${app.negative}` : "",
-    layerDump("脸", app.face),
-    layerDump("上身SFW", app.upperSfw),
-    layerDump("全身SFW", app.fullSfw),
-    layerDump("上身NSFW", app.upperNsfw),
-    layerDump("全身NSFW", app.fullNsfw),
-    `组合(无服装): ${composeAppearancePrompt(app, { skipOutfit: true }) || "（空）"}`,
+    `可调用名称: ${en}`,
+    `中文名: ${cn}`,
+    `英文名: ${en}`,
+    ...layerLines("facialFeatures", app.face),
+    ...layerLines("upperBodySFW", app.upperSfw),
+    ...layerLines("fullBodySFW", app.fullSfw),
+    ...layerLines("upperBodyNSFW", app.upperNsfw),
+    ...layerLines("fullBodyNSFW", app.fullNsfw),
+    `调用示例: \${"name":"${en}","angle":"from front","upperBody":"sfw","lowerBody":"hidden"}$`,
+    `\${"name":"${en}","angle":"from front","upperBody":"nsfw","lowerBody":"nsfw"}$`,
   ];
-  for (const o of app.outfits) {
-    const name = o.nameCN || o.nameEN || o.id;
-    lines.push(`服装 ${name} / ${o.nameEN || o.id}`);
-    lines.push(layerDump("  上身", o.upper));
-    lines.push(layerDump("  全身", o.full));
-    lines.push(
-      `  宏 \${"name":"${o.nameEN || o.nameCN || o.id}","upperBody":"visible","lowerBody":"visible"}$`
-    );
-  }
   const snaps = c.prompts || [];
   if (snaps.length) {
-    lines.push("提示词快照（全部）：");
+    lines.push("提示词快照:");
     for (const p of snaps) {
       const text = (p.text || "").trim();
       if (!text) continue;
       lines.push(`- ${p.label || "(未命名)"}: ${text}`);
     }
   }
-  lines.push(`角色宏: \${"name":"${en}","angle":"front","upperBody":"sfw","lowerBody":"hidden"}$`);
   return lines.filter(Boolean).join("\n");
 }
 
-export function characterListBlock(chars: Character[]): string {
-  return chars.map(characterPromptDossier).join("\n\n") || "（无角色）";
+export function characterPromptDossier(c: Character): string {
+  return [characterAppearanceBlock(c), outfitBlockForChars([c])].filter(Boolean).join("\n\n");
 }
 
-export function outfitListBlock(chars: Character[]): string {
+export function characterListBlock(chars: Character[]): string {
+  return chars.map(characterAppearanceBlock).join("\n\n") || "（无角色）";
+}
+
+export function outfitBlockForChars(chars: Character[]): string {
   const lines: string[] = [];
   for (const c of chars) {
     const app = appearanceOf(c);
     for (const o of app.outfits) {
-      const name = o.nameCN || o.nameEN || o.id;
-      const upper = o.upper.front || o.upper.back;
-      const full = o.full.front || o.full.back;
-      lines.push(`· ${c.name} / ${name}`);
+      const en = (o.nameEN || o.nameCN || o.id).trim();
+      const cn = (o.nameCN || o.nameEN || o.id).trim();
+      lines.push(`可调用名称: ${en}`);
+      lines.push(`中文名: ${cn}`);
+      lines.push(`英文名: ${en}`);
+      lines.push(`所属角色: ${c.name}`);
+      lines.push(...layerLines("upper", o.upper));
+      lines.push(...layerLines("full", o.full));
       lines.push(
-        `  宏 \${"name":"${o.nameEN || o.nameCN || o.id}","upperBody":"visible","lowerBody":"visible"}$`
+        `调用: \${"name":"${en}","upperBody":"visible","lowerBody":"visible"}$`
       );
-      if (upper) lines.push(`  上身: ${upper}`);
-      if (full) lines.push(`  全身: ${full}`);
+      lines.push("");
     }
   }
-  return lines.join("\n") || "（无卡内服装）";
+  return lines.join("\n").trim() || "（无卡内服装）";
+}
+
+export function outfitListBlock(chars: Character[]): string {
+  return outfitBlockForChars(chars);
 }
 
 export function expandImageMacros(text: string, chars: Character[]): string {
@@ -218,13 +236,26 @@ export function extractImagePrompt(raw: string, chars: Character[]): string {
   return resolveComfyPrompt(pick.replace(/\s+/g, " ").trim(), chars);
 }
 
-function packMessages(pack: ContextPack, vars: Record<string, string>): ChatMessage[] {
-  return pack.entries
-    .filter((e) => e.enabled)
-    .map((e) => ({
-      role: e.role,
-      content: fillTemplate(e.content, vars),
-    }));
+function packMessages(pack: ContextPack, vars: Record<string, string>): { messages: ChatMessage[]; slotted: boolean } {
+  const markers: Record<string, string> = {
+    角色信息: vars.角色启用列表 || "",
+    角色启用列表: vars.角色启用列表 || "",
+    通用角色启用列表: vars.通用角色启用列表 || vars.角色启用列表 || "",
+    衣服信息: vars.衣服信息 || vars.通用服装启用列表 || "",
+    服装启用列表: vars.通用服装启用列表 || "",
+    通用服装启用列表: vars.通用服装启用列表 || "",
+  };
+  const source = pack.entries.filter((e) => e.enabled);
+  const hadSlot = source.some((e) =>
+    /<角色信息>|<衣服信息>|<角色启用列表>|<衣服启用列表>|\{\{角色启用列表\}\}|\{\{通用角色启用列表\}\}|\{\{通用服装启用列表\}\}|\{\{衣服信息\}\}|\{\{角色信息\}\}/.test(
+      e.content
+    )
+  );
+  const messages = source.map((e) => ({
+    role: e.role,
+    content: fillMarkedBlocks(fillTemplate(e.content, vars), markers),
+  }));
+  return { messages, slotted: hadSlot };
 }
 
 export async function writeImagePrompt(opts: {
@@ -252,31 +283,27 @@ export async function writeImagePrompt(opts: {
   }
   const focus = opts.character ? [opts.character] : chars;
   const pack = packForImage();
+  const charBlock = characterListBlock(focus);
+  const outfitBlock = outfitListBlock(focus);
   const vars: Record<string, string> = {
     上下文: opts.history || "",
     正文: opts.scene || opts.extra || opts.userLine || "",
     用户需求: opts.userLine || opts.extra || "",
-    角色启用列表: characterListBlock(focus),
-    通用角色启用列表: characterListBlock(focus),
-    通用服装启用列表: outfitListBlock(focus),
+    角色启用列表: charBlock,
+    通用角色启用列表: charBlock,
+    角色信息: charBlock,
+    通用服装启用列表: outfitBlock,
+    衣服信息: outfitBlock,
+    服装启用列表: outfitBlock,
     "人设.name": opts.character?.name || chars[0]?.name || "",
     "用户.name": "用户",
     入画角色: opts.character?.name || "",
   };
-  const messages = packMessages(pack, vars);
-  if (opts.character) {
-    messages.unshift({
-      role: "system",
-      content: `本次只画「${opts.character.name}」。下面是她卡里的全部外观层、服装和提示词快照，写 tags 时必须参考，不要编外貌。不要画其他角色。`,
-    });
+  const { messages, slotted } = packMessages(pack, vars);
+  if (!slotted && focus.length) {
     messages.push({
       role: "user",
-      content: `入画角色完整提示词：\n${characterPromptDossier(opts.character)}`,
-    });
-  } else if (focus.length) {
-    messages.push({
-      role: "user",
-      content: `角色完整提示词：\n${characterListBlock(focus)}`,
+      content: `入画角色完整提示词：\n${charBlock}\n\n衣服信息：\n${outfitBlock}`,
     });
   }
   const raw = await completeChat({
