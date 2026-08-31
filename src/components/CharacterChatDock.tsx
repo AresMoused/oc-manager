@@ -38,6 +38,7 @@ import {
 import { extractSystemQueries, runQueries, stripSystemQueries } from "@/lib/zhiTools";
 import ChatHtml from "@/components/ChatHtml";
 import PresetEditor from "@/components/PresetEditor";
+import { useDockGeo } from "@/hooks/useDockGeo";
 
 type Panel = "none" | "settings" | "history" | "summary";
 type SettingsTab = "api" | "params" | "preset" | "persona" | "features";
@@ -100,6 +101,7 @@ export default function CharacterChatDock({
   sessionKey?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const { panelRef, panelStyle, fabStyle, headerDrag, resizeHandle, fabDrag } = useDockGeo("oc-character-chat-geo-v1");
   const [panel, setPanel] = useState<Panel>("none");
   const [setTab, setSetTab] = useState<SettingsTab>("api");
   const [cfg, setCfg] = useState<AiApiConfig>(() => loadChatApiConfig());
@@ -402,18 +404,21 @@ export default function CharacterChatDock({
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
         title="角色对话"
-        className="fixed bottom-5 right-20 z-[70] w-12 h-12 rounded-full bg-violet-700 text-white shadow-lg hover:bg-violet-600 text-base"
+        className="fixed z-[70] w-12 h-12 rounded-full bg-violet-700 text-white shadow-lg hover:bg-violet-600 text-base"
+        style={fabStyle(48, { right: 80, bottom: 20 })}
+        {...fabDrag(() => setOpen((v) => !v), 48)}
       >
         💬
       </button>
 
       {open && (
         <div
-          className="fixed z-[75] bottom-20 right-4 w-[min(380px,calc(100vw-1.5rem))] h-[min(560px,calc(100vh-7rem))] rounded-2xl border border-neutral-700 bg-[#121214]/95 backdrop-blur-md shadow-2xl flex flex-col overflow-hidden resize"
+          ref={panelRef}
+          className="fixed z-[75] rounded-2xl border border-neutral-700 bg-[#121214]/95 backdrop-blur-md shadow-2xl flex flex-col overflow-hidden"
+          style={panelStyle}
         >
-          <div className="px-3 py-2 border-b border-neutral-800 flex items-center gap-1">
+          <div className="px-3 py-2 border-b border-neutral-800 flex items-center gap-1 cursor-grab active:cursor-grabbing" {...headerDrag}>
             <Avatar src={host.avatar} name={host.name} size={28} />
             <div className="flex-1 min-w-0 ml-1">
               <div className="text-sm text-white truncate">{session.title || "角色对话"}</div>
@@ -778,6 +783,13 @@ export default function CharacterChatDock({
                 <button type="button" disabled={!draft.trim() && !image} className="w-9 h-9 rounded-full bg-purple-600 text-white disabled:opacity-40" onClick={() => void send()}>➤</button>
               )}
             </div>
+          </div>
+          <div
+            className="absolute right-0 bottom-0 w-4 h-4 cursor-se-resize z-10"
+            {...resizeHandle}
+            title="拖动放大"
+          >
+            <div className="absolute right-1 bottom-1 w-2 h-2 border-r-2 border-b-2 border-neutral-500" />
           </div>
         </div>
       )}
