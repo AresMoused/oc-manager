@@ -3,7 +3,7 @@
 import type { Character } from "@/lib/types";
 import type { AiApiConfig, AiModelParams, ChatMessage } from "@/lib/aiConfig";
 import { completeChat } from "@/lib/aiConfig";
-import { appearanceOf, appearanceSummary, composeAppearancePrompt, findOutfit, layerText } from "@/lib/appearance";
+import { appearanceOf, composeAppearancePrompt, findOutfit, layerText } from "@/lib/appearance";
 import { packForImage, type ContextPack } from "@/lib/contextPacks";
 import { pushDebugLog } from "@/lib/debugLog";
 
@@ -11,20 +11,51 @@ export function fillTemplate(text: string, vars: Record<string, string>): string
   return String(text || "").replace(/\{\{([^}]+)\}\}/g, (_, k) => vars[String(k).trim()] ?? "");
 }
 
+function layerDump(label: string, layer: { front: string; back: string }): string {
+  const f = layer.front.trim();
+  const b = layer.back.trim();
+  if (!f && !b) return "";
+  return [`${label}正: ${f || "—"}`, b ? `${label}背: ${b}` : ""].filter(Boolean).join("\n");
+}
+
+/** Full appearance layers + outfits + prompt snapshots for 陪玩姬 to write image tags. */
+export function characterPromptDossier(c: Character): string {
+  const app = appearanceOf(c);
+  const en = app.nameEN || c.name;
+  const lines: string[] = [
+    `【${c.name} / ${en}】`,
+    app.negative ? `negative: ${app.negative}` : "",
+    layerDump("脸", app.face),
+    layerDump("上身SFW", app.upperSfw),
+    layerDump("全身SFW", app.fullSfw),
+    layerDump("上身NSFW", app.upperNsfw),
+    layerDump("全身NSFW", app.fullNsfw),
+    `组合(无服装): ${composeAppearancePrompt(app, { skipOutfit: true }) || "（空）"}`,
+  ];
+  for (const o of app.outfits) {
+    const name = o.nameCN || o.nameEN || o.id;
+    lines.push(`服装 ${name} / ${o.nameEN || o.id}`);
+    lines.push(layerDump("  上身", o.upper));
+    lines.push(layerDump("  全身", o.full));
+    lines.push(
+      `  宏 \${"name":"${o.nameEN || o.nameCN || o.id}","upperBody":"visible","lowerBody":"visible"}$`
+    );
+  }
+  const snaps = c.prompts || [];
+  if (snaps.length) {
+    lines.push("提示词快照（全部）：");
+    for (const p of snaps) {
+      const text = (p.text || "").trim();
+      if (!text) continue;
+      lines.push(`- ${p.label || "(未命名)"}: ${text}`);
+    }
+  }
+  lines.push(`角色宏: \${"name":"${en}","angle":"front","upperBody":"sfw","lowerBody":"hidden"}$`);
+  return lines.filter(Boolean).join("\n");
+}
+
 export function characterListBlock(chars: Character[]): string {
-  return chars
-    .map((c) => {
-      const app = appearanceOf(c);
-      const en = app.nameEN || c.name;
-      const composed = composeAppearancePrompt(app, { skipOutfit: true });
-      return [
-        `· ${c.name} / ${en}`,
-        appearanceSummary(app),
-        `face+body: ${composed || "(空)"}`,
-        `宏示例: \${"name":"${en}","angle":"front","upperBody":"sfw","lowerBody":"hidden"}$`,
-      ].join("\n");
-    })
-    .join("\n\n");
+  return chars.map(characterPromptDossier).join("\n\n") || "（无角色）";
 }
 
 export function outfitListBlock(chars: Character[]): string {
@@ -32,9 +63,15 @@ export function outfitListBlock(chars: Character[]): string {
   for (const c of chars) {
     const app = appearanceOf(c);
     for (const o of app.outfits) {
+      const name = o.nameCN || o.nameEN || o.id;
+      const upper = o.upper.front || o.upper.back;
+      const full = o.full.front || o.full.back;
+      lines.push(`· ${c.name} / ${name}`);
       lines.push(
-        `· ${c.name} / ${o.nameCN || o.nameEN} → \${"name":"${o.nameEN || o.nameCN}","upperBody":"visible","lowerBody":"visible"}$`
+        `  宏 \${"name":"${o.nameEN || o.nameCN || o.id}","upperBody":"visible","lowerBody":"visible"}$`
       );
+      if (upper) lines.push(`  上身: ${upper}`);
+      if (full) lines.push(`  全身: ${full}`);
     }
   }
   return lines.join("\n") || "（无卡内服装）";
@@ -230,7 +267,16 @@ export async function writeImagePrompt(opts: {
   if (opts.character) {
     messages.unshift({
       role: "system",
-      content: `本次只画「${opts.character.name}」。角色启用列表只有她。不要画其他角色，不要用别人的 \${"name":...} 宏。`,
+      content: `本次只画「${opts.character.name}」。下面是她卡里的全部外观层、服装和提示词快照，写 tags 时必须参考，不要编外貌。不要画其他角色。`,
+    });
+    messages.push({
+      role: "user",
+      content: `入画角色完整提示词：\n${characterPromptDossier(opts.character)}`,
+    });
+  } else if (focus.length) {
+    messages.push({
+      role: "user",
+      content: `角色完整提示词：\n${characterListBlock(focus)}`,
     });
   }
   const raw = await completeChat({
