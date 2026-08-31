@@ -43,10 +43,11 @@ export function defaultZhiPersona(): ZhiPersona {
 export function loadZhiPersona(): ZhiPersona {
   if (typeof window === "undefined") return defaultZhiPersona();
   const v = parse<Partial<ZhiPersona>>(localStorage.getItem(PERSONA_KEY), {});
-  return {
-    name: v.name?.trim() || "陪玩姬",
-    body: v.body?.trim() || DEFAULT_ZHIHUIJI_PERSONA,
-  };
+  let name = v.name?.trim() || "陪玩姬";
+  let body = v.body?.trim() || DEFAULT_ZHIHUIJI_PERSONA;
+  if (name === "智绘姬") name = "陪玩姬";
+  if (body.includes("你是「智绘姬」")) body = body.replaceAll("你是「智绘姬」", "你是「陪玩姬」");
+  return { name, body };
 }
 
 export function saveZhiPersona(p: ZhiPersona) {
