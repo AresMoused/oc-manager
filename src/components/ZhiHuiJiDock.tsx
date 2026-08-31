@@ -185,7 +185,7 @@ export default function ZhiHuiJiDock() {
         const item: StoredPrompt = {
           id: crypto.randomUUID(),
           text: p.addPrompt.text,
-          label: p.addPrompt.label || "智绘姬",
+          label: p.addPrompt.label || "陪玩姬",
           createdAt: new Date().toISOString(),
         };
         patch.prompts = [...(target.prompts || []), item];
@@ -208,7 +208,7 @@ export default function ZhiHuiJiDock() {
     <>
       <button
         type="button"
-        title="智绘姬"
+        title="陪玩姬"
         onClick={() => setOpen(true)}
         className="fixed bottom-5 right-5 z-[70] w-14 h-14 rounded-full bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-900/40 hover:bg-fuchsia-500 text-lg"
       >
@@ -330,7 +330,7 @@ export default function ZhiHuiJiDock() {
                       )}
                       {tab === "persona" && (
                         <>
-                          <p className="text-neutral-500">智绘姬自己的人设（和角色对话预设分开）。</p>
+                          <p className="text-neutral-500">陪玩姬自己的人设（和角色对话预设分开）。</p>
                           <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1.5" value={persona.name} onChange={(e) => {
                             const n = { ...persona, name: e.target.value };
                             setPersona(n);
@@ -365,7 +365,7 @@ export default function ZhiHuiJiDock() {
             <textarea
               rows={1}
               className="flex-1 bg-[#1c1c20] border border-neutral-700 rounded-2xl px-3 py-2 text-sm resize-none"
-              placeholder="问智绘姬… (Enter 发送)"
+              placeholder="问陪玩姬… (Enter 发送)"
               value={draft}
               disabled={busy}
               onChange={(e) => setDraft(e.target.value)}

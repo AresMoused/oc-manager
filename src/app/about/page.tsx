@@ -14,7 +14,7 @@ export default function AboutPage() {
         <section className="border border-neutral-800 rounded-2xl p-4 bg-[#111] space-y-2">
           <h2 className="text-white font-medium">致谢</h2>
           <p>
-            站内「智绘姬」助手对话框的交互与设定习惯，参考了 SillyTavern 扩展{" "}
+            站内「陪玩姬」助手对话框的交互与设定习惯，参考了 SillyTavern 扩展{" "}
             <a
               className="text-fuchsia-300 hover:underline"
               href="https://github.com/damoshen123/st-chatu8"

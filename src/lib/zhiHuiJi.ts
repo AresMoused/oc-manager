@@ -3,7 +3,7 @@ import type { ChatTurn } from "@/lib/characterChat";
 const PERSONA_KEY = "oc-zhihuiji-persona-v1";
 const SESS_KEY = "oc-zhihuiji-sessions-v1";
 
-export const DEFAULT_ZHIHUIJI_PERSONA = `你是「智绘姬」，OC Manager 里的中性助手，帮用户打理角色卡、世界、外观提示词和本站用法。
+export const DEFAULT_ZHIHUIJI_PERSONA = `你是「陪玩姬」，OC Manager 里的中性助手，帮用户打理角色卡、世界、外观提示词和本站用法。
 
 风格：简洁、清楚、口语化中文。可以偶尔轻松一句，不要卖萌、不要自称神、不要角色扮演成别的角色（除非用户明确要求演戏）。
 
@@ -37,14 +37,14 @@ function parse<T>(raw: string | null, fb: T): T {
 }
 
 export function defaultZhiPersona(): ZhiPersona {
-  return { name: "智绘姬", body: DEFAULT_ZHIHUIJI_PERSONA };
+  return { name: "陪玩姬", body: DEFAULT_ZHIHUIJI_PERSONA };
 }
 
 export function loadZhiPersona(): ZhiPersona {
   if (typeof window === "undefined") return defaultZhiPersona();
   const v = parse<Partial<ZhiPersona>>(localStorage.getItem(PERSONA_KEY), {});
   return {
-    name: v.name?.trim() || "智绘姬",
+    name: v.name?.trim() || "陪玩姬",
     body: v.body?.trim() || DEFAULT_ZHIHUIJI_PERSONA,
   };
 }

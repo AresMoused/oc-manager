@@ -600,7 +600,7 @@ export default function CharacterChatDock({
                           </label>
                           )}
                           {localOnly && <p className="text-neutral-500">分享页对话记忆只留在本机，不写时间线。</p>}
-                          <p className="text-neutral-500">类似智绘姬帮改效果设定：补人设、按对话更新经历、生成外观提示词，点应用才会写进卡。</p>
+                          <p className="text-neutral-500">类似原版智绘姬帮改效果设定：补人设、按对话更新经历、生成外观提示词，点应用才会写进卡。</p>
                         </>
                       )}
                     </div>
