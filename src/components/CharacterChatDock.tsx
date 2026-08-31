@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Character, StoredPrompt, TimelineEvent } from "@/lib/types";
+import type { Character, GalleryImage, StoredPrompt, TimelineEvent } from "@/lib/types";
 import type { AiApiConfig, AiModelParams } from "@/lib/aiConfig";
 import { completeChat, fetchModels } from "@/lib/aiConfig";
 import {
@@ -36,7 +36,9 @@ import {
   type TestPersona,
 } from "@/lib/characterChat";
 import { extractSystemQueries, runQueries, stripSystemQueries } from "@/lib/zhiTools";
+import { generateCharacterStill } from "@/lib/chatImage";
 import ChatHtml from "@/components/ChatHtml";
+import ChatImage, { ImagePreview } from "@/components/ChatImage";
 import PresetEditor from "@/components/PresetEditor";
 import { useDockGeo } from "@/hooks/useDockGeo";
 
@@ -117,6 +119,7 @@ export default function CharacterChatDock({
   const [showKey, setShowKey] = useState(false);
   const [pending, setPending] = useState<{ msgId: string; patches: ApplyPatch[] } | null>(null);
   const [testPersona, setTestPersona] = useState<TestPersona>({ name: "玩家", body: "" });
+  const [preview, setPreview] = useState<{ url: string; charId?: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLInputElement>(null);
@@ -156,6 +159,28 @@ export default function CharacterChatDock({
   const ping = (m: string) => {
     setToast(m);
     window.setTimeout(() => setToast(""), 2200);
+  };
+  const saveToGallery = async (url: string, characterId?: string) => {
+    if (!canEditCard || localOnly) {
+      ping(localOnly ? "分享页对话不能写入画廊" : "没有编辑权");
+      return;
+    }
+    const id = characterId || host.id;
+    const target = characters.find((c) => c.id === id) || host;
+    try {
+      const blob = await fetch(url).then((r) => r.blob());
+      const file = new File([blob], "chat.png", { type: blob.type || "image/png" });
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "上传失败");
+      const item: GalleryImage = { id: crypto.randomUUID(), url: data.url, caption: "对话生成" };
+      onPatchCharacter(target.id, { gallery: [...(target.gallery || []), item] });
+      ping(`已加入 ${target.name} 画廊`);
+    } catch (e) {
+      ping(e instanceof Error ? e.message : "保存失败");
+    }
   };
   const persistCfg = (next: AiApiConfig) => {
     setCfg(next);
@@ -277,6 +302,7 @@ export default function CharacterChatDock({
         imageUrl: cfg.sendImages ? img || undefined : undefined,
         allowCardEdit: canEditCard && session.allowCardEdit !== false,
         testPersona: session.useTestPersona ? testPersona : null,
+        allowImageGen: false,
       });
       const raw = await completeChat({
         config: cfg,
@@ -300,7 +326,7 @@ export default function CharacterChatDock({
         finalMsgs = s.messages.map((m) => (m.id === asstId ? { ...m, content: visible } : m));
         return { ...s, messages: finalMsgs };
       });
-      const queries = extractSystemQueries(raw);
+      const queries = extractSystemQueries(raw).filter((q) => q.type !== "generate_image");
       if (queries.length) {
         const result = await runQueries(queries, {
           characters: present.length ? present : [host],
@@ -333,6 +359,30 @@ export default function CharacterChatDock({
           }));
         }
       }
+      if (session.autoImage) {
+        const subject = present.find((c) => c.id !== pov.id) || host;
+        ping(`出图中 · ${subject.name}`);
+        try {
+          const job = await generateCharacterStill(subject, session.scene, ac.signal, "角色对话");
+          setSession((s) => ({
+            ...s,
+            messages: [
+              ...s.messages,
+              ...job.urls.map((url) => ({
+                id: crypto.randomUUID(),
+                role: "assistant" as const,
+                speakerName: subject.name,
+                speakerId: subject.id,
+                content: "图",
+                imageUrl: url,
+                at: new Date().toISOString(),
+              })),
+            ],
+          }));
+        } catch (e) {
+          ping(e instanceof Error ? e.message : "出图失败");
+        }
+      }
       const patches = canEditCard && session.allowCardEdit !== false ? extractApplyPatches(raw) : [];
       if (patches.length) setPending({ msgId: asstId, patches });
       if (session.autoSummary && unsummarizedUserCount(finalMsgs) >= 5) {
@@ -357,6 +407,7 @@ export default function CharacterChatDock({
     s.soloMode = session.soloMode;
     s.scene = session.scene;
     s.autoSummary = session.autoSummary;
+    s.autoImage = session.autoImage;
     s.allowCardEdit = session.allowCardEdit;
     s.useTestPersona = session.useTestPersona;
     setSession(s);
@@ -472,7 +523,12 @@ export default function CharacterChatDock({
                         }`}
                       >
                         {m.imageUrl && (
-                          <img src={m.imageUrl} alt="" className="max-h-32 rounded-lg mb-1" />
+                          <ChatImage
+                            url={m.imageUrl}
+                            canSave={canEditCard && !localOnly}
+                            onPreview={() => setPreview({ url: m.imageUrl!, charId: m.speakerId })}
+                            onSave={() => void saveToGallery(m.imageUrl!, m.speakerId)}
+                          />
                         )}
                         {mine ? (
                           m.content
@@ -636,6 +692,10 @@ export default function CharacterChatDock({
                       {setTab === "features" && (
                         <>
                           <label className="flex items-center gap-2 text-neutral-300">
+                            <input type="checkbox" checked={!!session.autoImage} onChange={(e) => setSession((s) => ({ ...s, autoImage: e.target.checked }))} />
+                            每轮对话自动出一张图（用对方角色卡提示词）
+                          </label>
+                          <label className="flex items-center gap-2 text-neutral-300">
                             <input type="checkbox" checked={session.autoSummary} onChange={(e) => setSession((s) => ({ ...s, autoSummary: e.target.checked }))} />
                             每 5 次对话自动写入时间线（{unsummarizedUserCount(session.messages)}/5）
                           </label>
@@ -761,6 +821,14 @@ export default function CharacterChatDock({
               </div>
             )}
             <div className="flex items-end gap-1">
+              <button
+                type="button"
+                title={session.autoImage ? "自动出图开" : "自动出图关"}
+                className={`w-9 h-9 rounded-full text-sm ${session.autoImage ? "bg-purple-600 text-white" : "text-neutral-400 hover:bg-white/10"}`}
+                onClick={() => setSession((s) => ({ ...s, autoImage: !s.autoImage }))}
+              >
+                图
+              </button>
               <button type="button" title="添加图片" className="w-9 h-9 rounded-full text-neutral-400 hover:bg-white/10" onClick={() => imgRef.current?.click()}>🖼</button>
               <input ref={imgRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
                 const f = e.target.files?.[0];
@@ -799,6 +867,14 @@ export default function CharacterChatDock({
             <div className="absolute right-1 bottom-1 w-2 h-2 border-r-2 border-b-2 border-neutral-500" />
           </div>
         </div>
+      )}
+      {preview && (
+        <ImagePreview
+          url={preview.url}
+          canSave={canEditCard && !localOnly}
+          onSave={() => void saveToGallery(preview.url, preview.charId)}
+          onClose={() => setPreview(null)}
+        />
       )}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-full bg-white text-black text-sm">

@@ -62,6 +62,7 @@ export interface ChatSession {
   soloMode: SoloMode;
   scene: string;
   autoSummary: boolean;
+  autoImage?: boolean;
   allowCardEdit: boolean;
   useTestPersona: boolean;
   messages: ChatTurn[];
@@ -201,6 +202,7 @@ export function emptySession(hostId: string): ChatSession {
     soloMode: "mystery",
     scene: "",
     autoSummary: true,
+    autoImage: false,
     allowCardEdit: true,
     useTestPersona: false,
     messages: [],

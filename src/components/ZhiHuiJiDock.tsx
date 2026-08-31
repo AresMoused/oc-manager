@@ -39,7 +39,9 @@ import {
 } from "@/lib/zhiTools";
 import { useCharacters } from "@/hooks/useCharacters";
 import ChatHtml from "@/components/ChatHtml";
+import ChatImage, { ImagePreview } from "@/components/ChatImage";
 import PresetEditor from "@/components/PresetEditor";
+import { generateCharacterStill } from "@/lib/chatImage";
 import type { Character, GalleryImage, StoredPrompt } from "@/lib/types";
 import { useDockGeo } from "@/hooks/useDockGeo";
 
@@ -67,6 +69,8 @@ export default function ZhiHuiJiDock() {
   const [pending, setPending] = useState<{ msgId: string; patches: ApplyPatch[] } | null>(null);
   const [task, setTask] = useState<ZhiTask | null>(null);
   const [status, setStatus] = useState("");
+  const [autoImage, setAutoImage] = useState(false);
+  const [preview, setPreview] = useState<{ url: string; charId?: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const taskRef = useRef<ZhiTask | null>(null);
@@ -79,6 +83,7 @@ export default function ZhiHuiJiDock() {
     const cur = store.threads.find((t) => t.id === store.currentId) || store.threads[0];
     setThreads(store.threads);
     if (cur) setThread(cur);
+    setAutoImage(localStorage.getItem("oc-zhi-auto-image") === "1");
   }, []);
 
   useEffect(() => {
@@ -180,14 +185,15 @@ export default function ZhiHuiJiDock() {
         });
         lastRaw = raw;
         const queries = extractSystemQueries(raw);
+        const runQ = autoImage ? queries.filter((q) => q.type !== "generate_image") : queries;
         setThread((t) => ({
           ...t,
           messages: t.messages.map((m) =>
             m.id === asstId ? { ...m, content: stripSystemQueries(raw) || raw } : m
           ),
         }));
-        if (!queries.length) break;
-        const result = await runQueries(queries, {
+        if (!runQ.length) break;
+        const result = await runQueries(runQ, {
           characters,
           pageCharacter: pageChar,
           pathname,
@@ -208,6 +214,21 @@ export default function ZhiHuiJiDock() {
         for (const url of result.images) allImages.push({ url, characterId: result.characterId || lastCharId });
         messages.push({ role: "assistant", content: raw });
         messages.push({ role: "user", content: `【系统自动回复】\n${result.text}` });
+      }
+      if (autoImage && !allImages.length) {
+        const subject = pageChar || characters[0];
+        if (subject) {
+          setStatus(`出图中 · ${subject.name}`);
+          try {
+            const job = await generateCharacterStill(subject, "", ac.signal, "陪玩姬");
+            lastCharId = subject.id;
+            for (const url of job.urls) allImages.push({ url, characterId: subject.id });
+          } catch (e) {
+            ping(e instanceof Error ? e.message : "出图失败");
+          }
+        } else {
+          ping("自动出图需要角色页或至少一张卡");
+        }
       }
       const visible = stripSystemQueries(lastRaw) || lastRaw;
       setThread((t) => {
@@ -359,18 +380,12 @@ export default function ZhiHuiJiDock() {
                     </div>
                     <div className={`rounded-2xl px-3 py-2 text-sm border ${mine ? "bg-purple-600/20 border-purple-800/50 whitespace-pre-wrap" : "bg-[#1c1c20] border-neutral-800"}`}>
                       {m.imageUrl && (
-                        <div className="mb-1">
-                          <img src={m.imageUrl} alt="" className="max-h-48 rounded-lg" />
-                          {!onShare && (
-                            <button
-                              type="button"
-                              className="mt-1 text-[10px] text-fuchsia-300"
-                              onClick={() => void saveToGallery(m.imageUrl!, m.speakerId)}
-                            >
-                              存进图库
-                            </button>
-                          )}
-                        </div>
+                        <ChatImage
+                          url={m.imageUrl}
+                          canSave={!onShare}
+                          onPreview={() => setPreview({ url: m.imageUrl!, charId: m.speakerId })}
+                          onSave={() => void saveToGallery(m.imageUrl!, m.speakerId)}
+                        />
                       )}
                       {mine ? m.content : m.content === "图" && m.imageUrl ? null : <ChatHtml raw={m.content || (busy ? "…" : "")} regexes={preset?.regexes} />}
                       {!mine && pending?.msgId === m.id && (
@@ -482,7 +497,20 @@ export default function ZhiHuiJiDock() {
                         />
                       )}
                       {tab === "features" && (
-                        <p className="text-neutral-500">角色扮演用「角色对话」。陪玩姬可以查角色卡、按提示词库调用抽卡姬生图（需先在抽卡姬页配好工作流）、建议改卡。工具协议和原版智绘姬一样用 SystemQuery。</p>
+                        <>
+                          <label className="flex items-center gap-2 text-neutral-300">
+                            <input
+                              type="checkbox"
+                              checked={autoImage}
+                              onChange={(e) => {
+                                setAutoImage(e.target.checked);
+                                localStorage.setItem("oc-zhi-auto-image", e.target.checked ? "1" : "0");
+                              }}
+                            />
+                            每轮对话自动出一张图（当前角色卡提示词）
+                          </label>
+                          <p className="text-neutral-500">角色扮演用「角色对话」。陪玩姬可以查角色卡、按提示词库调用抽卡姬生图（需先在抽卡姬页配好工作流）、建议改卡。</p>
+                        </>
                       )}
                     </div>
                   </>
@@ -493,6 +521,18 @@ export default function ZhiHuiJiDock() {
           {error && panel === "none" && <div className="px-3 text-[11px] text-rose-400">{error}</div>}
           {status && panel === "none" && <div className="px-3 text-[11px] text-fuchsia-300">{status}</div>}
           <div className="p-2 border-t border-neutral-800 flex items-end gap-1">
+            <button
+              type="button"
+              title={autoImage ? "自动出图开" : "自动出图关"}
+              className={`w-9 h-9 rounded-full text-sm shrink-0 ${autoImage ? "bg-fuchsia-600 text-white" : "text-neutral-400 hover:bg-white/10"}`}
+              onClick={() => {
+                const next = !autoImage;
+                setAutoImage(next);
+                localStorage.setItem("oc-zhi-auto-image", next ? "1" : "0");
+              }}
+            >
+              图
+            </button>
             <textarea
               rows={1}
               className="flex-1 bg-[#1c1c20] border border-neutral-700 rounded-2xl px-3 py-2 text-sm resize-none"
@@ -521,6 +561,14 @@ export default function ZhiHuiJiDock() {
             <div className="absolute right-1 bottom-1 w-2 h-2 border-r-2 border-b-2 border-neutral-500" />
           </div>
         </div>
+      )}
+      {preview && (
+        <ImagePreview
+          url={preview.url}
+          canSave={!onShare}
+          onSave={() => void saveToGallery(preview.url, preview.charId)}
+          onClose={() => setPreview(null)}
+        />
       )}
       {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-full bg-white text-black text-sm">{toast}</div>}
     </>
