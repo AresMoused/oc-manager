@@ -1,5 +1,7 @@
 /** Browser-local AI API config, params, and context presets */
 
+import { pushDebugLog } from "@/lib/debugLog";
+
 export interface AiApiConfig {
   baseUrl: string;
   apiKey: string;
@@ -239,74 +241,107 @@ export async function completeChat(opts: {
   messages: ChatMessage[];
   onDelta?: (text: string) => void;
   signal?: AbortSignal;
+  logSource?: string;
+  logTitle?: string;
 }): Promise<string> {
   const { config, params, messages, onDelta, signal } = opts;
-  const root = config.baseUrl.replace(/\/+$/, "");
-  const url = root.endsWith("/v1")
-    ? `${root}/chat/completions`
-    : `${root}/v1/chat/completions`;
-
-  const body = {
-    model: config.model,
-    messages,
-    temperature: params.temperature,
-    top_p: params.topP,
-    max_tokens: params.maxTokens,
-    stream: config.stream,
+  const started = Date.now();
+  const slim = messages.map((m) => ({
+    role: m.role,
+    content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+  }));
+  const log = (kind: "chat" | "error", extra: Record<string, unknown>) => {
+    if (!opts.logSource) return;
+    pushDebugLog({
+      source: opts.logSource,
+      kind,
+      title: opts.logTitle || `${config.model} · ${slim.length} 条`,
+      payload: extra,
+    });
   };
+  try {
+    const root = config.baseUrl.replace(/\/+$/, "");
+    const url = root.endsWith("/v1")
+      ? `${root}/chat/completions`
+      : `${root}/v1/chat/completions`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-    signal,
-  });
+    const body = {
+      model: config.model,
+      messages,
+      temperature: params.temperature,
+      top_p: params.topP,
+      max_tokens: params.maxTokens,
+      stream: config.stream,
+    };
 
-  if (!res.ok) {
-    throw new Error(`API 错误 ${res.status}: ${await res.text()}`);
-  }
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
 
-  if (!config.stream) {
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content || "";
-  }
-
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error("无法读取流式响应");
-  const decoder = new TextDecoder();
-  let full = "";
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const payload = trimmed.slice(5).trim();
-      if (payload === "[DONE]") continue;
-      try {
-        const json = JSON.parse(payload);
-        const delta =
-          json.choices?.[0]?.delta?.content ||
-          json.choices?.[0]?.message?.content ||
-          "";
-        if (delta) {
-          full += delta;
-          onDelta?.(full);
-        }
-      } catch {
-        /* skip */
-      }
+    if (!res.ok) {
+      throw new Error(`API 错误 ${res.status}: ${await res.text()}`);
     }
+
+    let text = "";
+    if (!config.stream) {
+      const data = await res.json();
+      text = data.choices?.[0]?.message?.content || "";
+    } else {
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("无法读取流式响应");
+      const decoder = new TextDecoder();
+      let full = "";
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const payload = trimmed.slice(5).trim();
+          if (payload === "[DONE]") continue;
+          try {
+            const json = JSON.parse(payload);
+            const delta =
+              json.choices?.[0]?.delta?.content ||
+              json.choices?.[0]?.message?.content ||
+              "";
+            if (delta) {
+              full += delta;
+              onDelta?.(full);
+            }
+          } catch {
+            /* skip */
+          }
+        }
+      }
+      text = full;
+    }
+    log("chat", {
+      model: config.model,
+      ms: Date.now() - started,
+      messages: slim,
+      reply: text,
+    });
+    return text;
+  } catch (e) {
+    log("error", {
+      model: config.model,
+      ms: Date.now() - started,
+      messages: slim,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    throw e;
   }
-  return full;
 }
 
 export async function chatCompletion(opts: {
@@ -316,6 +351,8 @@ export async function chatCompletion(opts: {
   userPrompt: string;
   onDelta?: (text: string) => void;
   signal?: AbortSignal;
+  logSource?: string;
+  logTitle?: string;
 }): Promise<string> {
   const messages = buildMessages(
     opts.preset,
@@ -328,6 +365,8 @@ export async function chatCompletion(opts: {
     messages,
     onDelta: opts.onDelta,
     signal: opts.signal,
+    logSource: opts.logSource,
+    logTitle: opts.logTitle,
   });
 }
 

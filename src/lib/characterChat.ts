@@ -441,11 +441,14 @@ export function buildChatMessages(opts: {
     out.push({ role: "system", content: APPLY_INSTRUCTION });
   }
   if (allowImageGen !== false) {
+    const otherNames = others.map((c) => c.name).join("、") || "（无）";
     out.push({
       role: "system",
-      content: `若本轮有明确画面（换装、新场景、用户要看图），在正文后追加：
-<SystemQuery>{"type":"generate_image","characterName":"出场角色名","outfit":"服装名或空","angle":"front","upper":"sfw","extra":"场景与动作 tags"}</SystemQuery>
-闲聊不要出图。外观与服装在角色卡里是分层的，出图会自动组合。`,
+      content: `玩家是「${playerName}」。用户要求生成图片（含括号里的「生成一张图片」）时必须追加 generate_image。
+characterName 用入画角色：玩家说自己穿/展示给别人看 → ${playerName}；说对方穿 → 对方名字。
+不要把 ${otherNames} 的经历、职业、外貌写进 ${playerName} 的图。
+闲聊不要出图。
+<SystemQuery>{"type":"generate_image","characterName":"${playerName}","angle":"front","upper":"sfw","extra":"场景与服装 tags"}</SystemQuery>`,
     });
   }
   if (!historyPlaced) out.push(...histMsgs);

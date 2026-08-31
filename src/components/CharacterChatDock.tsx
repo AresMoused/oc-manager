@@ -185,6 +185,8 @@ export default function CharacterChatDock({
         config: { ...cfg, stream: false },
         params: { ...params, maxTokens: Math.min(params.maxTokens, 800) },
         messages: buildSummaryMessages(pending, names),
+        logSource: "角色对话",
+        logTitle: "总结",
       });
       const parsed = parseSummaryJson(raw);
       if (!parsed) throw new Error("总结解析失败");
@@ -281,6 +283,8 @@ export default function CharacterChatDock({
         params,
         messages,
         signal: ac.signal,
+        logSource: "角色对话",
+        logTitle: session.title || host.name,
         onDelta: (full) => {
           setSession((s) => ({
             ...s,
@@ -307,6 +311,9 @@ export default function CharacterChatDock({
           onTask: () => {},
           onStatus: () => {},
           onPatchCharacter: canEditCard ? onPatchCharacter : undefined,
+          logSource: "角色对话",
+          lastUserLine: text,
+          preferCharacter: pov,
         });
         if (result.images.length) {
           setSession((s) => ({

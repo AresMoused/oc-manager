@@ -9,6 +9,7 @@ import {
   runSavedComfyJob,
 } from "@/lib/comfyConfig";
 import { rollLexiconHint } from "@/lib/comfyLexicon";
+import { pushDebugLog } from "@/lib/debugLog";
 import { characterCardText } from "@/lib/characterChat";
 import {
   appearanceOf,
@@ -142,6 +143,9 @@ export type ZhiToolCtx = {
   onStatus: (s: string) => void;
   onGoto?: (path: string) => void;
   onPatchCharacter?: (id: string, patch: Partial<Character>) => void;
+  logSource?: string;
+  lastUserLine?: string;
+  preferCharacter?: Character;
 };
 
 export async function runQueries(
@@ -201,7 +205,12 @@ export async function runQueries(
         const characterName = String(q.characterName || q.character || "");
         let extra = String(q.extra || q.prompt || "");
         const hits = characterName ? findCharacters(ctx.characters, characterName) : [];
-        const c = hits[0] || ctx.pageCharacter;
+        const selfWear = /我.{0,12}(穿|给.*看)|生成一张|拿出一套/.test(ctx.lastUserLine || "");
+        const c =
+          (selfWear && ctx.preferCharacter) ||
+          hits[0] ||
+          ctx.preferCharacter ||
+          ctx.pageCharacter;
         if (c) characterId = c.id;
         const app = c ? appearanceOf(c) : undefined;
         const outfitHint = String(q.outfit || q.outfitName || "");
@@ -248,7 +257,22 @@ export async function runQueries(
           prompt_suffix: "",
         };
         if (app?.negative) ov.negative_prompt = app.negative;
-        const job = await runSavedComfyJob(ov, ctx.signal);
+        pushDebugLog({
+          source: ctx.logSource || "陪玩姬",
+          kind: "tool",
+          title: `generate_image ${c?.name || characterName || ""}`,
+          payload: {
+            query: q,
+            usedCharacter: c?.name,
+            skipOutfit,
+            prompt: characterPrompt || extra,
+            lexicon: rolledNote,
+          },
+        });
+        const job = await runSavedComfyJob(ov, ctx.signal, {
+          source: ctx.logSource || "抽卡姬",
+          note: `generate_image ${c?.name || ""}`,
+        });
         images.push(...job.urls);
         lines.push(
           [

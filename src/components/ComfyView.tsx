@@ -17,6 +17,7 @@ import {
 import type { BuilderData } from "@/lib/promptBuilder";
 import { loadLexiconBuilder, rollRandomCharacter as rollLexicon } from "@/lib/comfyLexicon";
 import LexiconEnableModal from "@/components/LexiconEnableModal";
+import { pushDebugLog } from "@/lib/debugLog";
 import {
   APPEARANCE_PARTS,
   appearanceOf,
@@ -222,7 +223,21 @@ export default function ComfyView() {
     const promptGraph = applyPlaceholders(activeWf.workflow, { ...p, seed: seedUsed });
     const { prompt_id } = await comfyQueuePrompt(settings.baseUrl, promptGraph);
     const outs = await comfyWaitForImages(settings.baseUrl, prompt_id, { signal });
-    return outs.map((img) => comfyImageUrl(settings.baseUrl, img));
+    const urls = outs.map((img) => comfyImageUrl(settings.baseUrl, img));
+    pushDebugLog({
+      source: "抽卡姬",
+      kind: "comfy",
+      title: `${activeWf.name} · seed ${seedUsed}`,
+      payload: {
+        workflow: activeWf.name,
+        seed: seedUsed,
+        prompt: composePositivePrompt(p),
+        negative: p.negative_prompt,
+        size: `${p.width}x${p.height}`,
+        urls,
+      },
+    });
+    return urls;
   };
 
   const handleGenerate = async () => {

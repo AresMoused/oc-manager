@@ -166,6 +166,8 @@ export default function ZhiHuiJiDock() {
           config: cfg,
           params,
           signal: ac.signal,
+          logSource: "陪玩姬",
+          logTitle: thread.title || "陪玩姬",
           messages,
           onDelta: (full) => {
             setThread((t) => ({
@@ -198,6 +200,9 @@ export default function ZhiHuiJiDock() {
           onStatus: setStatus,
           onGoto: (path) => router.push(path),
           onPatchCharacter: onShare ? undefined : (cid, patch) => updateCharacter(cid, patch),
+          logSource: "陪玩姬",
+          lastUserLine: text,
+          preferCharacter: pageChar,
         });
         lastCharId = result.characterId || lastCharId;
         for (const url of result.images) allImages.push({ url, characterId: result.characterId || lastCharId });

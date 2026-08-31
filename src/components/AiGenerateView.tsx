@@ -99,6 +99,8 @@ export default function AiGenerateView() {
       const text = await chatCompletion({
         config: cfg, params, preset: active, userPrompt: prompt,
         signal: ac.signal, onDelta: (t) => setOutput(t),
+        logSource: "AI生成角色",
+        logTitle: "生成角色卡",
       });
       setOutput(text); showToast("生成完成");
     } catch (e) {
