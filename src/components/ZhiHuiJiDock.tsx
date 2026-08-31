@@ -192,7 +192,19 @@ export default function ZhiHuiJiDock() {
             m.id === asstId ? { ...m, content: stripSystemQueries(raw) || raw } : m
           ),
         }));
-        if (!runQ.length) break;
+        if (!runQ.length) {
+          const stall = /稍等|等一下|先调取|马上帮|我来整理|让我先|先看一下/.test(raw);
+          if (stall && round < 3) {
+            messages.push({ role: "assistant", content: raw });
+            messages.push({
+              role: "user",
+              content:
+                "【系统】不要只说稍等。立刻输出 SystemQuery。根据旧提示词填外观请用 fill_appearance_from_prompts；查卡用 read。",
+            });
+            continue;
+          }
+          break;
+        }
         const result = await runQueries(runQ, {
           characters,
           pageCharacter: pageChar,

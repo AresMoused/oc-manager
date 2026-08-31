@@ -15,6 +15,7 @@ import {
   appearanceOf,
   appearanceSummary,
   composeAppearancePrompt,
+  fillAppearanceFromPrompts,
 } from "@/lib/appearance";
 
 export interface ZhiTaskStep {
@@ -28,18 +29,19 @@ export interface ZhiTask {
   steps: ZhiTaskStep[];
 }
 
-export const TOOL_INSTRUCTION = `你可以决定要不要出图。画面有明确视觉（换装、新场景、用户要看图、关键动作）时，对用户说完后追加 generate_image；闲聊、纯问答不要出图。
+export const TOOL_INSTRUCTION = `查卡、改外观、出图时，同一条回复必须带 SystemQuery，禁止只说「稍等/我先调取/马上帮你」而不带工具。
 
 工具（对用户可见正文里不要出现这些标签）：
 <SystemQuery>{"type":"read","path":"characters.角色名"}</SystemQuery>
+<SystemQuery>{"type":"fill_appearance_from_prompts","characterName":"角色名"}</SystemQuery>
+<SystemQuery>{"type":"write_appearance","characterName":"角色名","faceFront":"elf, blonde hair"}</SystemQuery>
 <SystemQuery>{"type":"generate_image","characterName":"角色名","angle":"front","upper":"sfw","extra":"beach, smiling","lexicon":"BDSM"}</SystemQuery>
 <SystemQuery>{"type":"generate_image","characterName":"角色名","outfit":"礼服","extra":"ballroom"}</SystemQuery>
-<SystemQuery>{"type":"write_appearance","characterName":"角色名","faceFront":"elf, blonde hair"}</SystemQuery>
 
-默认只组合角色「脸+身体」，不要叠卡里已有服装。
-- 用户明确要穿卡里某套（礼服/平常服）才填 outfit
-- 从抽卡姬词库随机衣服：填 lexicon（如 BDSM、服装），不要填 outfit
-- 临时衣服（比基尼等）写 extra，不要填 outfit
+根据旧提示词填写外观/服装页：直接 fill_appearance_from_prompts（会把快照拆成脸/身体/服装）。不要空口说已经填好。
+默认出图只组合「脸+身体」，不要叠卡里已有服装。
+- 用户明确要穿卡里某套才填 outfit
+- 从抽卡姬词库随机衣服：填 lexicon，不要填 outfit
 没有抽卡姬工作流时不要假装已经出图。`;
 
 const MODULES: Record<string, string> = {
@@ -48,6 +50,7 @@ read characters / characters.名 → 卡面、分层外观、服装列表、旧�
 外观：face / upperSfw / fullSfw / NSFW 对应层，正/背。
 服装：独立 outfits，activeOutfitId 为当前穿的。
 write_appearance 改分层或增改一套衣服。
+fill_appearance_from_prompts: 把角色 prompts[] 旧快照拆进脸/身体/服装。
 generate_image: characterName, extra 场景, lexicon 抽卡姬词库名（随机一套衣服，不叠卡内衣装）, outfit 仅当用户指定卡里某套。默认不含服装层。
 不要用 NovelAI charRef 路径。`,
   comfy: `===== 抽卡姬 / ComfyUI =====
@@ -299,6 +302,24 @@ export async function runQueries(
         ctx.onPatchCharacter(c.id, { appearance: next });
         characterId = c.id;
         lines.push(`✅ 已更新 ${c.name} 外观\n${appearanceSummary(next)}`);
+      } else if (type === "fill_appearance_from_prompts") {
+        const characterName = String(q.characterName || q.character || "");
+        const hits = characterName ? findCharacters(ctx.characters, characterName) : [];
+        const c = hits[0] || ctx.pageCharacter;
+        if (!c) {
+          lines.push("fill_appearance_from_prompts：找不到角色");
+          continue;
+        }
+        if (!ctx.onPatchCharacter) {
+          lines.push("此页不能改卡（分享只读）");
+          continue;
+        }
+        const next = fillAppearanceFromPrompts(c, String(q.label || q.promptLabel || ""));
+        ctx.onPatchCharacter(c.id, { appearance: next });
+        characterId = c.id;
+        lines.push(
+          `✅ 已根据旧提示词填写 ${c.name} 的外观/服装\n${appearanceSummary(next)}\n快照数：${(c.prompts || []).length}`
+        );
       } else if (type === "ui_action") {
         const action = String(q.action || "");
         const path = String(q.path || q.value || "");
@@ -359,8 +380,8 @@ function handleRead(path: string, characters: Character[]): string {
   return hits
     .map((c) => {
       const prompts = (c.prompts || [])
-        .map((pr) => `· [${pr.label || "未命名"}] ${pr.text.slice(0, 280)}`)
-        .join("\n");
+        .map((pr) => `· [${pr.label || "未命名"}]\n${pr.text}`)
+        .join("\n\n");
       return `【${c.name}】\n${characterCardText(c, [c], 4)}\n\n分层外观：\n${appearanceSummary(appearanceOf(c))}\n提示词快照：\n${prompts || "（空）"}`;
     })
     .join("\n\n");

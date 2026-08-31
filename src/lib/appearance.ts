@@ -238,3 +238,126 @@ export function importZhiCharacterJson(
 export function appearanceOf(c: Character | undefined): AppearanceProfile {
   return normalizeAppearance(c?.appearance);
 }
+
+const FACE_RE = /hair|bang|sidelock|ponytail|twintail|braid|eye|iris|pupil|lash|brow|blush|mole|freckle|horn|ear|fang|tooth|makeup|lipstick|eyeliner|face|expression|smile|grin|skin tone|dark-skinned|pale skin|tan|头发|瞳|眼|刘海|角|耳|妆|表情/i;
+const BODY_LOWER_RE = /thigh|leg|hip|ass|butt|feet|foot|knee|calf|腿|臀|足/i;
+const BODY_RE = /breast|boob|chest|navel|waist|hip|thigh|leg|ass|butt|body|figure|slim|slender|petite|curvy|muscular|tall|midriff|collarbone|shoulder|arm|abs|skin|胸|腰|腿|身材|锁骨/i;
+const NSFW_RE = /nude|naked|nipple|pussy|penis|areola|uncensored|nsfw|裸体/i;
+const CLOTH_LOWER_RE = /skirt|pants|shorts|jeans|boots|heels|shoes|pantyhose|stockings|thighhigh|garter|dress|gown|robe|裙|裤|靴|袜/i;
+const CLOTH_RE = /dress|skirt|shirt|blouse|jacket|coat|cape|armor|bikini|lingerie|bra|panties|underwear|boots|heels|shoes|gloves|hat|cap|crown|ribbon|bow|pantyhose|stockings|thighhighs|leotard|kimono|uniform|hoodie|sweater|pants|shorts|jeans|choker|necklace|earring|bracelet|cloak|robe|veil|mask|belt|corset|garter|apron|scarf|tie|top|bodysuit|harness|collar|裙|衣|靴|袜|甲|袍|帽|手套|内衣/i;
+const SKIP_RE = /^(1girl|2girls|solo|looking at viewer|masterpiece|best quality|absurdres|highres|newest)$/i;
+
+function joinLayerTags(tags: string[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const t of tags) {
+    const k = t.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(t);
+  }
+  return out.join(", ");
+}
+
+export function splitPromptLayers(text: string): {
+  face: string;
+  upperSfw: string;
+  fullSfw: string;
+  upperNsfw: string;
+  fullNsfw: string;
+  outfitUpper: string;
+  outfitFull: string;
+} {
+  const face: string[] = [];
+  const upper: string[] = [];
+  const full: string[] = [];
+  const nsfwU: string[] = [];
+  const nsfwF: string[] = [];
+  const clothU: string[] = [];
+  const clothF: string[] = [];
+  for (const raw of String(text || "").split(/,/)) {
+    const t = raw.trim();
+    if (!t || SKIP_RE.test(t)) continue;
+    if (NSFW_RE.test(t)) {
+      (BODY_LOWER_RE.test(t) ? nsfwF : nsfwU).push(t);
+    } else if (CLOTH_RE.test(t)) {
+      (CLOTH_LOWER_RE.test(t) ? clothF : clothU).push(t);
+    } else if (FACE_RE.test(t)) {
+      face.push(t);
+    } else if (BODY_RE.test(t)) {
+      (BODY_LOWER_RE.test(t) ? full : upper).push(t);
+    } else {
+      face.push(t);
+    }
+  }
+  return {
+    face: joinLayerTags(face),
+    upperSfw: joinLayerTags(upper),
+    fullSfw: joinLayerTags(full),
+    upperNsfw: joinLayerTags(nsfwU),
+    fullNsfw: joinLayerTags(nsfwF),
+    outfitUpper: joinLayerTags(clothU),
+    outfitFull: joinLayerTags(clothF),
+  };
+}
+
+/** Map character.prompts snapshots into layered appearance + outfits. */
+export function fillAppearanceFromPrompts(c: Character, labelHint = ""): AppearanceProfile {
+  const prompts = c.prompts || [];
+  if (!prompts.length) throw new Error(`${c.name} 没有旧提示词快照`);
+  const hint = labelHint.trim().toLowerCase();
+  const picked = hint
+    ? prompts.filter(
+        (p) =>
+          (p.label || "").toLowerCase().includes(hint) ||
+          p.text.toLowerCase().includes(hint)
+      )
+    : prompts;
+  const use = picked.length ? picked : prompts;
+  const next = normalizeAppearance(c.appearance);
+  if (!next.nameCN) next.nameCN = c.name;
+  if (!next.nameEN) next.nameEN = c.name;
+
+  const layers = splitPromptLayers(use.map((p) => p.text).join(", "));
+  if (layers.face) next.face.front = layers.face;
+  if (layers.upperSfw) next.upperSfw.front = layers.upperSfw;
+  if (layers.fullSfw) next.fullSfw.front = layers.fullSfw;
+  if (layers.upperNsfw) next.upperNsfw.front = layers.upperNsfw;
+  if (layers.fullNsfw) next.fullNsfw.front = layers.fullNsfw;
+
+  let madeOutfit = false;
+  for (const p of use) {
+    const cloth = splitPromptLayers(p.text);
+    if (!cloth.outfitUpper && !cloth.outfitFull) continue;
+    const nameCN = (p.label || "默认服装").trim();
+    let hit = next.outfits.find((o) => o.nameCN === nameCN);
+    if (!hit) {
+      hit = {
+        id: crypto.randomUUID(),
+        nameCN,
+        nameEN: "",
+        upper: emptyLayer(),
+        full: emptyLayer(),
+        photoPrompt: "",
+      };
+      next.outfits.push(hit);
+    }
+    if (cloth.outfitUpper) hit.upper.front = cloth.outfitUpper;
+    if (cloth.outfitFull) hit.full.front = cloth.outfitFull;
+    next.activeOutfitId = hit.id;
+    madeOutfit = true;
+  }
+  if (!madeOutfit && (layers.outfitUpper || layers.outfitFull)) {
+    const hit: OutfitPreset = {
+      id: crypto.randomUUID(),
+      nameCN: "默认服装",
+      nameEN: "",
+      upper: { front: layers.outfitUpper, back: "" },
+      full: { front: layers.outfitFull, back: "" },
+      photoPrompt: "",
+    };
+    next.outfits.push(hit);
+    next.activeOutfitId = hit.id;
+  }
+  return next;
+}
