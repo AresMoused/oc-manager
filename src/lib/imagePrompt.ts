@@ -213,18 +213,26 @@ export async function writeImagePrompt(opts: {
     if (fallback) return { prompt: fallback, raw: "", packName: "fallback" };
     throw new Error("出图需要先在陪玩姬里填 API Key，用来写提示词");
   }
+  const focus = opts.character ? [opts.character] : chars;
   const pack = packForImage();
   const vars: Record<string, string> = {
     上下文: opts.history || "",
     正文: opts.scene || opts.extra || opts.userLine || "",
     用户需求: opts.userLine || opts.extra || "",
-    角色启用列表: characterListBlock(chars),
-    通用角色启用列表: characterListBlock(chars),
-    通用服装启用列表: outfitListBlock(chars),
+    角色启用列表: characterListBlock(focus),
+    通用角色启用列表: characterListBlock(focus),
+    通用服装启用列表: outfitListBlock(focus),
     "人设.name": opts.character?.name || chars[0]?.name || "",
     "用户.name": "用户",
+    入画角色: opts.character?.name || "",
   };
   const messages = packMessages(pack, vars);
+  if (opts.character) {
+    messages.unshift({
+      role: "system",
+      content: `本次只画「${opts.character.name}」。角色启用列表只有她。不要画其他角色，不要用别人的 \${"name":...} 宏。`,
+    });
+  }
   const raw = await completeChat({
     config: opts.config,
     params: { ...opts.params, maxTokens: Math.min(opts.params.maxTokens || 2048, 2048) },

@@ -367,14 +367,25 @@ export function buildChatMessages(opts: {
   const others = present.filter((c) => c.id !== pov.id);
   const solo = present.length <= 1;
   const usingTest = !!(testPersona && testPersona.body.trim());
-  const playerName = usingTest ? testPersona!.name || "玩家" : pov.name;
+  const star = present[0] || pov;
+  const voiceName =
+    soloMode === "monologue" ? "脑内的声音" : "神秘声音";
+  const playerName = usingTest
+    ? testPersona!.name || "玩家"
+    : solo
+      ? voiceName
+      : pov.name;
 
-  const persona = usingTest
-    ? `【玩家视角·测试人设】\n玩家自称「${playerName}」。正式游玩请改用角色卡当人设。\n不要代替玩家说话或做决定。\n\n${testPersona!.body.trim()}`
-    : `【玩家视角】\n你正在以「${pov.name}」的第一人称感官写其他角色与环境。不要代替 ${pov.name} 说话或做决定。\n\n${characterCardText(pov, present)}`;
-  const chars = others.length
-    ? others.map((c) => characterCardText(c, present)).join("\n\n---\n\n")
-    : characterCardText(pov, present);
+  const persona = solo
+    ? `【扮演角色】\n你是「${star.name}」，不是玩家。用户是${voiceName}（没有可见身体），不要把用户写成 ${star.name}，也不要替这个声音说话。用 ${star.name} 的第一人称回应。\n\n${characterCardText(star, present)}`
+    : usingTest
+      ? `【玩家视角·测试人设】\n玩家自称「${playerName}」。正式游玩请改用角色卡当人设。\n不要代替玩家说话或做决定。\n\n${testPersona!.body.trim()}`
+      : `【玩家视角】\n玩家是「${pov.name}」。你正在写其他角色与环境；不要代替 ${pov.name} 说话或做决定。\n\n${characterCardText(pov, present)}`;
+  const chars = solo
+    ? characterCardText(star, present)
+    : others.length
+      ? others.map((c) => characterCardText(c, present)).join("\n\n---\n\n")
+      : characterCardText(pov, present);
   const worldMem = present
     .map((c) => {
       const tl = (c.timeline || []).slice(-6);
@@ -386,11 +397,11 @@ export function buildChatMessages(opts: {
 
   let scenario = scene.trim() ? `当前场景：${scene.trim()}` : "";
   if (solo && soloMode === "monologue") {
-    scenario += `\n本场只有 ${playerName}。请写环境与内心独白式回应，不要冒出第二个可对话的具名角色。`;
+    scenario += `\n用户是 ${star.name} 脑海里的声音。你只写 ${star.name} 的回应（像在和自己内心说话）。不要把用户写成 ${star.name}。`;
   } else if (solo && soloMode === "mystery") {
-    scenario += `\n本场只有 ${playerName}。另一方是来源不明的神秘声音（不要给它固定真名），与 ${playerName} 对话。`;
+    scenario += `\n用户是来源不明的神秘声音（不要给声音真名或身体）。你是 ${star.name}，用她的言行回应这个声音。`;
   } else if (others.length) {
-    scenario += `\n在场其他角色：${others.map((c) => c.name).join("、")}。只写他们的言行，不写 ${playerName} 的行动。`;
+    scenario += `\n在场其他角色：${others.map((c) => c.name).join("、")}。只写他们的言行，不写玩家「${playerName}」的行动。出图时画这些对方角色，不要画 ${playerName}。`;
   }
 
   const hist = recentUnsummarized(history, 5);
@@ -443,14 +454,13 @@ export function buildChatMessages(opts: {
     out.push({ role: "system", content: APPLY_INSTRUCTION });
   }
   if (allowImageGen !== false) {
-    const otherNames = others.map((c) => c.name).join("、") || "（无）";
+    const drawName = solo ? star.name : others.map((c) => c.name).join("、") || star.name;
     out.push({
       role: "system",
-      content: `玩家是「${playerName}」。用户要求生成图片（含括号里的「生成一张图片」）时必须追加 generate_image。
-characterName 用入画角色：玩家说自己穿/展示给别人看 → ${playerName}；说对方穿 → 对方名字。
-不要把 ${otherNames} 的经历、职业、外貌写进 ${playerName} 的图。
+      content: `玩家是「${playerName}」。对话气泡里的图是对方发出的，入画角色必须是 ${drawName}，不要画 ${playerName}。
+用户明确说「给我看你/她」才出对方；说自己穿/自拍才画 ${playerName}。
 闲聊不要出图。
-<SystemQuery>{"type":"generate_image","characterName":"${playerName}","angle":"front","upper":"sfw","extra":"场景与服装 tags"}</SystemQuery>`,
+<SystemQuery>{"type":"generate_image","characterName":"${solo ? star.name : others[0]?.name || star.name}","angle":"front","upper":"sfw","extra":"场景与服装 tags"}</SystemQuery>`,
     });
   }
   if (!historyPlaced) out.push(...histMsgs);

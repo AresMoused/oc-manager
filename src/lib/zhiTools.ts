@@ -131,6 +131,7 @@ export type ZhiToolCtx = {
   logSource?: string;
   lastUserLine?: string;
   preferCharacter?: Character;
+  selfCharacter?: Character;
   canWrite?: boolean;
   ai?: { config: AiApiConfig; params: AiModelParams };
   historyText?: string;
@@ -209,9 +210,9 @@ export async function runQueries(
         const characterName = String(q.characterName || q.character || "");
         let extra = String(q.extra || q.prompt || "");
         const hits = characterName ? findCharacters(ctx.characters, characterName) : [];
-        const selfWear = /我.{0,12}(穿|给.*看)|生成一张|拿出一套/.test(ctx.lastUserLine || "");
+        const selfWear = /我.{0,12}(穿|给.*看|自拍)|生成一张我/.test(ctx.lastUserLine || "");
         const c =
-          (selfWear && ctx.preferCharacter) ||
+          (selfWear && (ctx.selfCharacter || ctx.preferCharacter)) ||
           hits[0] ||
           ctx.preferCharacter ||
           ctx.pageCharacter;

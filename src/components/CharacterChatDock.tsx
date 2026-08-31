@@ -162,6 +162,14 @@ export default function CharacterChatDock({
   const present = worldMates.filter((c) => session.participantIds.includes(c.id));
   const pov = present.find((c) => c.id === session.povId) || present[0] || host;
   const solo = present.length <= 1;
+  const others = present.filter((c) => c.id !== pov.id);
+  const star = present[0] || host;
+  const voiceName = session.soloMode === "monologue" ? "脑内的声音" : "神秘声音";
+  const playerName = session.useTestPersona && testPersona.name.trim()
+    ? testPersona.name
+    : solo
+      ? voiceName
+      : pov.name;
   const ping = (m: string) => {
     setToast(m);
     window.setTimeout(() => setToast(""), 2200);
@@ -198,13 +206,9 @@ export default function CharacterChatDock({
   };
 
   const asstName = solo
-    ? session.soloMode === "mystery"
-      ? "神秘声音"
-      : "独白"
-    : present.filter((c) => c.id !== pov.id).map((c) => c.name).join("、") || "对方";
-  const asstAvatar = solo
-    ? undefined
-    : present.find((c) => c.id !== pov.id)?.avatar;
+    ? star.name
+    : others.map((c) => c.name).join("、") || "对方";
+  const asstAvatar = solo ? star.avatar : others[0]?.avatar;
 
   const runSummary = useCallback(
     async (all: ChatTurn[]) => {
@@ -265,7 +269,7 @@ export default function CharacterChatDock({
       id: crypto.randomUUID(),
       role: "user",
       speakerId: pov.id,
-      speakerName: session.useTestPersona ? testPersona.name || "玩家" : pov.name,
+      speakerName: playerName,
       content: text || "（附图）",
       imageUrl: regen ? undefined : image || undefined,
       at: new Date().toISOString(),
@@ -346,7 +350,8 @@ export default function CharacterChatDock({
           onStatus: () => {},
           logSource: "角色对话",
           lastUserLine: text,
-          preferCharacter: pov,
+          preferCharacter: solo ? star : others[0] || host,
+          selfCharacter: solo ? star : pov,
           canWrite: canEditCard && !localOnly,
           ai: { config: cfg, params },
           historyText: nextMsgs.map((m) => `${m.speakerName}: ${m.content}`).join("\n").slice(-4000),
@@ -371,7 +376,7 @@ export default function CharacterChatDock({
         }
       }
       if (session.autoImage) {
-        const subject = present.find((c) => c.id !== pov.id) || host;
+        const subject = solo ? star : others[0] || host;
         ping(`出图中 · ${subject.name}`);
         try {
           const job = await generateCharacterStill(subject, session.scene, ac.signal, "角色对话", {
@@ -569,7 +574,7 @@ export default function CharacterChatDock({
               <div className="text-sm text-white truncate">{session.title || "角色对话"}</div>
               <div className="text-[10px] text-neutral-500 truncate">
                 {pov.name}
-                {solo ? ` · ${session.soloMode === "mystery" ? "神秘声音" : "独白"}` : ` · ${present.length} 人在场`}
+                {solo ? ` · 你是${voiceName}` : ` · ${present.length} 人在场`}
               </div>
             </div>
             <IconBtn title="聊天历史" onClick={() => setPanel(panel === "history" ? "none" : "history")}>🕒</IconBtn>
@@ -585,7 +590,7 @@ export default function CharacterChatDock({
                 <div className="flex gap-2 max-w-[90%]">
                   <Avatar src={asstAvatar} name={asstName} />
                   <div className="bg-[#1c1c20] border border-neutral-800 rounded-2xl px-3 py-2 text-sm text-neutral-300">
-                    你好，我在听。用 {pov.name} 的视角说第一句话吧。
+                    你好，我在听。用{solo ? voiceName : ` ${pov.name} 的视角`}说第一句话吧。
                   </div>
                 </div>
               )}
@@ -802,7 +807,7 @@ export default function CharacterChatDock({
                         <>
                           <label className="flex items-center gap-2 text-neutral-300">
                             <input type="checkbox" checked={!!session.autoImage} onChange={(e) => setSession((s) => ({ ...s, autoImage: e.target.checked }))} />
-                            每轮对话自动出一张图（先让陪玩姬按「展示/正文出图」预设写提示词）
+                            每轮对话自动出一张图（画对方角色；单人时画这张卡）
                           </label>
                           <label className="flex items-center gap-2 text-neutral-300">
                             <input type="checkbox" checked={session.autoSummary} onChange={(e) => setSession((s) => ({ ...s, autoSummary: e.target.checked }))} />
@@ -905,13 +910,17 @@ export default function CharacterChatDock({
                   </button>
                 );
               })}
-              <select
-                className="ml-auto bg-transparent text-[10px] text-neutral-400 max-w-[7rem]"
-                value={session.povId}
-                onChange={(e) => setSession((s) => ({ ...s, povId: e.target.value }))}
-              >
-                {present.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              {solo ? (
+                <span className="ml-auto text-[10px] text-neutral-500">你是{voiceName}</span>
+              ) : (
+                <select
+                  className="ml-auto bg-transparent text-[10px] text-neutral-400 max-w-[7rem]"
+                  value={session.povId}
+                  onChange={(e) => setSession((s) => ({ ...s, povId: e.target.value }))}
+                >
+                  {present.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              )}
               {solo && (
                 <select
                   className="bg-transparent text-[10px] text-neutral-400"
@@ -919,7 +928,7 @@ export default function CharacterChatDock({
                   onChange={(e) => setSession((s) => ({ ...s, soloMode: e.target.value as SoloMode }))}
                 >
                   <option value="mystery">神秘声音</option>
-                  <option value="monologue">独白</option>
+                  <option value="monologue">脑内的声音</option>
                 </select>
               )}
             </div>
