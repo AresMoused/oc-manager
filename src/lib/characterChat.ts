@@ -58,6 +58,7 @@ export interface ChatSession {
   soloMode: SoloMode;
   scene: string;
   autoSummary: boolean;
+  allowCardEdit: boolean;
   messages: ChatTurn[];
   summaries: ChatSummary[];
   updatedAt: string;
@@ -174,6 +175,7 @@ export function emptySession(hostId: string): ChatSession {
     soloMode: "mystery",
     scene: "",
     autoSummary: true,
+    allowCardEdit: true,
     messages: [],
     summaries: [],
     updatedAt: new Date().toISOString(),
@@ -276,6 +278,7 @@ export function displayReply(raw: string): string {
   let s = String(raw || "");
   s = s.replace(/<分析喵>[\s\S]*?<\/分析喵>/gi, "");
   s = s.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  s = s.replace(/<apply>[\s\S]*?<\/apply>/gi, "");
   const content = s.match(/<content>([\s\S]*?)<\/content>/i);
   if (content) s = content[1] || s;
   s = s.replace(/<summary>[\s\S]*?<\/summary>/gi, "");
@@ -322,8 +325,9 @@ export function buildChatMessages(opts: {
   history: ChatTurn[];
   userLine: string;
   imageUrl?: string;
+  allowCardEdit?: boolean;
 }): ChatMessage[] {
-  const { preset, present, pov, soloMode, scene, history, userLine, imageUrl } = opts;
+  const { preset, present, pov, soloMode, scene, history, userLine, imageUrl, allowCardEdit } = opts;
   const others = present.filter((c) => c.id !== pov.id);
   const solo = present.length <= 1;
 
@@ -394,6 +398,9 @@ export function buildChatMessages(opts: {
     }
     const body = extra ? `${e.content}\n${extra}` : e.content;
     if (body.trim()) out.push({ role: e.role, content: body });
+  }
+  if (allowCardEdit) {
+    out.push({ role: "system", content: APPLY_INSTRUCTION });
   }
   if (!historyPlaced) out.push(...histMsgs);
   const userText = `【${pov.name}】\n${userLine}`;
@@ -472,4 +479,74 @@ export function toTimelineEvent(
     description: desc,
     importance: "normal",
   };
+}
+
+const CARD_FIELDS = [
+  "story",
+  "identity",
+  "residence",
+  "faction",
+  "affiliation",
+  "race",
+  "gender",
+  "age",
+  "height",
+  "weight",
+  "birthplace",
+] as const;
+
+export type CardFieldKey = (typeof CARD_FIELDS)[number];
+
+export type ApplyPatch = {
+  characterName?: string;
+  fields?: Partial<Record<CardFieldKey, string | number>>;
+  addPrompt?: { label?: string; text: string };
+  addTimeline?: { title: string; description: string };
+  note?: string;
+};
+
+export const APPLY_INSTRUCTION = `当你要改角色卡/外观/人设时（用户明确要求补设定、更新经历、改外观词），在回复末尾追加：
+<apply>
+{"characterName":"角色名","fields":{"story":"经历正文","identity":"身份","residence":"现住","faction":"派系"},"addPrompt":{"label":"外观","text":"danbooru tags, "},"addTimeline":{"title":"含人名短标题","description":"点名谁做了什么"},"note":"改了哪些字段"}
+</apply>
+规则：不要每轮都 apply；角色扮演时不要带 apply。fields 只填要改的键。addPrompt 是外观提示词。characterName 必须是在场角色真名。`;
+
+export function extractApplyPatches(raw: string): ApplyPatch[] {
+  const out: ApplyPatch[] = [];
+  const re = /<apply>([\s\S]*?)<\/apply>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(String(raw || "")))) {
+    try {
+      const j = JSON.parse(m[1]!.trim()) as ApplyPatch;
+      if (j && (j.fields || j.addPrompt || j.addTimeline)) out.push(j);
+    } catch {
+      /* skip */
+    }
+  }
+  return out;
+}
+
+export function resolveApplyTarget(
+  patch: ApplyPatch,
+  present: Character[],
+  fallback: Character
+): Character {
+  const n = (patch.characterName || "").trim();
+  if (!n) return fallback;
+  return (
+    present.find((c) => c.name === n) ||
+    present.find((c) => c.name.includes(n) || n.includes(c.name)) ||
+    fallback
+  );
+}
+
+export function fieldsFromPatch(
+  patch: ApplyPatch
+): Partial<Record<CardFieldKey, string | number>> {
+  const src = patch.fields || {};
+  const out: Partial<Record<CardFieldKey, string | number>> = {};
+  for (const k of CARD_FIELDS) {
+    if (src[k] != null && String(src[k]).trim()) out[k] = src[k]!;
+  }
+  return out;
 }

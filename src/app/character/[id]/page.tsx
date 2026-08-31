@@ -283,6 +283,7 @@ export default function CharacterPage({
         host={character}
         characters={characters}
         onWriteTimeline={(ids, ev) => addTimelineEventToMany(ids, ev)}
+        onPatchCharacter={(cid, patch) => updateCharacter(cid, patch)}
       />
     </div>
     </CheckHost>

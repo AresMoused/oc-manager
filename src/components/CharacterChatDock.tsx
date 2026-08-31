@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Character, TimelineEvent } from "@/lib/types";
+import type { Character, StoredPrompt, TimelineEvent } from "@/lib/types";
 import type { AiApiConfig, AiModelParams } from "@/lib/aiConfig";
 import { completeChat, fetchModels } from "@/lib/aiConfig";
 import {
+  type ApplyPatch,
   type ChatPresetFile,
   type ChatSession,
   type ChatTurn,
@@ -14,6 +15,8 @@ import {
   deleteChatThread,
   displayReply,
   emptySession,
+  extractApplyPatches,
+  fieldsFromPatch,
   listChatThreads,
   loadChatApiConfig,
   loadChatParams,
@@ -22,6 +25,7 @@ import {
   parseSillyTavernPreset,
   parseSummaryJson,
   recentUnsummarized,
+  resolveApplyTarget,
   saveChatApiConfig,
   saveChatParams,
   saveChatPreset,
@@ -77,10 +81,12 @@ export default function CharacterChatDock({
   host,
   characters,
   onWriteTimeline,
+  onPatchCharacter,
 }: {
   host: Character;
   characters: Character[];
   onWriteTimeline: (charIds: string[], event: Omit<TimelineEvent, "id">) => void;
+  onPatchCharacter: (id: string, patch: Partial<Character>) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>("none");
@@ -96,6 +102,7 @@ export default function CharacterChatDock({
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [pending, setPending] = useState<{ msgId: string; patches: ApplyPatch[] } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const presetFileRef = useRef<HTMLInputElement>(null);
@@ -186,8 +193,8 @@ export default function CharacterChatDock({
     [cfg, params, present, solo, session.soloMode, pov.name, onWriteTimeline]
   );
 
-  const send = async () => {
-    const text = draft.trim();
+  const send = async (presetText?: string) => {
+    const text = (presetText ?? draft).trim();
     if ((!text && !image) || busy) return;
     if (!cfg.apiKey.trim() || !cfg.baseUrl.trim()) {
       setError("请先在设置里填写对话 API");
@@ -248,6 +255,7 @@ export default function CharacterChatDock({
         history: nextMsgs,
         userLine: text || "（附图）",
         imageUrl: cfg.sendImages ? img || undefined : undefined,
+        allowCardEdit: session.allowCardEdit !== false,
       });
       const raw = await completeChat({
         config: cfg,
@@ -266,6 +274,8 @@ export default function CharacterChatDock({
         finalMsgs = s.messages.map((m) => (m.id === asstId ? { ...m, content: raw } : m));
         return { ...s, messages: finalMsgs };
       });
+      const patches = session.allowCardEdit !== false ? extractApplyPatches(raw) : [];
+      if (patches.length) setPending({ msgId: asstId, patches });
       if (session.autoSummary && unsummarizedUserCount(finalMsgs) >= 5) {
         try {
           await runSummary(finalMsgs);
@@ -288,10 +298,49 @@ export default function CharacterChatDock({
     s.soloMode = session.soloMode;
     s.scene = session.scene;
     s.autoSummary = session.autoSummary;
+    s.allowCardEdit = session.allowCardEdit;
     setSession(s);
     setPanel("none");
     ping("已新建聊天");
   };
+
+  const applyPatches = (patches: ApplyPatch[]) => {
+    for (const p of patches) {
+      const target = resolveApplyTarget(p, present.length ? present : [host], host);
+      const fields = fieldsFromPatch(p);
+      const patch: Partial<Character> = {};
+      for (const [k, v] of Object.entries(fields)) {
+        if (k === "age") (patch as { age?: string | number }).age = v;
+        else (patch as Record<string, unknown>)[k] = String(v);
+      }
+      if (p.addPrompt?.text) {
+        const item: StoredPrompt = {
+          id: crypto.randomUUID(),
+          text: p.addPrompt.text,
+          label: p.addPrompt.label || "对话生成",
+          createdAt: new Date().toISOString(),
+        };
+        patch.prompts = [...(target.prompts || []), item];
+      }
+      if (Object.keys(patch).length) onPatchCharacter(target.id, patch);
+      if (p.addTimeline?.title) {
+        onWriteTimeline([target.id], {
+          date: new Date().toISOString().slice(0, 10),
+          title: p.addTimeline.title,
+          description: p.addTimeline.description || "",
+          importance: "normal",
+        });
+      }
+    }
+    setPending(null);
+    ping("已应用到角色卡");
+  };
+
+  const shortcuts: { label: string; prompt: string }[] = [
+    { label: "补全人设", prompt: "请根据当前角色卡空缺，补全人设（经历、身份、现住、派系等），用 <apply> 提交建议。这次不要展开角色扮演。" },
+    { label: "根据对话更新", prompt: "根据刚才的对话，把新的经历或关系写进设定，用 <apply> 提交。不要重复已有内容。" },
+    { label: "生成外观词", prompt: "根据角色卡生成一组 Danbooru 外观提示词，用 addPrompt 经 <apply> 提交。不要展开角色扮演。" },
+  ];
 
   return (
     <>
@@ -359,6 +408,26 @@ export default function CharacterChatDock({
                         )}
                         {mine ? m.content : displayReply(m.content) || (busy ? "…" : "")}
                       </div>
+                      {!mine && pending?.msgId === m.id && (
+                        <div className="mt-1.5 space-y-1">
+                          {pending.patches.map((p, i) => {
+                            const t = resolveApplyTarget(p, present.length ? present : [host], host);
+                            const keys = Object.keys(fieldsFromPatch(p));
+                            return (
+                              <div key={i} className="text-[11px] border border-amber-900/50 bg-amber-950/30 rounded-xl px-2 py-1.5 text-amber-100">
+                                <div>建议改 {t.name}{p.note ? `：${p.note}` : ""}</div>
+                                {!!keys.length && <div className="text-neutral-400">字段 {keys.join("、")}</div>}
+                                {p.addPrompt && <div className="text-neutral-400">外观词 {p.addPrompt.text.slice(0, 80)}</div>}
+                                {p.addTimeline && <div className="text-neutral-400">时间线 {p.addTimeline.title}</div>}
+                              </div>
+                            );
+                          })}
+                          <div className="flex gap-1">
+                            <button type="button" className="px-2 py-0.5 rounded-lg bg-purple-600 text-white text-[11px]" onClick={() => applyPatches(pending.patches)}>应用</button>
+                            <button type="button" className="px-2 py-0.5 rounded-lg border border-neutral-700 text-neutral-400 text-[11px]" onClick={() => setPending(null)}>忽略</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -488,7 +557,11 @@ export default function CharacterChatDock({
                             <input type="checkbox" checked={session.autoSummary} onChange={(e) => setSession((s) => ({ ...s, autoSummary: e.target.checked }))} />
                             每 5 次对话自动写入时间线（{unsummarizedUserCount(session.messages)}/5）
                           </label>
-                          <p className="text-neutral-500">总结会写进所有在场角色的时间线，并点名说话/行动的人。</p>
+                          <label className="flex items-center gap-2 text-neutral-300">
+                            <input type="checkbox" checked={session.allowCardEdit !== false} onChange={(e) => setSession((s) => ({ ...s, allowCardEdit: e.target.checked }))} />
+                            允许助手建议改角色卡（需确认后写入）
+                          </label>
+                          <p className="text-neutral-500">类似智绘姬帮改效果设定：补人设、按对话更新经历、生成外观提示词，点应用才会写进卡。</p>
                         </>
                       )}
                     </div>
@@ -585,6 +658,21 @@ export default function CharacterChatDock({
               <div className="relative w-16 ml-1">
                 <img src={image} alt="" className="h-12 rounded-lg object-cover" />
                 <button type="button" className="absolute -top-1 -right-1 w-4 h-4 bg-black/70 rounded-full text-[10px] text-white" onClick={() => setImage(null)}>×</button>
+              </div>
+            )}
+            {session.allowCardEdit !== false && (
+              <div className="flex flex-wrap gap-1 px-1">
+                {shortcuts.map((s) => (
+                  <button
+                    key={s.label}
+                    type="button"
+                    disabled={busy}
+                    className="px-2 py-0.5 rounded-full border border-neutral-700 text-[10px] text-neutral-300 disabled:opacity-40"
+                    onClick={() => void send(s.prompt)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
               </div>
             )}
             <div className="flex items-end gap-1">
