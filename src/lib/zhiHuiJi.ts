@@ -76,7 +76,7 @@ export function emptyZhiThread(): ZhiThread {
 }
 
 export function pageHint(pathname: string): string {
-  if (pathname.startsWith("/character/")) return "当前在角色页：可以看卡、补人设、用 <apply> 建议改卡。角色扮演请用旁边的「角色对话」。";
+  if (pathname.startsWith("/character/")) return "当前在角色页：读卡用 read_character；改卡用写类技能，等用户点应用。角色扮演请用「角色对话」。";
   if (pathname.startsWith("/world/") && pathname.includes("/dm")) return "当前在 DM 管理页。";
   if (pathname.startsWith("/world/")) return "当前在世界页，可问角色列表、世界设定怎么填。";
   if (pathname.startsWith("/generator")) return "当前在角色外观生成器，可帮看提示词和词库怎么排。";

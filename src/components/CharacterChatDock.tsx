@@ -37,6 +37,7 @@ import {
 } from "@/lib/characterChat";
 import { extractSystemQueries, runQueries, stripSystemQueries } from "@/lib/zhiTools";
 import { generateCharacterStill } from "@/lib/chatImage";
+import { type ZhiPendingChange } from "@/lib/zhiSkills";
 import ChatHtml from "@/components/ChatHtml";
 import ChatImage, { ImagePreview } from "@/components/ChatImage";
 import PresetEditor from "@/components/PresetEditor";
@@ -118,6 +119,7 @@ export default function CharacterChatDock({
   const [toast, setToast] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [pending, setPending] = useState<{ msgId: string; patches: ApplyPatch[] } | null>(null);
+  const [skillPending, setSkillPending] = useState<ZhiPendingChange[]>([]);
   const [testPersona, setTestPersona] = useState<TestPersona>({ name: "玩家", body: "" });
   const [preview, setPreview] = useState<{ url: string; charId?: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -326,7 +328,7 @@ export default function CharacterChatDock({
         finalMsgs = s.messages.map((m) => (m.id === asstId ? { ...m, content: visible } : m));
         return { ...s, messages: finalMsgs };
       });
-      const queries = extractSystemQueries(raw).filter((q) => q.type !== "generate_image");
+      const queries = extractSystemQueries(raw).filter((q) => String(q.skill || q.type) !== "generate_image");
       if (queries.length) {
         const result = await runQueries(queries, {
           characters: present.length ? present : [host],
@@ -336,11 +338,12 @@ export default function CharacterChatDock({
           task: null,
           onTask: () => {},
           onStatus: () => {},
-          onPatchCharacter: canEditCard ? onPatchCharacter : undefined,
           logSource: "角色对话",
           lastUserLine: text,
           preferCharacter: pov,
+          canWrite: canEditCard && !localOnly,
         });
+        if (result.pending.length) setSkillPending(result.pending);
         if (result.images.length) {
           setSession((s) => ({
             ...s,
@@ -450,6 +453,26 @@ export default function CharacterChatDock({
     }
     setPending(null);
     ping("已应用到角色卡");
+  };
+
+  const applySkillPending = (items: ZhiPendingChange[]) => {
+    if (!canEditCard || localOnly) {
+      ping(localOnly ? "分享页对话不能写入卡" : "没有编辑权");
+      return;
+    }
+    for (const ch of items) {
+      if (ch.kind === "character" && ch.characterId && ch.characterPatch) {
+        onPatchCharacter(ch.characterId, ch.characterPatch);
+      }
+      if (ch.timelineEvent && ch.characterId) {
+        onWriteTimeline([ch.characterId], ch.timelineEvent);
+      }
+      if (ch.kind !== "character" && ch.kind !== "create_character") {
+        ping(`${ch.title} 请用陪玩姬确认（世界/设定类）`);
+      }
+    }
+    setSkillPending([]);
+    ping("已应用修改");
   };
 
   const shortcuts: { label: string; prompt: string }[] = [
@@ -757,6 +780,21 @@ export default function CharacterChatDock({
             )}
           </div>
 
+          {skillPending.length > 0 && panel === "none" && (
+            <div className="px-3 py-2 border-t border-amber-900/50 bg-amber-950/40 text-[11px] max-h-40 overflow-y-auto space-y-1">
+              <div className="text-amber-200">待确认的修改</div>
+              {skillPending.map((ch) => (
+                <div key={ch.id}>
+                  <span className="text-amber-300">{ch.title}</span>
+                  <div className="text-neutral-400 whitespace-pre-wrap">{ch.summary.slice(0, 280)}</div>
+                </div>
+              ))}
+              <div className="flex gap-1">
+                <button type="button" className="px-2 py-0.5 rounded bg-purple-600 text-white" onClick={() => applySkillPending(skillPending)}>应用全部</button>
+                <button type="button" className="px-2 py-0.5 rounded border border-neutral-600" onClick={() => setSkillPending([])}>忽略</button>
+              </div>
+            </div>
+          )}
           {error && panel === "none" && <div className="px-3 text-[11px] text-rose-400">{error}</div>}
 
           <div className="border-t border-neutral-800 p-2 space-y-1.5">

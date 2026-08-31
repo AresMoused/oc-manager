@@ -1,6 +1,9 @@
 /** 陪玩姬 tool protocol, aligned with 智绘姬 SystemQuery. */
 
-import type { AppearanceProfile, Character, OutfitPreset } from "@/lib/types";
+import type { AppearanceProfile, Character, OutfitPreset, StoredPrompt } from "@/lib/types";
+import type { WorldMeta } from "@/lib/worlds";
+import type { LoreMap, WorldLore } from "@/lib/worldLore";
+import { getLore, emptyLore } from "@/lib/worldLore";
 import {
   loadParams,
   loadPromptPresets,
@@ -17,6 +20,14 @@ import {
   composeAppearancePrompt,
   fillAppearanceFromPrompts,
 } from "@/lib/appearance";
+import {
+  SKILL_INSTRUCTION,
+  resolveSkillId,
+  skillDetailText,
+  type LoreSection,
+  type ZhiPendingChange,
+} from "@/lib/zhiSkills";
+import { fetchLexiconCatalog, loadLocalLists, resolveEnabledIds } from "@/lib/lexicon";
 
 export interface ZhiTaskStep {
   title: string;
@@ -29,43 +40,10 @@ export interface ZhiTask {
   steps: ZhiTaskStep[];
 }
 
-export const TOOL_INSTRUCTION = `查卡、改外观、出图时，同一条回复必须带 SystemQuery，禁止只说「稍等/我先调取/马上帮你」而不带工具。
-
-工具（对用户可见正文里不要出现这些标签）：
-<SystemQuery>{"type":"read","path":"characters.角色名"}</SystemQuery>
-<SystemQuery>{"type":"fill_appearance_from_prompts","characterName":"角色名"}</SystemQuery>
-<SystemQuery>{"type":"write_appearance","characterName":"角色名","faceFront":"elf, blonde hair"}</SystemQuery>
-<SystemQuery>{"type":"generate_image","characterName":"角色名","angle":"front","upper":"sfw","extra":"beach, smiling","lexicon":"BDSM"}</SystemQuery>
-<SystemQuery>{"type":"generate_image","characterName":"角色名","outfit":"礼服","extra":"ballroom"}</SystemQuery>
-
-根据旧提示词填写外观/服装页：直接 fill_appearance_from_prompts（会把快照拆成脸/身体/服装）。不要空口说已经填好。
-默认出图只组合「脸+身体」，不要叠卡里已有服装。
-- 用户明确要穿卡里某套才填 outfit
-- 从抽卡姬词库随机衣服：填 lexicon，不要填 outfit
-没有抽卡姬工作流时不要假装已经出图。`;
+export const TOOL_INSTRUCTION = SKILL_INSTRUCTION;
 
 const MODULES: Record<string, string> = {
-  characters: `===== 角色管理模块 =====
-read characters / characters.名 → 卡面、分层外观、服装列表、旧快照标签
-外观：face / upperSfw / fullSfw / NSFW 对应层，正/背。
-服装：独立 outfits，activeOutfitId 为当前穿的。
-write_appearance 改分层或增改一套衣服。
-fill_appearance_from_prompts: 把角色 prompts[] 旧快照拆进脸/身体/服装。
-generate_image: characterName, extra 场景, lexicon 抽卡姬词库名（随机一套衣服，不叠卡内衣装）, outfit 仅当用户指定卡里某套。默认不含服装层。
-不要用 NovelAI charRef 路径。`,
-  comfy: `===== 抽卡姬 / ComfyUI =====
-read comfy → 地址、当前工作流、是否可生图
-read comfy.presets → 抽卡姬提示词预设名
-generate_image 使用当前保存的工作流和采样参数。
-没工作流时引导用户打开 /comfy 上传 API 格式工作流。
-ui_action goto /comfy 可跳转。`,
-  generator: `===== 外观生成器 =====
-词库在「角色外观生成器」。陪玩姬不能直接改词库开关。
-可根据角色提示词给 Danbooru 词，或用 <apply> addPrompt 建议写入卡。`,
-  sheet: `===== 角色卡 =====
-改卡用 <apply>JSON</apply>，等用户点应用。
-fields: story identity residence faction affiliation race gender age height weight birthplace
-addPrompt / addTimeline 可选。`,
+  characters: skillDetailText(),
 };
 
 export function extractSystemQueries(raw: string): Record<string, unknown>[] {
@@ -138,6 +116,9 @@ function charSummary(c: Character) {
 
 export type ZhiToolCtx = {
   characters: Character[];
+  worlds?: WorldMeta[];
+  lore?: LoreMap;
+  catalog?: Record<string, unknown>;
   pageCharacter?: Character;
   pathname: string;
   signal?: AbortSignal;
@@ -145,25 +126,26 @@ export type ZhiToolCtx = {
   onTask: (t: ZhiTask | null) => void;
   onStatus: (s: string) => void;
   onGoto?: (path: string) => void;
-  onPatchCharacter?: (id: string, patch: Partial<Character>) => void;
   logSource?: string;
   lastUserLine?: string;
   preferCharacter?: Character;
+  canWrite?: boolean;
 };
 
 export async function runQueries(
   queries: Record<string, unknown>[],
   ctx: ZhiToolCtx
-): Promise<{ text: string; images: string[]; characterId?: string }> {
+): Promise<{ text: string; images: string[]; characterId?: string; pending: ZhiPendingChange[] }> {
   const lines: string[] = [];
   const images: string[] = [];
+  const pending: ZhiPendingChange[] = [];
   let task = ctx.task;
   let characterId: string | undefined;
 
   for (const q of queries) {
-    const type = String(q.type || "");
+    const skill = resolveSkillId(q);
     try {
-      if (type === "task_create") {
+      if (skill === "task_create") {
         const steps = Array.isArray(q.steps) ? q.steps.map(String) : [];
         task = {
           title: String(q.title || "任务"),
@@ -175,7 +157,7 @@ export async function runQueries(
         };
         ctx.onTask(task);
         lines.push(`✅ 任务创建：${task.title}（${task.steps.length} 步）`);
-      } else if (type === "task_update") {
+      } else if (skill === "task_update") {
         if (!task) {
           lines.push("没有进行中的任务");
           continue;
@@ -197,13 +179,28 @@ export async function runQueries(
           ctx.onTask(task);
           lines.push(`步骤 ${i + 1} → ${task.steps[i]!.status} ${task.steps[i]!.result}`);
         }
-      } else if (type === "load_module") {
-        const mod = String(q.module || "").toLowerCase();
-        const body = MODULES[mod] || MODULES.characters;
-        lines.push(`【系统自动回复 - 加载模块: ${mod || "characters"}】\n${body}`);
-      } else if (type === "read" || type === "browse") {
-        lines.push(handleRead(String(q.path || ""), ctx.characters));
-      } else if (type === "generate_image") {
+      } else if (skill === "list_skills") {
+        lines.push(`【技能列表】\n${skillDetailText()}`);
+      } else if (skill === "read_app") {
+        lines.push(readApp(ctx));
+      } else if (skill === "list_characters") {
+        lines.push(handleRead("characters", ctx));
+      } else if (skill === "read_character") {
+        const name = String(q.characterName || q.character || q.path || "").replace(/^characters?\./i, "");
+        lines.push(handleRead(name ? `characters.${name}` : "characters", ctx));
+      } else if (skill === "read_world") {
+        lines.push(readWorld(ctx, String(q.worldName || q.name || q.path || "")));
+      } else if (skill === "read_lore") {
+        lines.push(readLore(ctx, String(q.worldName || q.name || "")));
+      } else if (skill === "read_lexicon") {
+        lines.push(await readLexicon());
+      } else if (skill === "read_comfy") {
+        lines.push(handleRead("comfy", ctx));
+      } else if (skill === "read_page") {
+        lines.push(`当前路径 ${ctx.pathname}`);
+      } else if (skill === "read" || skill === "browse") {
+        lines.push(handleRead(String(q.path || ""), ctx));
+      } else if (skill === "generate_image") {
         ctx.onStatus("抽卡姬出图中…");
         const characterName = String(q.characterName || q.character || "");
         let extra = String(q.extra || q.prompt || "");
@@ -286,62 +283,277 @@ export async function runQueries(
             `urls:\n${job.urls.join("\n")}`,
           ].join("\n")
         );
-      } else if (type === "write_appearance") {
-        const characterName = String(q.characterName || q.character || "");
-        const hits = characterName ? findCharacters(ctx.characters, characterName) : [];
-        const c = hits[0] || ctx.pageCharacter;
-        if (!c) {
-          lines.push("write_appearance：找不到角色");
-          continue;
-        }
-        if (!ctx.onPatchCharacter) {
-          lines.push("此页不能改卡（分享只读）");
-          continue;
-        }
-        const next = applyAppearanceWrite(appearanceOf(c), q);
-        ctx.onPatchCharacter(c.id, { appearance: next });
-        characterId = c.id;
-        lines.push(`✅ 已更新 ${c.name} 外观\n${appearanceSummary(next)}`);
-      } else if (type === "fill_appearance_from_prompts") {
-        const characterName = String(q.characterName || q.character || "");
-        const hits = characterName ? findCharacters(ctx.characters, characterName) : [];
-        const c = hits[0] || ctx.pageCharacter;
-        if (!c) {
-          lines.push("fill_appearance_from_prompts：找不到角色");
-          continue;
-        }
-        if (!ctx.onPatchCharacter) {
-          lines.push("此页不能改卡（分享只读）");
-          continue;
-        }
-        const next = fillAppearanceFromPrompts(c, String(q.label || q.promptLabel || ""));
-        ctx.onPatchCharacter(c.id, { appearance: next });
-        characterId = c.id;
+      } else if (skill === "roll_lexicon") {
+        const hint = String(q.hint || q.lexicon || q.category || "");
+        const rolled = await rollLexiconHint(hint);
         lines.push(
-          `✅ 已根据旧提示词填写 ${c.name} 的外观/服装\n${appearanceSummary(next)}\n快照数：${(c.prompts || []).length}`
+          rolled
+            ? `抽到 ${rolled.categoryLabel}/${rolled.listLabel} · ${rolled.name}\n${rolled.tags}`
+            : `词库「${hint}」没有抽到条目`
         );
-      } else if (type === "ui_action") {
-        const action = String(q.action || "");
+      } else if (skill === "write_appearance" || skill === "fill_appearance") {
+        if (!ctx.canWrite) { lines.push("此页只读，修改需要你确认且有编辑权。"); continue; }
+        const c = pickChar(ctx, q);
+        if (!c) { lines.push(`${skill}：找不到角色`); continue; }
+        const next =
+          skill === "fill_appearance"
+            ? fillAppearanceFromPrompts(c, String(q.label || q.promptLabel || ""))
+            : applyAppearanceWrite(appearanceOf(c), q);
+        characterId = c.id;
+        pending.push({
+          id: crypto.randomUUID(),
+          skill,
+          title: skill === "fill_appearance" ? `用旧提示词填 ${c.name} 外观` : `改 ${c.name} 外观`,
+          summary: appearanceSummary(next),
+          target: c.name,
+          kind: "character",
+          characterId: c.id,
+          characterPatch: { appearance: next },
+        });
+        lines.push(`📝 待你确认：${c.name} 外观/服装（点应用才写入）\n${appearanceSummary(next)}`);
+      } else if (skill === "write_character" || skill === "add_prompt" || skill === "add_timeline") {
+        if (!ctx.canWrite) { lines.push("此页只读，修改需要你确认且有编辑权。"); continue; }
+        const c = pickChar(ctx, q);
+        if (!c) { lines.push(`${skill}：找不到角色`); continue; }
+        const change = characterWriteChange(c, skill, q);
+        pending.push(change);
+        characterId = c.id;
+        lines.push(`📝 待你确认：${change.title}\n${change.summary}`);
+      } else if (skill === "add_character") {
+        if (!ctx.canWrite) { lines.push("此页只读。"); continue; }
+        const name = String(q.name || q.characterName || "新角色").trim();
+        const draft = {
+          name,
+          world: String(q.world || q.worldName || ""),
+          ...(typeof q.fields === "object" && q.fields ? (q.fields as Partial<Character>) : {}),
+        };
+        pending.push({
+          id: crypto.randomUUID(),
+          skill,
+          title: `新建角色 ${name}`,
+          summary: JSON.stringify(draft),
+          target: name,
+          kind: "create_character",
+          createDraft: draft,
+        });
+        lines.push(`📝 待你确认：新建角色 ${name}`);
+      } else if (skill === "delete_character") {
+        if (!ctx.canWrite) { lines.push("此页只读。"); continue; }
+        const c = pickChar(ctx, q);
+        if (!c) { lines.push("找不到要删的角色"); continue; }
+        pending.push({
+          id: crypto.randomUUID(),
+          skill,
+          title: `删除 ${c.name}`,
+          summary: "将从你的库中删除这张卡，以及指向她的关系。",
+          target: c.name,
+          kind: "delete_character",
+          characterId: c.id,
+        });
+        lines.push(`📝 待你确认：删除角色 ${c.name}`);
+      } else if (skill === "write_world") {
+        if (!ctx.canWrite) { lines.push("此页只读。"); continue; }
+        const w = pickWorld(ctx, String(q.worldName || q.name || ""));
+        if (!w) { lines.push("找不到世界"); continue; }
+        const worldPatch: ZhiPendingChange["worldPatch"] = {};
+        if (typeof q.name === "string" && q.name.trim()) worldPatch.name = q.name.trim();
+        if (typeof q.color === "string") worldPatch.color = q.color;
+        if (typeof q.system === "string") worldPatch.system = q.system as WorldMeta["system"];
+        if (Array.isArray(q.dmRoster)) {
+          const names = q.dmRoster.map(String);
+          worldPatch.dmRoster = ctx.characters.filter((c) => names.includes(c.name) || names.includes(c.id)).map((c) => c.id);
+        }
+        pending.push({
+          id: crypto.randomUUID(),
+          skill,
+          title: `改世界 ${w.name}`,
+          summary: JSON.stringify(worldPatch),
+          target: w.name,
+          kind: "world",
+          worldId: w.id,
+          worldPatch,
+        });
+        lines.push(`📝 待你确认：改世界 ${w.name}\n${JSON.stringify(worldPatch)}`);
+      } else if (skill === "write_lore") {
+        if (!ctx.canWrite) { lines.push("此页只读。"); continue; }
+        const worldName = String(q.worldName || q.name || "").trim();
+        const section = String(q.section || "locations") as LoreSection;
+        const entry = (q.entry && typeof q.entry === "object" ? q.entry : q) as Record<string, unknown>;
+        if (!worldName) { lines.push("write_lore 需要 worldName"); continue; }
+        pending.push({
+          id: crypto.randomUUID(),
+          skill,
+          title: `改设定 ${worldName}/${section}`,
+          summary: JSON.stringify(entry).slice(0, 800),
+          target: worldName,
+          kind: "lore",
+          loreWorld: worldName,
+          loreSection: section,
+          loreEntry: entry,
+        });
+        lines.push(`📝 待你确认：世界设定 ${worldName} · ${section}`);
+      } else if (skill === "goto") {
+        const action = String(q.action || "goto");
         const path = String(q.path || q.value || "");
-        if ((action === "goto" || action.startsWith("switch_tab") || action === "open") && path.startsWith("/")) {
+        if (path.startsWith("/")) {
           ctx.onGoto?.(path);
           lines.push(`已跳转 ${path}`);
         } else if (action.includes("char_ref") || action.includes("novelai")) {
-          lines.push("OC Manager 没有 NovelAI 角色参考对话框。请用 read characters 和 generate_image。");
+          lines.push("没有 NovelAI 角色参考。请用 read_character / generate_image。");
         } else {
-          lines.push(`未实现的 ui_action: ${action}`);
+          lines.push(`未实现的跳转: ${action} ${path}`);
         }
       } else {
-        lines.push(`未知工具 ${type}`);
+        lines.push(`未知技能 ${skill}`);
       }
     } catch (e) {
-      lines.push(`❌ ${type} 失败：${e instanceof Error ? e.message : String(e)}`);
+      lines.push(`❌ ${skill} 失败：${e instanceof Error ? e.message : String(e)}`);
     }
   }
-  return { text: lines.join("\n\n───────────────\n"), images, characterId };
+  return { text: lines.join("\n\n───────────────\n"), images, characterId, pending };
 }
 
-function handleRead(path: string, characters: Character[]): string {
+function pickChar(ctx: ZhiToolCtx, q: Record<string, unknown>): Character | undefined {
+  const name = String(q.characterName || q.character || "").replace(/^characters?\./i, "");
+  const hits = name ? findCharacters(ctx.characters, name) : [];
+  return hits[0] || ctx.pageCharacter;
+}
+
+function pickWorld(ctx: ZhiToolCtx, name: string): WorldMeta | undefined {
+  const list = ctx.worlds || [];
+  const n = name.trim().toLowerCase();
+  if (!n) return list[0];
+  return list.find((w) => w.name.toLowerCase() === n || w.id === name) || list.find((w) => w.name.toLowerCase().includes(n));
+}
+
+function characterWriteChange(c: Character, skill: string, q: Record<string, unknown>): ZhiPendingChange {
+  const patch: Partial<Character> = {};
+  const fields = q.fields && typeof q.fields === "object" ? (q.fields as Record<string, unknown>) : {};
+  const allow = [
+    "name", "gender", "age", "race", "height", "weight", "affiliation", "identity",
+    "residence", "faction", "birthplace", "world", "sheetRole", "playerName", "story",
+    "modules", "play", "traits", "emotions", "combat", "happiness", "preferences", "outward",
+  ];
+  for (const k of allow) {
+    if (fields[k] != null) (patch as Record<string, unknown>)[k] = fields[k];
+    if (q[k] != null && k !== "name") (patch as Record<string, unknown>)[k] = q[k];
+  }
+  if (q.appearance && typeof q.appearance === "object") {
+    patch.appearance = q.appearance as Character["appearance"];
+  }
+  let timelineEvent: ZhiPendingChange["timelineEvent"];
+  if (skill === "add_prompt" || (q.label && q.text) || (q.addPrompt && typeof q.addPrompt === "object")) {
+    const ap = (q.addPrompt as { label?: string; text?: string }) || q;
+    const text = String(ap.text || q.text || "");
+    if (text) {
+      const item: StoredPrompt = {
+        id: crypto.randomUUID(),
+        text,
+        label: String(ap.label || q.label || "陪玩姬"),
+        createdAt: new Date().toISOString(),
+      };
+      patch.prompts = [...(c.prompts || []), item];
+    }
+  }
+  if (skill === "add_timeline" || q.title || (q.addTimeline && typeof q.addTimeline === "object")) {
+    const tl = (q.addTimeline as { title?: string; description?: string }) || q;
+    const title = String(tl.title || q.title || "");
+    if (title) {
+      timelineEvent = {
+        date: String(q.date || new Date().toISOString().slice(0, 10)),
+        title,
+        description: String(tl.description || q.description || ""),
+        importance: "normal",
+      };
+    }
+  }
+  const note = String(q.note || Object.keys(patch).join("、") || timelineEvent?.title || "改卡");
+  return {
+    id: crypto.randomUUID(),
+    skill,
+    title: `改 ${c.name}`,
+    summary: note,
+    target: c.name,
+    kind: "character",
+    characterId: c.id,
+    characterPatch: Object.keys(patch).length ? patch : undefined,
+    timelineEvent,
+  };
+}
+
+function readApp(ctx: ZhiToolCtx): string {
+  const worlds = ctx.worlds || [];
+  return JSON.stringify(
+    {
+      page: ctx.pathname,
+      worlds: worlds.map((w) => ({ id: w.id, name: w.name, system: w.system, color: w.color, roster: w.dmRoster.length })),
+      characters: ctx.characters.length,
+      names: ctx.characters.map((c) => `${c.name}${c.world ? ` @${c.world}` : ""}`),
+    },
+    null,
+    2
+  );
+}
+
+function readWorld(ctx: ZhiToolCtx, name: string): string {
+  const w = pickWorld(ctx, name);
+  if (!w) return `没有世界「${name}」。现有：${(ctx.worlds || []).map((x) => x.name).join("、") || "（空）"}`;
+  const lore = getLore(ctx.lore || {}, w.name);
+  const chars = ctx.characters.filter((c) => c.world === w.name);
+  return JSON.stringify(
+    {
+      ...w,
+      characterNames: chars.map((c) => c.name),
+      loreCounts: {
+        locations: lore.locations.length,
+        factions: lore.factions.length,
+        rules: lore.rules.length,
+        artifacts: lore.artifacts.length,
+        history: lore.history.length,
+        races: lore.races.length,
+      },
+    },
+    null,
+    2
+  );
+}
+
+function readLore(ctx: ZhiToolCtx, name: string): string {
+  const w = pickWorld(ctx, name);
+  const key = w?.name || name;
+  if (!key) return "需要 worldName";
+  return JSON.stringify({ world: key, lore: getLore(ctx.lore || {}, key) }, null, 2);
+}
+
+async function readLexicon(): Promise<string> {
+  try {
+    const { index, defaultEnabled } = await fetchLexiconCatalog();
+    const locals = loadLocalLists();
+    const allIds = [
+      ...index.categories.flatMap((c) => c.lists.map((l) => l.id)),
+      ...locals.map((l) => l.id),
+    ];
+    const enabled = resolveEnabledIds(allIds, defaultEnabled);
+    return JSON.stringify(
+      {
+        enabled,
+        categories: index.categories.map((c) => ({
+          id: c.id,
+          label: c.label,
+          lists: c.lists.map((l) => ({ id: l.id, label: l.label, tags: l.filterTags })),
+        })),
+        local: locals.map((l) => ({ id: l.id, label: l.label, category: l.categoryLabel })),
+      },
+      null,
+      2
+    );
+  } catch (e) {
+    return `词库读取失败：${e instanceof Error ? e.message : String(e)}`;
+  }
+}
+
+function handleRead(path: string, ctx: ZhiToolCtx): string {
+  const characters = ctx.characters;
   const p = path.trim();
   const low = p.toLowerCase();
   if (!p || low === "characters" || low.startsWith("novelai.charref")) {
@@ -360,9 +572,11 @@ function handleRead(path: string, characters: Character[]): string {
         baseUrl: s.baseUrl,
         workflowCount: wfs.length,
         activeWorkflow: active?.name || null,
+        workflows: wfs.map((w) => w.name),
         ready: !!active,
         size: `${params.width}x${params.height}`,
         steps: params.steps,
+        presets: loadPromptPresets().map((x) => x.name),
       },
       null,
       2
@@ -377,14 +591,43 @@ function handleRead(path: string, characters: Character[]): string {
   const name = p.replace(/^characters\./i, "").replace(/^character\./i, "");
   const hits = findCharacters(characters, name);
   if (!hits.length) return `没有找到角色「${name}」。当前有：${characters.map((c) => c.name).join("、") || "（空）"}`;
-  return hits
-    .map((c) => {
-      const prompts = (c.prompts || [])
-        .map((pr) => `· [${pr.label || "未命名"}]\n${pr.text}`)
-        .join("\n\n");
-      return `【${c.name}】\n${characterCardText(c, [c], 4)}\n\n分层外观：\n${appearanceSummary(appearanceOf(c))}\n提示词快照：\n${prompts || "（空）"}`;
-    })
-    .join("\n\n");
+  return hits.map((c) => `【${c.name}】\n${JSON.stringify(charDump(c), null, 2)}`).join("\n\n");
+}
+
+function charDump(c: Character) {
+  return {
+    id: c.id,
+    name: c.name,
+    world: c.world,
+    gender: c.gender,
+    age: c.age,
+    race: c.race,
+    height: c.height,
+    weight: c.weight,
+    affiliation: c.affiliation,
+    identity: c.identity,
+    residence: c.residence,
+    faction: c.faction,
+    birthplace: c.birthplace,
+    sheetRole: c.sheetRole,
+    playerName: c.playerName,
+    story: c.story,
+    appearance: appearanceOf(c),
+    prompts: c.prompts,
+    timeline: c.timeline,
+    relationships: c.relationships,
+    modules: c.modules,
+    gallery: (c.gallery || []).map((g) => ({ url: g.url, caption: g.caption })),
+    play: c.play
+      ? { system: c.play.system, version: c.play.version, data: c.play.data }
+      : undefined,
+    traits: c.traits,
+    emotions: c.emotions,
+    combat: c.combat,
+    happiness: c.happiness,
+    preferences: c.preferences,
+    outward: c.outward,
+  };
 }
 
 function applyAppearanceWrite(

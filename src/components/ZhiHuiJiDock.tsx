@@ -5,12 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import type { AiApiConfig, AiModelParams, ChatMessage } from "@/lib/aiConfig";
 import { completeChat, fetchModels } from "@/lib/aiConfig";
 import {
-  type ApplyPatch,
   type ChatPresetFile,
   type ChatTurn,
   APPLY_INSTRUCTION,
   extractApplyPatches,
-  fieldsFromPatch,
   loadChatApiConfig,
   loadChatParams,
   loadChatPreset,
@@ -38,11 +36,15 @@ import {
   type ZhiTask,
 } from "@/lib/zhiTools";
 import { useCharacters } from "@/hooks/useCharacters";
+import { useWorlds } from "@/hooks/useWorlds";
+import { useAppData } from "@/context/AppDataContext";
+import { getLore } from "@/lib/worldLore";
+import { pendingFromApply, type ZhiPendingChange } from "@/lib/zhiSkills";
 import ChatHtml from "@/components/ChatHtml";
 import ChatImage, { ImagePreview } from "@/components/ChatImage";
 import PresetEditor from "@/components/PresetEditor";
 import { generateCharacterStill } from "@/lib/chatImage";
-import type { Character, GalleryImage, StoredPrompt } from "@/lib/types";
+import type { Character, GalleryImage } from "@/lib/types";
 import { useDockGeo } from "@/hooks/useDockGeo";
 
 type Panel = "none" | "settings" | "history";
@@ -51,7 +53,9 @@ type Tab = "api" | "params" | "persona" | "preset" | "features";
 export default function ZhiHuiJiDock() {
   const pathname = usePathname() || "/";
   const router = useRouter();
-  const { characters, updateCharacter, addTimelineEvent } = useCharacters();
+  const { characters, updateCharacter, addCharacter, deleteCharacter, addTimelineEvent } = useCharacters();
+  const { worlds, updateWorld } = useWorlds();
+  const { lore, setLore } = useAppData();
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>("none");
   const [tab, setTab] = useState<Tab>("api");
@@ -66,7 +70,7 @@ export default function ZhiHuiJiDock() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [showKey, setShowKey] = useState(false);
-  const [pending, setPending] = useState<{ msgId: string; patches: ApplyPatch[] } | null>(null);
+  const [pending, setPending] = useState<ZhiPendingChange[]>([]);
   const [task, setTask] = useState<ZhiTask | null>(null);
   const [status, setStatus] = useState("");
   const [autoImage, setAutoImage] = useState(false);
@@ -164,6 +168,7 @@ export default function ZhiHuiJiDock() {
       let lastRaw = "";
       const allImages: { url: string; characterId?: string }[] = [];
       let lastCharId: string | undefined;
+      const allPending: ZhiPendingChange[] = [];
       for (let round = 0; round < 6; round++) {
         if (ac.signal.aborted) break;
         setStatus(round === 0 ? "" : `工具第 ${round} 轮…`);
@@ -185,7 +190,9 @@ export default function ZhiHuiJiDock() {
         });
         lastRaw = raw;
         const queries = extractSystemQueries(raw);
-        const runQ = autoImage ? queries.filter((q) => q.type !== "generate_image") : queries;
+        const runQ = autoImage
+          ? queries.filter((q) => String(q.skill || q.type) !== "generate_image")
+          : queries;
         setThread((t) => ({
           ...t,
           messages: t.messages.map((m) =>
@@ -199,7 +206,7 @@ export default function ZhiHuiJiDock() {
             messages.push({
               role: "user",
               content:
-                "【系统】不要只说稍等。立刻输出 SystemQuery。根据旧提示词填外观请用 fill_appearance_from_prompts；查卡用 read。",
+                "【系统】不要只说稍等。立刻输出 SystemQuery，skill 从技能列表里选。填外观用 fill_appearance，查卡用 read_character。",
             });
             continue;
           }
@@ -217,12 +224,15 @@ export default function ZhiHuiJiDock() {
           },
           onStatus: setStatus,
           onGoto: (path) => router.push(path),
-          onPatchCharacter: onShare ? undefined : (cid, patch) => updateCharacter(cid, patch),
           logSource: "陪玩姬",
           lastUserLine: text,
           preferCharacter: pageChar,
+          worlds,
+          lore,
+          canWrite: !onShare,
         });
         lastCharId = result.characterId || lastCharId;
+        allPending.push(...result.pending);
         for (const url of result.images) allImages.push({ url, characterId: result.characterId || lastCharId });
         messages.push({ role: "assistant", content: raw });
         messages.push({ role: "user", content: `【系统自动回复】\n${result.text}` });
@@ -262,7 +272,11 @@ export default function ZhiHuiJiDock() {
         return { ...t, messages: messagesNext };
       });
       const patches = extractApplyPatches(lastRaw);
-      if (patches.length) setPending({ msgId: asstId, patches });
+      const fromApply = patches
+        .map((p) => pendingFromApply(p, resolveApplyTarget(p, characters, pageChar || characters[0]!)))
+        .filter((c) => c.characterId);
+      const nextPending = [...allPending, ...fromApply];
+      if (nextPending.length) setPending(nextPending);
     } catch (e) {
       if ((e as Error).name !== "AbortError") setError(e instanceof Error ? e.message : "失败");
     } finally {
@@ -271,42 +285,37 @@ export default function ZhiHuiJiDock() {
     }
   };
 
-  const applyPatches = (patches: ApplyPatch[]) => {
+  const applyPending = async (items: ZhiPendingChange[]) => {
     if (onShare) {
       ping("分享页请用角色对话窗，且需有编辑权");
-      setPending(null);
+      setPending([]);
       return;
     }
-    for (const p of patches) {
-      const target = resolveApplyTarget(p, characters, pageChar || characters[0] || ({ id: "", name: "", prompts: [] } as unknown as Character));
-      if (!target?.id) continue;
-      const fields = fieldsFromPatch(p);
-      const patch: Partial<Character> = {};
-      for (const [k, v] of Object.entries(fields)) {
-        if (k === "age") (patch as { age?: string | number }).age = v;
-        else (patch as Record<string, unknown>)[k] = String(v);
-      }
-      if (p.addPrompt?.text) {
-        const item: StoredPrompt = {
-          id: crypto.randomUUID(),
-          text: p.addPrompt.text,
-          label: p.addPrompt.label || "陪玩姬",
-          createdAt: new Date().toISOString(),
-        };
-        patch.prompts = [...(target.prompts || []), item];
-      }
-      if (Object.keys(patch).length) updateCharacter(target.id, patch);
-      if (p.addTimeline?.title) {
-        addTimelineEvent(target.id, {
-          date: new Date().toISOString().slice(0, 10),
-          title: p.addTimeline.title,
-          description: p.addTimeline.description || "",
-          importance: "normal",
+    for (const ch of items) {
+      if (ch.kind === "character" && ch.characterId) {
+        if (ch.characterPatch) updateCharacter(ch.characterId, ch.characterPatch);
+        if (ch.timelineEvent) addTimelineEvent(ch.characterId, ch.timelineEvent);
+      } else if (ch.kind === "create_character" && ch.createDraft) {
+        await addCharacter(ch.createDraft);
+      } else if (ch.kind === "delete_character" && ch.characterId) {
+        await deleteCharacter(ch.characterId);
+      } else if (ch.kind === "world" && ch.worldId && ch.worldPatch) {
+        updateWorld(ch.worldId, ch.worldPatch);
+      } else if (ch.kind === "lore" && ch.loreWorld && ch.loreSection && ch.loreEntry) {
+        setLore((prev) => {
+          const cur = getLore(prev, ch.loreWorld!);
+          const section = ch.loreSection!;
+          const arr = [...((cur[section] as { id?: string; name?: string }[]) || [])];
+          const entry = { id: String(ch.loreEntry!.id || crypto.randomUUID()), ...ch.loreEntry } as { id: string; name?: string };
+          const i = arr.findIndex((x) => x.id === entry.id || (entry.name && x.name === entry.name));
+          if (i >= 0) arr[i] = { ...arr[i], ...entry };
+          else arr.push(entry);
+          return { ...prev, [ch.loreWorld!]: { ...cur, [section]: arr } };
         });
       }
     }
-    setPending(null);
-    ping("已应用");
+    setPending([]);
+    ping("已应用修改");
   };
 
   const saveToGallery = async (url: string, characterId?: string) => {
@@ -400,15 +409,6 @@ export default function ZhiHuiJiDock() {
                         />
                       )}
                       {mine ? m.content : m.content === "图" && m.imageUrl ? null : <ChatHtml raw={m.content || (busy ? "…" : "")} regexes={preset?.regexes} />}
-                      {!mine && pending?.msgId === m.id && (
-                        <div className="mt-2 text-[11px]">
-                          {pending.patches.map((p, i) => (
-                            <div key={i} className="text-amber-200 mb-1">{p.note || p.characterName || "建议改卡"}</div>
-                          ))}
-                          <button type="button" className="px-2 py-0.5 rounded bg-purple-600 text-white mr-1" onClick={() => applyPatches(pending.patches)}>应用</button>
-                          <button type="button" className="px-2 py-0.5 rounded border border-neutral-600" onClick={() => setPending(null)}>忽略</button>
-                        </div>
-                      )}
                     </div>
                   </div>
                 );
@@ -521,7 +521,7 @@ export default function ZhiHuiJiDock() {
                             />
                             每轮对话自动出一张图（当前角色卡提示词）
                           </label>
-                          <p className="text-neutral-500">角色扮演用「角色对话」。陪玩姬可以查角色卡、按提示词库调用抽卡姬生图（需先在抽卡姬页配好工作流）、建议改卡。</p>
+                          <p className="text-neutral-500">先看技能列表再决定调哪一个。读立刻执行；写只出待确认草稿，你点应用才入库。</p>
                         </>
                       )}
                     </div>
@@ -530,6 +530,21 @@ export default function ZhiHuiJiDock() {
               </div>
             )}
           </div>
+          {pending.length > 0 && panel === "none" && (
+            <div className="px-3 py-2 border-t border-amber-900/50 bg-amber-950/40 text-[11px] max-h-44 overflow-y-auto space-y-1">
+              <div className="text-amber-200">待确认的修改（不会自动写入）</div>
+              {pending.map((ch) => (
+                <div key={ch.id} className="text-amber-50">
+                  <span className="text-amber-300">{ch.title}</span>
+                  <div className="text-neutral-400 whitespace-pre-wrap">{ch.summary.slice(0, 360)}</div>
+                </div>
+              ))}
+              <div className="flex gap-1 pt-1">
+                <button type="button" className="px-2 py-0.5 rounded bg-purple-600 text-white" onClick={() => void applyPending(pending)}>应用全部</button>
+                <button type="button" className="px-2 py-0.5 rounded border border-neutral-600 text-neutral-300" onClick={() => setPending([])}>忽略</button>
+              </div>
+            </div>
+          )}
           {error && panel === "none" && <div className="px-3 text-[11px] text-rose-400">{error}</div>}
           {status && panel === "none" && <div className="px-3 text-[11px] text-fuchsia-300">{status}</div>}
           <div className="p-2 border-t border-neutral-800 flex items-end gap-1">
