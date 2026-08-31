@@ -13,8 +13,8 @@ export interface DebugLogEntry {
 }
 
 const KEY = "oc-debug-logs-v1";
-const MAX = 100;
-const MAX_STR = 12000;
+const MAX = 40;
+const MAX_STR = 80000;
 
 function cap(v: unknown, depth = 0): unknown {
   if (v == null) return v;

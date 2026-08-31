@@ -32,11 +32,12 @@ function layerLines(prefix: string, layer: { front: string; back: string }): str
   return [`${prefix}.front: ${f || "—"}`, b ? `${prefix}.back: ${b}` : ""].filter(Boolean);
 }
 
-/** 智绘姬 角色启用列表：分层字段 + 可调用 name。 */
+/** 智绘姬 角色启用列表：分层字段 + 可调用 name + 全部服装。 */
 export function characterAppearanceBlock(c: Character): string {
   const app = appearanceOf(c);
   const en = (app.nameEN || c.name).trim() || c.name;
   const cn = (app.nameCN || c.name).trim() || c.name;
+  const outfits = app.outfits || [];
   const lines: string[] = [
     `可调用名称: ${en}`,
     `中文名: ${cn}`,
@@ -49,6 +50,15 @@ export function characterAppearanceBlock(c: Character): string {
     `调用示例: \${"name":"${en}","angle":"from front","upperBody":"sfw","lowerBody":"hidden"}$`,
     `\${"name":"${en}","angle":"from front","upperBody":"nsfw","lowerBody":"nsfw"}$`,
   ];
+  if (outfits.length) {
+    lines.push("", `可调用服装（共${outfits.length}套，须用宏调用，不要改衣服原文）:`);
+    for (const o of outfits) {
+      const oen = (o.nameEN || o.nameCN || o.id).trim();
+      const ocn = (o.nameCN || o.nameEN || o.id).trim();
+      lines.push(`- ${ocn} / ${oen} → \${"name":"${oen}","upperBody":"visible","lowerBody":"visible"}$`);
+    }
+    lines.push("", outfitBlockForChars([c]));
+  }
   const snaps = c.prompts || [];
   if (snaps.length) {
     lines.push("提示词快照:");
@@ -58,7 +68,7 @@ export function characterAppearanceBlock(c: Character): string {
       lines.push(`- ${p.label || "(未命名)"}: ${text}`);
     }
   }
-  return lines.filter(Boolean).join("\n");
+  return lines.filter((x) => x !== undefined).join("\n");
 }
 
 export function characterPromptDossier(c: Character): string {
