@@ -69,6 +69,26 @@ export function useCharacters() {
     [characters]
   );
 
+  const addTimelineEventToMany = useCallback(
+    (charIds: string[], event: Omit<TimelineEvent, "id">) => {
+      const set = new Set(charIds.filter(Boolean));
+      if (!set.size) return;
+      setCharacters((prev) =>
+        prev.map((c) => {
+          if (!set.has(c.id)) return c;
+          return {
+            ...c,
+            timeline: [...c.timeline, { ...event, id: createId() }].sort((a, b) =>
+              a.date.localeCompare(b.date)
+            ),
+            updatedAt: new Date().toISOString(),
+          };
+        })
+      );
+    },
+    [setCharacters]
+  );
+
   const addTimelineEvent = useCallback(
     (charId: string, event: Omit<TimelineEvent, "id">) => {
       setCharacters((prev) =>
@@ -295,6 +315,7 @@ export function useCharacters() {
     deleteCharacter,
     getCharacter,
     addTimelineEvent,
+    addTimelineEventToMany,
     updateTimelineEvent,
     deleteTimelineEvent,
     addRelationship,

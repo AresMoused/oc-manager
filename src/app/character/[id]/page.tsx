@@ -13,6 +13,7 @@ import { useWorldCatalog } from "@/hooks/useWorldCatalog";
 import { useWorlds } from "@/hooks/useWorlds";
 import Footer from "@/components/Footer";
 import { CheckHost } from "@/systems/check/CheckHost";
+import CharacterChatDock from "@/components/CharacterChatDock";
 import DndRuleSheet from "@/systems/dnd5e/DndRuleSheet";
 import { defaultDndPlay, wrapPlay } from "@/systems/dnd5e/schema";
 import {
@@ -35,6 +36,7 @@ export default function CharacterPage({
     updateCharacter,
     deleteCharacter,
     addTimelineEvent,
+    addTimelineEventToMany,
     updateTimelineEvent,
     deleteTimelineEvent,
     addRelationship,
@@ -277,6 +279,11 @@ export default function CharacterPage({
         )}
       </main>
       <Footer />
+      <CharacterChatDock
+        host={character}
+        characters={characters}
+        onWriteTimeline={(ids, ev) => addTimelineEventToMany(ids, ev)}
+      />
     </div>
     </CheckHost>
   );

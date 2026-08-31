@@ -229,21 +229,18 @@ function buildMessages(
   return msgs;
 }
 
-export async function chatCompletion(opts: {
+export async function completeChat(opts: {
   config: AiApiConfig;
   params: AiModelParams;
-  preset: ContextPreset;
-  userPrompt: string;
+  messages: ChatMessage[];
   onDelta?: (text: string) => void;
   signal?: AbortSignal;
 }): Promise<string> {
-  const { config, params, preset, userPrompt, onDelta, signal } = opts;
+  const { config, params, messages, onDelta, signal } = opts;
   const root = config.baseUrl.replace(/\/+$/, "");
   const url = root.endsWith("/v1")
     ? `${root}/chat/completions`
     : `${root}/v1/chat/completions`;
-
-  const messages = buildMessages(preset, userPrompt, config.mergeSystemUser);
 
   const body = {
     model: config.model,
@@ -306,6 +303,28 @@ export async function chatCompletion(opts: {
     }
   }
   return full;
+}
+
+export async function chatCompletion(opts: {
+  config: AiApiConfig;
+  params: AiModelParams;
+  preset: ContextPreset;
+  userPrompt: string;
+  onDelta?: (text: string) => void;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const messages = buildMessages(
+    opts.preset,
+    opts.userPrompt,
+    opts.config.mergeSystemUser
+  );
+  return completeChat({
+    config: opts.config,
+    params: opts.params,
+    messages,
+    onDelta: opts.onDelta,
+    signal: opts.signal,
+  });
 }
 
 export function parseCharacterJson(

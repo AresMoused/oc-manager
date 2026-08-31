@@ -1,0 +1,400 @@
+/** Character-page roleplay chat: ST-preset import, context, memory. */
+
+import type { Character, PreferenceItem, SheetModule, TimelineEvent } from "@/lib/types";
+import type { AiApiConfig, AiModelParams, ChatMessage } from "@/lib/aiConfig";
+import { defaultApiConfig, defaultModelParams } from "@/lib/aiConfig";
+
+const API_KEY = "oc-char-chat-api-v1";
+const PARAMS_KEY = "oc-char-chat-params-v1";
+const PRESET_KEY = "oc-char-chat-preset-v1";
+const SESSION_KEY = "oc-char-chat-sessions-v1";
+
+export type SoloMode = "monologue" | "mystery";
+
+export interface ChatPromptEntry {
+  id: string;
+  identifier: string;
+  name: string;
+  role: "system" | "user" | "assistant";
+  content: string;
+  enabled: boolean;
+  marker: boolean;
+}
+
+export interface ChatPresetFile {
+  name: string;
+  importedAt: string;
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+  entries: ChatPromptEntry[];
+}
+
+export interface ChatTurn {
+  id: string;
+  role: "user" | "assistant";
+  speakerId?: string;
+  speakerName: string;
+  content: string;
+  at: string;
+  summarized?: boolean;
+}
+
+export interface ChatSession {
+  hostId: string;
+  participantIds: string[];
+  povId: string;
+  soloMode: SoloMode;
+  scene: string;
+  autoSummary: boolean;
+  messages: ChatTurn[];
+  updatedAt: string;
+}
+
+function safeParse<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+export function loadChatApiConfig(): AiApiConfig {
+  if (typeof window === "undefined") return defaultApiConfig();
+  return { ...defaultApiConfig(), ...safeParse(localStorage.getItem(API_KEY), {}) };
+}
+
+export function saveChatApiConfig(cfg: AiApiConfig) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(API_KEY, JSON.stringify(cfg));
+}
+
+export function loadChatParams(): AiModelParams {
+  if (typeof window === "undefined") return defaultModelParams();
+  return { ...defaultModelParams(), ...safeParse(localStorage.getItem(PARAMS_KEY), {}) };
+}
+
+export function saveChatParams(p: AiModelParams) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(PARAMS_KEY, JSON.stringify(p));
+}
+
+export function loadChatPreset(): ChatPresetFile | null {
+  if (typeof window === "undefined") return null;
+  return safeParse<ChatPresetFile | null>(localStorage.getItem(PRESET_KEY), null);
+}
+
+export function saveChatPreset(p: ChatPresetFile | null) {
+  if (typeof window === "undefined") return;
+  if (!p) localStorage.removeItem(PRESET_KEY);
+  else localStorage.setItem(PRESET_KEY, JSON.stringify(p));
+}
+
+export function loadChatSession(hostId: string): ChatSession | null {
+  if (typeof window === "undefined") return null;
+  const all = safeParse<Record<string, ChatSession>>(localStorage.getItem(SESSION_KEY), {});
+  return all[hostId] || null;
+}
+
+export function saveChatSession(session: ChatSession) {
+  if (typeof window === "undefined") return;
+  const all = safeParse<Record<string, ChatSession>>(localStorage.getItem(SESSION_KEY), {});
+  all[session.hostId] = { ...session, updatedAt: new Date().toISOString() };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(all));
+}
+
+export function emptySession(hostId: string): ChatSession {
+  return {
+    hostId,
+    participantIds: [hostId],
+    povId: hostId,
+    soloMode: "mystery",
+    scene: "",
+    autoSummary: true,
+    messages: [],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function parseSillyTavernPreset(raw: string): ChatPresetFile {
+  const data = JSON.parse(raw);
+  const prompts = Array.isArray(data?.prompts) ? data.prompts : null;
+  if (!prompts) throw new Error("不是 SillyTavern Chat Completion 预设（缺少 prompts）");
+  const entries: ChatPromptEntry[] = [];
+  for (const p of prompts) {
+    if (!p || typeof p !== "object") continue;
+    if (p.identifier === "regexes-bindings") continue;
+    const role: ChatPromptEntry["role"] =
+      p.role === "assistant" || p.role === "user" ? p.role : "system";
+    entries.push({
+      id: String(p.identifier || p.name || crypto.randomUUID()),
+      identifier: String(p.identifier || ""),
+      name: String(p.name || p.identifier || "未命名"),
+      role,
+      content: String(p.content || ""),
+      enabled: p.enabled !== false,
+      marker: !!p.marker,
+    });
+  }
+  if (!entries.length) throw new Error("预设里没有可用条目");
+  return {
+    name: String(data.name || data.presetName || "导入的对话预设"),
+    importedAt: new Date().toISOString(),
+    temperature: typeof data.temperature === "number" ? data.temperature : undefined,
+    topP: typeof data.top_p === "number" ? data.top_p : undefined,
+    maxTokens:
+      typeof data.openai_max_tokens === "number" ? data.openai_max_tokens : undefined,
+    entries,
+  };
+}
+
+function moduleLines(modules: SheetModule[] | undefined): string[] {
+  const out: string[] = [];
+  for (const m of modules || []) {
+    if (m.type === "sliders") {
+      const bits = m.items.map((it) => {
+        const right = it.rightLabel ? `↔${it.rightLabel}` : "";
+        return `${it.leftLabel}${right}:${it.value}`;
+      });
+      if (bits.length) out.push(`${m.title}：${bits.join("，")}`);
+    } else if (m.type === "radar") {
+      out.push(`${m.title}：${m.axes.map((a) => `${a.label}:${a.value}`).join("，")}`);
+    } else if (m.type === "text-list") {
+      const items = (m.items as PreferenceItem[])
+        .map((it) => `${it.title}${it.content ? "：" + it.content : ""}`)
+        .filter(Boolean);
+      if (items.length) out.push(`${m.title}：${items.join("；")}`);
+    } else if (m.type === "text-long" && m.body.trim()) {
+      out.push(`${m.title}：${m.body.trim().slice(0, 600)}`);
+    }
+  }
+  return out;
+}
+
+export function characterCardText(
+  c: Character,
+  present: Character[],
+  timelineLimit = 8
+): string {
+  const lines = [
+    `姓名：${c.name}`,
+    `性别：${c.gender}　年龄：${c.age}　种族：${c.race}`,
+    `身份：${c.identity}　阵营：${c.affiliation}　派系：${c.faction}`,
+    `现住：${c.residence}　出身：${c.birthplace}`,
+    `角色类型：${c.sheetRole === "pc" ? "玩家角色" : "NPC"}`,
+  ];
+  if (c.story.trim()) lines.push(`经历：${c.story.trim().slice(0, 900)}`);
+  lines.push(...moduleLines(c.modules));
+  const presentIds = new Set(present.map((x) => x.id));
+  const rels = (c.relationships || []).filter((r) => presentIds.has(r.targetId));
+  if (rels.length) {
+    lines.push(
+      "与在场者关系：" +
+        rels
+          .map((r) => {
+            const t = present.find((x) => x.id === r.targetId);
+            return `${t?.name || r.targetId}（${r.type}${r.note ? "，" + r.note : ""}）`;
+          })
+          .join("；")
+    );
+  }
+  const tl = (c.timeline || []).slice(-timelineLimit);
+  if (tl.length) {
+    lines.push("长期记忆（时间线）：");
+    for (const e of tl) {
+      lines.push(`- [${e.date}] ${e.title}${e.description ? "：" + e.description : ""}`);
+    }
+  }
+  return lines.filter((x) => !x.endsWith("：") && x.replace(/[　\s]/g, "").length > 2).join("\n");
+}
+
+export function displayReply(raw: string): string {
+  let s = String(raw || "");
+  s = s.replace(/<分析喵>[\s\S]*?<\/分析喵>/gi, "");
+  s = s.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  const content = s.match(/<content>([\s\S]*?)<\/content>/i);
+  if (content) s = content[1] || s;
+  s = s.replace(/<summary>[\s\S]*?<\/summary>/gi, "");
+  s = s.replace(/<\/?content>/gi, "");
+  return s.trim() || String(raw || "").trim();
+}
+
+function slotId(e: ChatPromptEntry): string {
+  return (e.identifier || e.name || "").toLowerCase();
+}
+
+function isHistorySlot(e: ChatPromptEntry): boolean {
+  const id = slotId(e);
+  return e.marker && (id.includes("chathistory") || id.includes("chat history") || e.name.includes("Chat History"));
+}
+
+function fillSlot(e: ChatPromptEntry, filled: string): ChatMessage | null {
+  if (!e.enabled) return null;
+  const text = filled.trim();
+  if (!text && !e.content.trim()) return null;
+  const content = e.content.trim() ? `${e.content.trim()}\n${text}` : text;
+  return { role: e.role, content };
+}
+
+export function recentUnsummarized(messages: ChatTurn[], maxTurns = 5): ChatTurn[] {
+  const pending = messages.filter((m) => !m.summarized);
+  const userTurns = pending.filter((m) => m.role === "user");
+  const keepUsers = userTurns.slice(-maxTurns);
+  if (!keepUsers.length) return pending.slice(-maxTurns * 2);
+  const first = pending.findIndex((m) => m.id === keepUsers[0]!.id);
+  return pending.slice(first < 0 ? 0 : first);
+}
+
+export function unsummarizedUserCount(messages: ChatTurn[]): number {
+  return messages.filter((m) => m.role === "user" && !m.summarized).length;
+}
+
+export function buildChatMessages(opts: {
+  preset: ChatPresetFile;
+  present: Character[];
+  pov: Character;
+  soloMode: SoloMode;
+  scene: string;
+  history: ChatTurn[];
+  userLine: string;
+}): ChatMessage[] {
+  const { preset, present, pov, soloMode, scene, history, userLine } = opts;
+  const others = present.filter((c) => c.id !== pov.id);
+  const solo = present.length <= 1;
+
+  const persona = `【玩家视角】\n你正在以「${pov.name}」的第一人称感官写其他角色与环境。不要代替 ${pov.name} 说话或做决定。\n\n${characterCardText(pov, present)}`;
+  const chars = others.length
+    ? others.map((c) => characterCardText(c, present)).join("\n\n---\n\n")
+    : characterCardText(pov, present);
+  const worldMem = present
+    .map((c) => {
+      const tl = (c.timeline || []).slice(-6);
+      if (!tl.length) return "";
+      return `${c.name}的时间线：\n` + tl.map((e) => `- [${e.date}] ${e.title}：${e.description}`).join("\n");
+    })
+    .filter(Boolean)
+    .join("\n\n");
+
+  let scenario = scene.trim() ? `当前场景：${scene.trim()}` : "";
+  if (solo && soloMode === "monologue") {
+    scenario += `\n本场只有 ${pov.name}。请写环境与内心独白式回应，不要冒出第二个可对话的具名角色。`;
+  } else if (solo && soloMode === "mystery") {
+    scenario += `\n本场只有 ${pov.name}。另一方是来源不明的神秘声音（不要给它固定真名），与 ${pov.name} 对话。`;
+  } else if (others.length) {
+    scenario += `\n在场其他角色：${others.map((c) => c.name).join("、")}。只写他们的言行，不写 ${pov.name} 的行动。`;
+  }
+
+  const hist = recentUnsummarized(history, 5);
+  const histMsgs: ChatMessage[] = hist.map((t) => ({
+    role: t.role,
+    content:
+      t.role === "user"
+        ? `【${t.speakerName}】\n${t.content}`
+        : t.content,
+  }));
+
+  const inject: Record<string, string> = {
+    persona: persona,
+    personadescription: persona,
+    chardescription: `【在场角色卡】\n${chars}`,
+    charpersonality: `【在场角色性格与模块】\n${chars}`,
+    worldinfobefore: worldMem ? `【长期记忆·时间线】\n${worldMem}` : "",
+    worldinfoafter: worldMem ? `【长期记忆·时间线】\n${worldMem}` : "",
+    worldinfo: worldMem ? `【长期记忆·时间线】\n${worldMem}` : "",
+    scenario: scenario,
+    dialogueexamples: "",
+  };
+
+  const out: ChatMessage[] = [];
+  let historyPlaced = false;
+  for (const e of preset.entries) {
+    if (!e.enabled) continue;
+    if (isHistorySlot(e)) {
+      out.push(...histMsgs);
+      historyPlaced = true;
+      continue;
+    }
+    const id = slotId(e).replace(/[^a-z]/g, "");
+    let extra = "";
+    for (const [k, v] of Object.entries(inject)) {
+      if (id.includes(k)) {
+        extra = v;
+        break;
+      }
+    }
+    if (e.marker) {
+      const msg = fillSlot(e, extra);
+      if (msg) out.push(msg);
+      continue;
+    }
+    const body = extra ? `${e.content}\n${extra}` : e.content;
+    if (body.trim()) out.push({ role: e.role, content: body });
+  }
+  if (!historyPlaced) out.push(...histMsgs);
+  out.push({ role: "user", content: `【${pov.name}】\n${userLine}` });
+  return out;
+}
+
+export const SUMMARY_SYSTEM = `你是剧情记录员。根据对话写一条时间线记忆。
+必须写清每个说话或行动的人的名字（用角色名，不要用“他/她”替代主语）。
+只输出 JSON，不要 markdown：
+{"date":"YYYY-MM-DD","title":"含人名的短标题","description":"100字左右，每句点名是谁在做/说","names":["人名1","人名2"]}`;
+
+export function buildSummaryMessages(turns: ChatTurn[], names: string[]): ChatMessage[] {
+  const log = turns
+    .map((t) => `${t.role === "user" ? t.speakerName : "对方"}：${displayReply(t.content)}`)
+    .join("\n");
+  return [
+    { role: "system", content: SUMMARY_SYSTEM },
+    {
+      role: "user",
+      content: `在场人物：${names.join("、")}\n\n对话：\n${log}`,
+    },
+  ];
+}
+
+export function parseSummaryJson(raw: string): {
+  date: string;
+  title: string;
+  description: string;
+  names: string[];
+} | null {
+  const m = String(raw || "").match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    const j = JSON.parse(m[0]!) as {
+      date?: string;
+      title?: string;
+      description?: string;
+      names?: string[];
+    };
+    if (!j.title && !j.description) return null;
+    return {
+      date: j.date || new Date().toISOString().slice(0, 10),
+      title: String(j.title || "对话").slice(0, 80),
+      description: String(j.description || "").slice(0, 800),
+      names: Array.isArray(j.names) ? j.names.map(String) : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function toTimelineEvent(
+  parsed: NonNullable<ReturnType<typeof parseSummaryJson>>,
+  presentNames: string[]
+): Omit<TimelineEvent, "id"> {
+  const names = [...new Set([...(parsed.names || []), ...presentNames].filter(Boolean))];
+  const nameStr = names.join("、");
+  const title = parsed.title.includes(names[0] || "") ? parsed.title : `${nameStr}：${parsed.title}`;
+  const desc = parsed.description.includes(nameStr.slice(0, 2))
+    ? parsed.description
+    : `（${nameStr}）\n${parsed.description}`;
+  return {
+    date: parsed.date,
+    title,
+    description: desc,
+    importance: "normal",
+  };
+}
