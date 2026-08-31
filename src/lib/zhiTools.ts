@@ -8,6 +8,7 @@ import {
   loadWorkflows,
   runSavedComfyJob,
 } from "@/lib/comfyConfig";
+import { rollLexiconHint } from "@/lib/comfyLexicon";
 import { characterCardText } from "@/lib/characterChat";
 import {
   appearanceOf,
@@ -29,15 +30,15 @@ export interface ZhiTask {
 export const TOOL_INSTRUCTION = `你可以决定要不要出图。画面有明确视觉（换装、新场景、用户要看图、关键动作）时，对用户说完后追加 generate_image；闲聊、纯问答不要出图。
 
 工具（对用户可见正文里不要出现这些标签）：
-<SystemQuery>{"type":"task_create","title":"短标题","steps":["步骤1","步骤2"]}</SystemQuery>
-<SystemQuery>{"type":"load_module","module":"characters"}</SystemQuery>
 <SystemQuery>{"type":"read","path":"characters.角色名"}</SystemQuery>
-<SystemQuery>{"type":"generate_image","characterName":"角色名","outfit":"礼服","angle":"front","upper":"sfw","extra":"beach, bikini, smiling"}</SystemQuery>
-<SystemQuery>{"type":"write_appearance","characterName":"角色名","faceFront":"elf, blonde hair","outfit":{"nameCN":"比基尼","upperFront":"bikini top","fullFront":"bikini bottom"}}</SystemQuery>
-<SystemQuery>{"type":"task_update","step":1,"status":"completed","result":"简述"}</SystemQuery>
+<SystemQuery>{"type":"generate_image","characterName":"角色名","angle":"front","upper":"sfw","extra":"beach, smiling","lexicon":"BDSM"}</SystemQuery>
+<SystemQuery>{"type":"generate_image","characterName":"角色名","outfit":"礼服","extra":"ballroom"}</SystemQuery>
+<SystemQuery>{"type":"write_appearance","characterName":"角色名","faceFront":"elf, blonde hair"}</SystemQuery>
 
-外观和服装是分开的：脸/上身/下身属于角色，裙子等属于服装。改提示词用 write_appearance。
-generate_image 会组合：脸 + 身体分层 + 指定服装 + extra。用户要换装且服装库没有时，先 write_appearance 加一套再出图，或把临时衣服只写在 extra（会自动先不叠日常服）。
+默认只组合角色「脸+身体」，不要叠卡里已有服装。
+- 用户明确要穿卡里某套（礼服/平常服）才填 outfit
+- 从抽卡姬词库随机衣服：填 lexicon（如 BDSM、服装），不要填 outfit
+- 临时衣服（比基尼等）写 extra，不要填 outfit
 没有抽卡姬工作流时不要假装已经出图。`;
 
 const MODULES: Record<string, string> = {
@@ -46,7 +47,7 @@ read characters / characters.名 → 卡面、分层外观、服装列表、旧�
 外观：face / upperSfw / fullSfw / NSFW 对应层，正/背。
 服装：独立 outfits，activeOutfitId 为当前穿的。
 write_appearance 改分层或增改一套衣服。
-generate_image: characterName, outfit(服装名可空), angle front|back, upper sfw|nsfw, extra 场景/临时服装。
+generate_image: characterName, extra 场景, lexicon 抽卡姬词库名（随机一套衣服，不叠卡内衣装）, outfit 仅当用户指定卡里某套。默认不含服装层。
 不要用 NovelAI charRef 路径。`,
   comfy: `===== 抽卡姬 / ComfyUI =====
 read comfy → 地址、当前工作流、是否可生图
@@ -198,28 +199,48 @@ export async function runQueries(
       } else if (type === "generate_image") {
         ctx.onStatus("抽卡姬出图中…");
         const characterName = String(q.characterName || q.character || "");
-        const extra = String(q.extra || q.prompt || "");
+        let extra = String(q.extra || q.prompt || "");
         const hits = characterName ? findCharacters(ctx.characters, characterName) : [];
         const c = hits[0] || ctx.pageCharacter;
         if (c) characterId = c.id;
         const app = c ? appearanceOf(c) : undefined;
         const outfitHint = String(q.outfit || q.outfitName || "");
+        let lexiconHint = String(q.lexicon || q.lexiconHint || "");
+        if (!lexiconHint) {
+          const m = extra.match(/([A-Za-z0-9_\u4e00-\u9fff]{2,20})词库/);
+          if (m) lexiconHint = m[1]!;
+        }
+        let rolledNote = "";
+        if (lexiconHint) {
+          extra = extra.replace(/[^,，。]*词库[^,，。]*/g, "").trim();
+          const rolled = await rollLexiconHint(lexiconHint);
+          if (!rolled?.tags) {
+            lines.push(`❌ 词库「${lexiconHint}」没有抽到条目。请确认抽卡姬里有这个分类/列表。`);
+            continue;
+          }
+          extra = [extra, rolled.tags].filter(Boolean).join(", ");
+          rolledNote = `词库 ${rolled.categoryLabel}/${rolled.listLabel} → ${rolled.name || rolled.tags.slice(0, 40)}`;
+        }
+        const skipOutfit = !outfitHint || !!lexiconHint || q.skipOutfit === true;
+        const hasLook = !!(app && (app.face.front || app.upperSfw.front));
         const composed = composeAppearancePrompt(app, {
           angle: q.angle === "back" ? "back" : "front",
           upper: q.upper === "nsfw" ? "nsfw" : "sfw",
           lower: q.lower === "hidden" ? "hidden" : q.lower === "nsfw" ? "nsfw" : "sfw",
-          outfitHint,
+          outfitHint: skipOutfit ? "" : outfitHint,
           extra,
+          skipOutfit,
         });
         let characterPrompt = composed;
-        let usedLabel = outfitHint || (app ? "分层外观" : "");
-        if (!composed || composed === extra) {
-          if (c) {
-            const picked = pickPrompt(c, `${characterName} ${extra} ${outfitHint}`);
-            if (picked) {
-              characterPrompt = [picked.text, extra].filter(Boolean).join(", ");
-              usedLabel = picked.label || usedLabel;
-            }
+        let usedLabel = skipOutfit ? "脸+身体（不含卡内衣装）" : outfitHint || "分层外观";
+        if (rolledNote) usedLabel += ` · ${rolledNote}`;
+        if (!hasLook && (!composed || composed === extra) && c) {
+          const picked = pickPrompt(c, `${characterName} ${extra} ${outfitHint}`);
+          if (picked) {
+            characterPrompt = skipOutfit
+              ? extra
+              : [picked.text, extra].filter(Boolean).join(", ");
+            if (!skipOutfit) usedLabel = picked.label || usedLabel;
           }
         }
         const ov: Parameters<typeof runSavedComfyJob>[0] = {

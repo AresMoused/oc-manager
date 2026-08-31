@@ -44,6 +44,31 @@ import type { Character, GalleryImage, StoredPrompt } from "@/lib/types";
 
 type Panel = "none" | "settings" | "history";
 type Tab = "api" | "params" | "persona" | "preset" | "features";
+type DockGeo = { w: number; h: number; x: number | null; y: number | null };
+
+const GEO_KEY = "oc-zhihuiji-geo-v1";
+
+function loadDockGeo(): DockGeo {
+  if (typeof window === "undefined") return { w: 380, h: 560, x: null, y: null };
+  try {
+    const v = JSON.parse(localStorage.getItem(GEO_KEY) || "null") as DockGeo | null;
+    if (v && typeof v.w === "number" && typeof v.h === "number") return v;
+  } catch { /* ignore */ }
+  return { w: 380, h: 560, x: null, y: null };
+}
+
+function clampDockGeo(g: DockGeo): DockGeo {
+  if (typeof window === "undefined") return g;
+  const w = Math.min(Math.max(280, g.w), window.innerWidth - 16);
+  const h = Math.min(Math.max(320, g.h), window.innerHeight - 16);
+  if (g.x == null || g.y == null) return { w, h, x: null, y: null };
+  return {
+    w,
+    h,
+    x: Math.min(Math.max(8, g.x), Math.max(8, window.innerWidth - 80)),
+    y: Math.min(Math.max(8, g.y), Math.max(8, window.innerHeight - 80)),
+  };
+}
 
 export default function ZhiHuiJiDock() {
   const pathname = usePathname() || "/";
@@ -66,9 +91,13 @@ export default function ZhiHuiJiDock() {
   const [pending, setPending] = useState<{ msgId: string; patches: ApplyPatch[] } | null>(null);
   const [task, setTask] = useState<ZhiTask | null>(null);
   const [status, setStatus] = useState("");
+  const [geo, setGeo] = useState<DockGeo>({ w: 380, h: 560, x: null, y: null });
   const abortRef = useRef<AbortController | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const taskRef = useRef<ZhiTask | null>(null);
+  const dragRef = useRef<{ ox: number; oy: number } | null>(null);
+  const resizeRef = useRef<{ ox: number; oy: number; w: number; h: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setPersona(loadZhiPersona());
@@ -88,6 +117,16 @@ export default function ZhiHuiJiDock() {
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [thread.messages, busy]);
+
+  useEffect(() => {
+    setGeo(clampDockGeo(loadDockGeo()));
+  }, []);
+
+  const persistGeo = (g: DockGeo) => {
+    const n = clampDockGeo(g);
+    try { localStorage.setItem(GEO_KEY, JSON.stringify(n)); } catch { /* ignore */ }
+    return n;
+  };
 
   const ping = (m: string) => {
     setToast(m);
@@ -303,8 +342,39 @@ export default function ZhiHuiJiDock() {
         姬
       </button>
       {open && (
-        <div className="fixed z-[76] bottom-20 right-4 w-[min(380px,calc(100vw-1.5rem))] h-[min(560px,calc(100vh-7rem))] rounded-2xl border border-neutral-700 bg-[#121214]/95 backdrop-blur-md shadow-2xl flex flex-col overflow-hidden">
-          <div className="px-3 py-2 border-b border-neutral-800 flex items-center gap-1">
+        <div
+          ref={panelRef}
+          className="fixed z-[76] rounded-2xl border border-neutral-700 bg-[#121214]/95 backdrop-blur-md shadow-2xl flex flex-col overflow-hidden"
+          style={{
+            width: geo.w,
+            height: geo.h,
+            ...(geo.x == null || geo.y == null
+              ? { right: 16, bottom: 80 }
+              : { left: geo.x, top: geo.y, right: "auto", bottom: "auto" }),
+          }}
+        >
+          <div
+            className="px-3 py-2 border-b border-neutral-800 flex items-center gap-1 cursor-grab active:cursor-grabbing"
+            onPointerDown={(e) => {
+              if ((e.target as HTMLElement).closest("button")) return;
+              const r = panelRef.current?.getBoundingClientRect();
+              if (!r) return;
+              dragRef.current = { ox: e.clientX - r.left, oy: e.clientY - r.top };
+              setGeo((g) => persistGeo({ ...g, x: r.left, y: r.top }));
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              if (!dragRef.current) return;
+              setGeo((g) =>
+                persistGeo({
+                  ...g,
+                  x: e.clientX - dragRef.current!.ox,
+                  y: e.clientY - dragRef.current!.oy,
+                })
+              );
+            }}
+            onPointerUp={() => { dragRef.current = null; }}
+          >
             <div className="w-7 h-7 rounded-full bg-fuchsia-800 text-white text-xs flex items-center justify-center">姬</div>
             <div className="flex-1 min-w-0 ml-1">
               <div className="text-sm text-white truncate">{persona.name}</div>
@@ -497,6 +567,33 @@ export default function ZhiHuiJiDock() {
             ) : (
               <button type="button" disabled={!draft.trim()} className="w-9 h-9 rounded-full bg-fuchsia-600 text-white disabled:opacity-40" onClick={() => void send()}>➤</button>
             )}
+          </div>
+          <div
+            className="absolute right-0 bottom-0 w-4 h-4 cursor-se-resize z-10"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const r = panelRef.current?.getBoundingClientRect();
+              if (!r) return;
+              resizeRef.current = { ox: e.clientX, oy: e.clientY, w: r.width, h: r.height };
+              setGeo((g) => persistGeo({ ...g, x: r.left, y: r.top, w: r.width, h: r.height }));
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              if (!resizeRef.current) return;
+              const s = resizeRef.current;
+              setGeo((g) =>
+                persistGeo({
+                  ...g,
+                  w: s.w + (e.clientX - s.ox),
+                  h: s.h + (e.clientY - s.oy),
+                })
+              );
+            }}
+            onPointerUp={() => { resizeRef.current = null; }}
+            title="拖动放大"
+          >
+            <div className="absolute right-1 bottom-1 w-2 h-2 border-r-2 border-b-2 border-neutral-500" />
           </div>
         </div>
       )}
