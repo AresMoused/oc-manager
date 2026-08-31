@@ -1,10 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { AppearanceProfile, OutfitPreset, StoredPrompt, ViewLayer } from "@/lib/types";
 import {
-  appearanceSummary,
-  composeAppearancePrompt,
   importZhiCharacterJson,
   normalizeAppearance,
 } from "@/lib/appearance";
@@ -28,6 +26,7 @@ export default function PromptBank({
   editable = true,
 }: Props) {
   const [tab, setTab] = useState<"look" | "outfit" | "snap">("look");
+  const [open, setOpen] = useState(true);
   const [draft, setDraft] = useState("");
   const [label, setLabel] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -41,11 +40,6 @@ export default function PromptBank({
   };
 
   const setApp = (next: AppearanceProfile) => onAppearanceChange?.(next);
-
-  const preview = useMemo(
-    () => composeAppearancePrompt(app, { extra: "" }),
-    [app]
-  );
 
   const add = () => {
     const text = draft.trim();
@@ -89,10 +83,16 @@ export default function PromptBank({
 
   return (
     <div className="mb-4">
-      <SectionHeader
-        title="外观 / 提示词"
-        onAdd={editable && tab === "snap" ? () => setShowForm(true) : undefined}
-      />
+      <SectionHeader title="外观 / 提示词" onAdd={editable && open && tab === "snap" ? () => setShowForm(true) : undefined}>
+        <button
+          type="button"
+          className="px-2 h-5 rounded bg-white/20 hover:bg-white/30 text-white text-[11px]"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? "收起" : "展开"}
+        </button>
+      </SectionHeader>
+      {open && (
       <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md">
         <div className="flex text-[11px] border-b border-neutral-800">
           {([
@@ -140,15 +140,6 @@ export default function PromptBank({
               <LayerEd title="全身/下身 SFW" layer={app.fullSfw} editable={editable} onChange={(fullSfw) => setApp({ ...app, fullSfw })} />
               <LayerEd title="上身 NSFW" layer={app.upperNsfw} editable={editable} onChange={(upperNsfw) => setApp({ ...app, upperNsfw })} />
               <LayerEd title="全身/下身 NSFW" layer={app.fullNsfw} editable={editable} onChange={(fullNsfw) => setApp({ ...app, fullNsfw })} />
-              <label className="block text-[11px] text-neutral-500">
-                出图底词（photoPrompt）
-                <textarea
-                  className="mt-1 w-full min-h-[56px] bg-neutral-900 border border-neutral-700 rounded px-2 py-1 font-mono text-[11px] text-neutral-200"
-                  disabled={!editable}
-                  value={app.photoPrompt}
-                  onChange={(e) => setApp({ ...app, photoPrompt: e.target.value })}
-                />
-              </label>
             </>
           )}
           {tab === "outfit" && canLook && (
@@ -212,15 +203,6 @@ export default function PromptBank({
               {!app.outfits.length && <p className="text-neutral-600 text-sm text-center py-4">还没有服装，可导入智绘姬角色 JSON 或手动添加</p>}
             </>
           )}
-          {(tab === "look" || tab === "outfit") && canLook && (
-            <div className="border border-neutral-800 rounded-lg p-2">
-              <div className="flex justify-between text-[11px] text-neutral-500 mb-1">
-                <span>当前组合预览</span>
-                <button type="button" className="text-purple-300" onClick={() => void copy(preview)}>复制</button>
-              </div>
-              <p className="font-mono text-[11px] text-neutral-400 break-all">{preview || "（空）"}</p>
-            </div>
-          )}
           {tab === "snap" && (
             <>
               <p className="text-[11px] text-neutral-500">旧的整段提示词快照，仍可供抽卡姬点选。分层外观请用上面两个页签。</p>
@@ -258,11 +240,9 @@ export default function PromptBank({
             <p className="text-neutral-600 text-sm">此页只读快照。外观分层请在可编辑角色卡里改。</p>
           )}
           {toast && <p className="text-center text-xs text-emerald-400">{toast}</p>}
-          {canLook && tab === "look" && (
-            <pre className="hidden">{appearanceSummary(app)}</pre>
-          )}
         </div>
       </div>
+      )}
     </div>
   );
 }

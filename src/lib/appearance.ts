@@ -58,8 +58,54 @@ export function normalizeAppearance(raw: unknown): AppearanceProfile {
   };
 }
 
-function pickView(layer: ViewLayer, angle: ShotAngle): string {
+export const APPEARANCE_PARTS = [
+  { id: "face", label: "脸 / 五官" },
+  { id: "upperSfw", label: "上身 SFW" },
+  { id: "fullSfw", label: "下身/全身 SFW" },
+  { id: "upperNsfw", label: "上身 NSFW" },
+  { id: "fullNsfw", label: "下身/全身 NSFW" },
+] as const;
+
+export type AppearancePartId = (typeof APPEARANCE_PARTS)[number]["id"];
+
+export function layerText(layer: ViewLayer, angle: ShotAngle): string {
   return (angle === "back" ? layer.back || layer.front : layer.front || layer.back).trim();
+}
+
+export function composeSelectedParts(
+  app: AppearanceProfile,
+  opts: { parts: AppearancePartId[]; angle?: ShotAngle; outfitId?: string }
+): string {
+  const angle: ShotAngle = opts.angle === "back" ? "back" : "front";
+  const parts: string[] = [];
+  for (const id of opts.parts) {
+    const layer = app[id];
+    if (layer && typeof layer === "object" && "front" in layer) {
+      parts.push(layerText(layer, angle));
+    }
+  }
+  const outfit = opts.outfitId ? app.outfits.find((o) => o.id === opts.outfitId) : undefined;
+  if (outfit) {
+    parts.push(layerText(outfit.upper, angle));
+    parts.push(layerText(outfit.full, angle));
+  }
+  return uniqueTags(parts);
+}
+
+function uniqueTags(parts: string[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of parts) {
+    for (const bit of raw.split(",")) {
+      const t = bit.trim();
+      if (!t) continue;
+      const key = t.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(t);
+    }
+  }
+  return out.join(", ");
 }
 
 export function findOutfit(app: AppearanceProfile, hint: string): OutfitPreset | undefined {
@@ -99,35 +145,20 @@ export function composeAppearancePrompt(
   const skipOutfit = opts.skipOutfit || (OUTFIT_OVERRIDE.test(extra) && !opts.outfitHint);
   const parts: string[] = [];
 
-  parts.push(pickView(app.face, angle));
-  parts.push(pickView(upper === "nsfw" ? app.upperNsfw : app.upperSfw, angle));
+  parts.push(layerText(app.face, angle));
+  parts.push(layerText(upper === "nsfw" ? app.upperNsfw : app.upperSfw, angle));
   if (lower !== "hidden") {
-    parts.push(pickView(lower === "nsfw" ? app.fullNsfw : app.fullSfw, angle));
+    parts.push(layerText(lower === "nsfw" ? app.fullNsfw : app.fullSfw, angle));
   }
 
   const outfit = skipOutfit ? undefined : findOutfit(app, opts.outfitHint || app.activeOutfitId);
   if (outfit) {
-    parts.push(pickView(outfit.upper, angle));
-    if (lower !== "hidden") parts.push(pickView(outfit.full, angle));
+    parts.push(layerText(outfit.upper, angle));
+    if (lower !== "hidden") parts.push(layerText(outfit.full, angle));
   }
 
   parts.push(extra);
-  const scene = (outfit?.photoPrompt || app.photoPrompt || "").replace(/\$\{[\s\S]*?\}\$/g, "").trim();
-  if (scene) parts.push(scene);
-
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of parts) {
-    for (const bit of raw.split(",")) {
-      const t = bit.trim();
-      if (!t) continue;
-      const key = t.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(t);
-    }
-  }
-  return out.join(", ");
+  return uniqueTags(parts);
 }
 
 export function appearanceSummary(app: AppearanceProfile | undefined): string {

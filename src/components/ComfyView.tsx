@@ -17,6 +17,12 @@ import {
 import type { BuilderData } from "@/lib/promptBuilder";
 import { loadLexiconBuilder, rollRandomCharacter as rollLexicon } from "@/lib/comfyLexicon";
 import LexiconEnableModal from "@/components/LexiconEnableModal";
+import {
+  APPEARANCE_PARTS,
+  appearanceOf,
+  composeSelectedParts,
+  type AppearancePartId,
+} from "@/lib/appearance";
 
 function newId() { return crypto.randomUUID(); }
 
@@ -43,6 +49,10 @@ export default function ComfyView() {
   const [importCharOpen, setImportCharOpen] = useState(false);
   const [importCharId, setImportCharId] = useState("");
   const [importMode, setImportMode] = useState<"replace" | "append">("append");
+  const [importParts, setImportParts] = useState<AppearancePartId[]>(["face", "upperSfw", "fullSfw"]);
+  const [importOutfitId, setImportOutfitId] = useState("");
+  const [importAngle, setImportAngle] = useState<"front" | "back">("front");
+  const [importSnapIds, setImportSnapIds] = useState<string[]>([]);
   const [wfEditorOpen, setWfEditorOpen] = useState(false);
   const [wfName, setWfName] = useState("");
   const [wfRaw, setWfRaw] = useState("");
@@ -94,10 +104,15 @@ export default function ComfyView() {
     () => (activeWf ? detectPlaceholders(activeWf.workflow) : []),
     [activeWf]
   );
-  const charPrompts = useMemo(() => {
-    const c = characters.find((x) => x.id === importCharId);
-    return c?.prompts || [];
-  }, [characters, importCharId]);
+  const importChar = useMemo(
+    () => characters.find((x) => x.id === importCharId),
+    [characters, importCharId]
+  );
+  const importApp = useMemo(
+    () => (importChar ? appearanceOf(importChar) : null),
+    [importChar]
+  );
+  const charPrompts = importChar?.prompts || [];
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -602,15 +617,24 @@ export default function ComfyView() {
       {importCharOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-lg bg-[#111] border border-neutral-700 rounded-xl p-5 space-y-4 max-h-[85vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold text-white">导入角色卡提示词</h2>
+            <h2 className="text-lg font-semibold text-white">导入角色提示词</h2>
             <div>
               <label className="text-xs text-neutral-500 block mb-1">角色</label>
               <select className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500"
-                value={importCharId} onChange={(e) => setImportCharId(e.target.value)}>
+                value={importCharId} onChange={(e) => {
+                  const id = e.target.value;
+                  setImportCharId(id);
+                  const c = characters.find((x) => x.id === id);
+                  const app = c ? appearanceOf(c) : null;
+                  setImportParts(["face", "upperSfw", "fullSfw"]);
+                  setImportOutfitId(app?.activeOutfitId || app?.outfits[0]?.id || "");
+                  setImportSnapIds([]);
+                  setImportAngle("front");
+                }}>
                 <option value="">选择角色…</option>
                 {charsLoaded && characters.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}{c.world ? ` · ${c.world}` : ""}{c.prompts?.length ? ` (${c.prompts.length})` : ""}
+                    {c.name}{c.world ? ` · ${c.world}` : ""}
                   </option>
                 ))}
               </select>
@@ -623,21 +647,99 @@ export default function ComfyView() {
                 <input type="radio" checked={importMode === "replace"} onChange={() => setImportMode("replace")} />替换角色提示词
               </label>
             </div>
-            <div className="space-y-2">
-              {!importCharId ? (
-                <p className="text-sm text-neutral-500">请选择角色</p>
-              ) : charPrompts.length === 0 ? (
-                <p className="text-sm text-neutral-500">该角色没有保存的外观提示词（可在角色外观生成器导入）</p>
-              ) : charPrompts.map((p) => (
-                <button key={p.id} type="button" onClick={() => applyCharPrompt(p.text)}
-                  className="w-full text-left p-3 rounded-lg border border-neutral-700 hover:border-purple-600 bg-[#0c0c0c] space-y-1">
-                  <div className="text-xs text-purple-300">{p.label || "提示词"}</div>
-                  <div className="text-xs text-neutral-400 font-mono line-clamp-3 break-all">{p.text}</div>
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-end">
+            {!importCharId ? (
+              <p className="text-sm text-neutral-500">请选择角色</p>
+            ) : (
+              <>
+                <div>
+                  <div className="text-xs text-neutral-500 mb-1">角度</div>
+                  <div className="flex gap-2 text-sm">
+                    {(["front", "back"] as const).map((a) => (
+                      <button key={a} type="button" onClick={() => setImportAngle(a)}
+                        className={`px-3 py-1 rounded-lg border ${importAngle === a ? "border-purple-500 text-purple-200" : "border-neutral-700 text-neutral-400"}`}>
+                        {a === "front" ? "正面" : "背面"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-neutral-500 mb-1">外观部分</div>
+                  <div className="flex flex-wrap gap-2">
+                    {APPEARANCE_PARTS.map((p) => {
+                      const on = importParts.includes(p.id);
+                      return (
+                        <button key={p.id} type="button"
+                          onClick={() => setImportParts((prev) => on ? prev.filter((x) => x !== p.id) : [...prev, p.id])}
+                          className={`px-2 py-1 rounded-full text-[11px] border ${on ? "border-purple-500 text-purple-200 bg-purple-950/40" : "border-neutral-700 text-neutral-500"}`}>
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-neutral-500 mb-1">服装</div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setImportOutfitId("")}
+                      className={`px-2 py-1 rounded-full text-[11px] border ${!importOutfitId ? "border-purple-500 text-purple-200 bg-purple-950/40" : "border-neutral-700 text-neutral-500"}`}>
+                      不导入服装
+                    </button>
+                    {(importApp?.outfits || []).map((o) => (
+                      <button key={o.id} type="button" onClick={() => setImportOutfitId(o.id)}
+                        className={`px-2 py-1 rounded-full text-[11px] border ${importOutfitId === o.id ? "border-purple-500 text-purple-200 bg-purple-950/40" : "border-neutral-700 text-neutral-400"}`}>
+                        {o.nameCN || o.nameEN || o.id}
+                      </button>
+                    ))}
+                  </div>
+                  {importApp && !importApp.outfits.length && (
+                    <p className="text-[11px] text-neutral-600 mt-1">该角色还没有分层服装</p>
+                  )}
+                </div>
+                {charPrompts.length > 0 && (
+                  <div>
+                    <div className="text-xs text-neutral-500 mb-1">快照（可选追加）</div>
+                    <div className="space-y-1">
+                      {charPrompts.map((p) => {
+                        const on = importSnapIds.includes(p.id);
+                        return (
+                          <button key={p.id} type="button"
+                            onClick={() => setImportSnapIds((prev) => on ? prev.filter((x) => x !== p.id) : [...prev, p.id])}
+                            className={`w-full text-left p-2 rounded-lg border text-[11px] ${on ? "border-purple-600 bg-purple-950/30" : "border-neutral-800 bg-[#0c0c0c]"}`}>
+                            <div className="text-purple-300">{p.label || "提示词"}</div>
+                            <div className="text-neutral-500 font-mono line-clamp-2 break-all">{p.text}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setImportCharOpen(false)} className="px-4 py-2 text-sm text-neutral-400">关闭</button>
+              <button
+                type="button"
+                disabled={!importCharId}
+                onClick={() => {
+                  const bits: string[] = [];
+                  if (importApp) {
+                    bits.push(composeSelectedParts(importApp, {
+                      parts: importParts,
+                      angle: importAngle,
+                      outfitId: importOutfitId || undefined,
+                    }));
+                  }
+                  for (const p of charPrompts) {
+                    if (importSnapIds.includes(p.id)) bits.push(p.text);
+                  }
+                  const text = bits.filter(Boolean).join(", ");
+                  if (!text) { showToast("请选择外观部分、服装或快照"); return; }
+                  applyCharPrompt(text);
+                }}
+                className="px-4 py-2 text-sm rounded-lg bg-purple-600 text-white disabled:opacity-40"
+              >
+                导入所选
+              </button>
             </div>
           </div>
         </div>
