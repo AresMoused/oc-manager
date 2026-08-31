@@ -42,6 +42,7 @@ import ChatHtml from "@/components/ChatHtml";
 import ChatImage, { ImagePreview } from "@/components/ChatImage";
 import PresetEditor from "@/components/PresetEditor";
 import RequestTypesPanel from "@/components/RequestTypesPanel";
+import ChatMsgBar from "@/components/ChatMsgBar";
 import { useDockGeo } from "@/hooks/useDockGeo";
 
 type Panel = "none" | "settings" | "history" | "summary";
@@ -121,6 +122,8 @@ export default function CharacterChatDock({
   const [showKey, setShowKey] = useState(false);
   const [pending, setPending] = useState<{ msgId: string; patches: ApplyPatch[] } | null>(null);
   const [skillPending, setSkillPending] = useState<ZhiPendingChange[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
   const [testPersona, setTestPersona] = useState<TestPersona>({ name: "玩家", body: "" });
   const [preview, setPreview] = useState<{ url: string; charId?: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -241,8 +244,9 @@ export default function CharacterChatDock({
     [cfg, params, present, solo, session.soloMode, pov.name, onWriteTimeline, localOnly]
   );
 
-  const send = async (presetText?: string) => {
+  const send = async (presetText?: string, historyOverride?: ChatTurn[]) => {
     const text = (presetText ?? draft).trim();
+    const regen = historyOverride != null;
     if ((!text && !image) || busy) return;
     if (!cfg.apiKey.trim() || !cfg.baseUrl.trim()) {
       setError("请先在设置里填写对话 API");
@@ -263,13 +267,14 @@ export default function CharacterChatDock({
       speakerId: pov.id,
       speakerName: session.useTestPersona ? testPersona.name || "玩家" : pov.name,
       content: text || "（附图）",
-      imageUrl: image || undefined,
+      imageUrl: regen ? undefined : image || undefined,
       at: new Date().toISOString(),
     };
-    const nextMsgs = [...session.messages, userTurn];
+    const base = historyOverride ?? session.messages;
+    const nextMsgs = [...base, userTurn];
     const asstId = crypto.randomUUID();
     const title =
-      session.messages.length === 0 && text
+      base.length === 0 && text
         ? text.slice(0, 18)
         : session.title;
     setSession((s) => ({
@@ -287,7 +292,7 @@ export default function CharacterChatDock({
       ],
     }));
     setDraft("");
-    const img = image;
+    const img = regen ? null : image;
     setImage(null);
     setBusy(true);
     abortRef.current?.abort();
@@ -410,6 +415,56 @@ export default function CharacterChatDock({
     } finally {
       setBusy(false);
     }
+  };
+
+  const lastAsstId = [...session.messages]
+    .reverse()
+    .find((m) => m.role === "assistant" && !(m.imageUrl && m.content === "图"))?.id;
+
+  const regenLast = () => {
+    const msgs = session.messages;
+    let userIdx = -1;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i]!.role === "user") {
+        userIdx = i;
+        break;
+      }
+    }
+    if (userIdx < 0) return;
+    void send(msgs[userIdx]!.content, msgs.slice(0, userIdx));
+  };
+
+  const deleteMsg = (id: string) => {
+    setSession((s) => ({ ...s, messages: s.messages.filter((m) => m.id !== id) }));
+    if (editingId === id) setEditingId(null);
+  };
+
+  const startEdit = (m: ChatTurn) => {
+    setEditingId(m.id);
+    setEditDraft(m.content);
+  };
+
+  const saveEdit = (id: string) => {
+    const idx = session.messages.findIndex((m) => m.id === id);
+    const msg = session.messages[idx];
+    if (!msg) return;
+    const text = editDraft.trim();
+    setEditingId(null);
+    if (!text) {
+      deleteMsg(id);
+      return;
+    }
+    if (msg.role === "user") {
+      const laterUser = session.messages.slice(idx + 1).some((m) => m.role === "user");
+      if (!laterUser) {
+        void send(text, session.messages.slice(0, idx));
+        return;
+      }
+    }
+    setSession((s) => ({
+      ...s,
+      messages: s.messages.map((m) => (m.id === id ? { ...m, content: text } : m)),
+    }));
   };
 
   const newChat = () => {
@@ -536,6 +591,7 @@ export default function CharacterChatDock({
               )}
               {session.messages.map((m) => {
                 const mine = m.role === "user";
+                const editing = editingId === m.id;
                 return (
                   <div key={m.id} className={`flex gap-2 max-w-[90%] ${mine ? "self-end flex-row-reverse" : ""}`}>
                     <Avatar
@@ -562,12 +618,31 @@ export default function CharacterChatDock({
                             onSave={() => void saveToGallery(m.imageUrl!, m.speakerId)}
                           />
                         )}
-                        {mine ? (
+                        {editing ? (
+                          <textarea
+                            className="w-full min-h-[72px] bg-neutral-950 border border-neutral-700 rounded-lg px-2 py-1 text-sm"
+                            value={editDraft}
+                            onChange={(e) => setEditDraft(e.target.value)}
+                          />
+                        ) : mine ? (
                           m.content
                         ) : m.imageUrl && m.content === "图" ? null : (
                           <ChatHtml raw={m.content || (busy ? "…" : "")} regexes={preset?.regexes} />
                         )}
                       </div>
+                      {editing ? (
+                        <div className="flex gap-1.5 mt-1 text-[10px]">
+                          <button type="button" className="text-purple-300" onClick={() => saveEdit(m.id)}>保存{mine ? "并重发" : ""}</button>
+                          <button type="button" className="text-neutral-500" onClick={() => setEditingId(null)}>取消</button>
+                        </div>
+                      ) : (
+                        <ChatMsgBar
+                          disabled={busy}
+                          onEdit={m.content === "图" ? undefined : () => startEdit(m)}
+                          onDelete={() => deleteMsg(m.id)}
+                          onRegen={!mine && m.id === lastAsstId ? regenLast : undefined}
+                        />
+                      )}
                       {!mine && pending?.msgId === m.id && (
                         <div className="mt-1.5 space-y-1">
                           {pending.patches.map((p, i) => {
@@ -904,7 +979,12 @@ export default function CharacterChatDock({
               {busy ? (
                 <button type="button" className="w-9 h-9 rounded-full bg-neutral-700 text-white text-xs" onClick={() => abortRef.current?.abort()}>停</button>
               ) : (
-                <button type="button" disabled={!draft.trim() && !image} className="w-9 h-9 rounded-full bg-purple-600 text-white disabled:opacity-40" onClick={() => void send()}>➤</button>
+                <>
+                  {lastAsstId && (
+                    <button type="button" className="w-9 h-9 rounded-full border border-neutral-700 text-neutral-300" title="重新生成" onClick={regenLast}>↻</button>
+                  )}
+                  <button type="button" disabled={!draft.trim() && !image} className="w-9 h-9 rounded-full bg-purple-600 text-white disabled:opacity-40" onClick={() => void send()}>➤</button>
+                </>
               )}
             </div>
           </div>

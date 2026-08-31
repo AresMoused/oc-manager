@@ -46,6 +46,7 @@ import PresetEditor from "@/components/PresetEditor";
 import RequestTypesPanel from "@/components/RequestTypesPanel";
 import { generateCharacterStill } from "@/lib/chatImage";
 import type { Character, GalleryImage } from "@/lib/types";
+import ChatMsgBar from "@/components/ChatMsgBar";
 import { useDockGeo } from "@/hooks/useDockGeo";
 
 type Panel = "none" | "settings" | "history";
@@ -76,6 +77,8 @@ export default function ZhiHuiJiDock() {
   const [status, setStatus] = useState("");
   const [autoImage, setAutoImage] = useState(false);
   const [preview, setPreview] = useState<{ url: string; charId?: string } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const taskRef = useRef<ZhiTask | null>(null);
@@ -118,8 +121,8 @@ export default function ZhiHuiJiDock() {
   const pageChar = charId ? characters.find((c) => c.id === charId) : undefined;
   const onShare = pathname.startsWith("/shared/");
 
-  const send = async () => {
-    const text = draft.trim();
+  const send = async (presetText?: string, historyOverride?: ChatTurn[]) => {
+    const text = (presetText ?? draft).trim();
     if (!text || busy) return;
     if (!cfg.apiKey.trim()) {
       setError("请先填 API");
@@ -128,6 +131,7 @@ export default function ZhiHuiJiDock() {
       return;
     }
     setError("");
+    const base = historyOverride ?? thread.messages;
     const userTurn: ChatTurn = {
       id: crypto.randomUUID(),
       role: "user",
@@ -138,19 +142,19 @@ export default function ZhiHuiJiDock() {
     const asstId = crypto.randomUUID();
     setThread((t) => ({
       ...t,
-      title: t.messages.length ? t.title : text.slice(0, 18),
+      title: base.length ? t.title : text.slice(0, 18),
       messages: [
-        ...t.messages,
+        ...base,
         userTurn,
         { id: asstId, role: "assistant", speakerName: persona.name, content: "", at: new Date().toISOString() },
       ],
     }));
-    setDraft("");
+    if (presetText == null) setDraft("");
     setBusy(true);
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
-    const hist = [...thread.messages, userTurn].slice(-12);
+    const hist = [...base, userTurn].slice(-12);
     const sys = [
       persona.body,
       TOOL_INSTRUCTION,
@@ -294,6 +298,70 @@ export default function ZhiHuiJiDock() {
     }
   };
 
+  const lastAsstId = [...thread.messages]
+    .reverse()
+    .find((m) => m.role === "assistant" && !(m.imageUrl && m.content === "图"))?.id;
+
+  const regenLast = () => {
+    const msgs = thread.messages;
+    let userIdx = -1;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i]!.role === "user") {
+        userIdx = i;
+        break;
+      }
+    }
+    if (userIdx < 0) return;
+    void send(msgs[userIdx]!.content, msgs.slice(0, userIdx));
+  };
+
+  const deleteMsg = (id: string) => {
+    setThread((t) => ({ ...t, messages: t.messages.filter((m) => m.id !== id) }));
+    if (editingId === id) setEditingId(null);
+  };
+
+  const startEdit = (m: ChatTurn) => {
+    setEditingId(m.id);
+    setEditDraft(m.content);
+  };
+
+  const saveEdit = (id: string) => {
+    const idx = thread.messages.findIndex((m) => m.id === id);
+    const msg = thread.messages[idx];
+    if (!msg) return;
+    const text = editDraft.trim();
+    setEditingId(null);
+    if (!text) {
+      deleteMsg(id);
+      return;
+    }
+    if (msg.role === "user") {
+      const laterUser = thread.messages.slice(idx + 1).some((m) => m.role === "user");
+      if (!laterUser) {
+        void send(text, thread.messages.slice(0, idx));
+        return;
+      }
+    }
+    setThread((t) => ({
+      ...t,
+      messages: t.messages.map((m) => (m.id === id ? { ...m, content: text } : m)),
+    }));
+  };
+
+  const removeThread = (id: string) => {
+    const rest = threads.filter((t) => t.id !== id);
+    const next = thread.id === id ? rest[0] || emptyZhiThread() : thread;
+    const store = {
+      currentId: next.id,
+      threads: rest.some((t) => t.id === next.id)
+        ? rest.map((t) => (t.id === next.id ? next : t))
+        : [next, ...rest],
+    };
+    saveZhiThreads(store);
+    setThreads(store.threads);
+    setThread(next);
+  };
+
   const applyPending = async (items: ZhiPendingChange[]) => {
     if (onShare) {
       ping("分享页请用角色对话窗，且需有编辑权");
@@ -403,21 +471,47 @@ export default function ZhiHuiJiDock() {
               )}
               {thread.messages.map((m) => {
                 const mine = m.role === "user";
+                const editing = editingId === m.id;
                 return (
                   <div key={m.id} className={`flex gap-2 max-w-[90%] ${mine ? "self-end flex-row-reverse" : ""}`}>
                     <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs ${mine ? "bg-purple-800" : "bg-fuchsia-800"}`}>
                       {mine ? "你" : "姬"}
                     </div>
-                    <div className={`rounded-2xl px-3 py-2 text-sm border ${mine ? "bg-purple-600/20 border-purple-800/50 whitespace-pre-wrap" : "bg-[#1c1c20] border-neutral-800"}`}>
-                      {m.imageUrl && (
-                        <ChatImage
-                          url={m.imageUrl}
-                          canSave={!onShare}
-                          onPreview={() => setPreview({ url: m.imageUrl!, charId: m.speakerId })}
-                          onSave={() => void saveToGallery(m.imageUrl!, m.speakerId)}
+                    <div className="min-w-0">
+                      <div className={`rounded-2xl px-3 py-2 text-sm border ${mine ? "bg-purple-600/20 border-purple-800/50 whitespace-pre-wrap" : "bg-[#1c1c20] border-neutral-800"}`}>
+                        {m.imageUrl && (
+                          <ChatImage
+                            url={m.imageUrl}
+                            canSave={!onShare}
+                            onPreview={() => setPreview({ url: m.imageUrl!, charId: m.speakerId })}
+                            onSave={() => void saveToGallery(m.imageUrl!, m.speakerId)}
+                          />
+                        )}
+                        {editing ? (
+                          <textarea
+                            className="w-full min-h-[72px] bg-neutral-950 border border-neutral-700 rounded-lg px-2 py-1 text-sm"
+                            value={editDraft}
+                            onChange={(e) => setEditDraft(e.target.value)}
+                          />
+                        ) : mine ? (
+                          m.content
+                        ) : m.content === "图" && m.imageUrl ? null : (
+                          <ChatHtml raw={m.content || (busy ? "…" : "")} regexes={preset?.regexes} />
+                        )}
+                      </div>
+                      {editing ? (
+                        <div className="flex gap-1.5 mt-1 text-[10px]">
+                          <button type="button" className="text-fuchsia-300" onClick={() => saveEdit(m.id)}>保存{mine ? "并重发" : ""}</button>
+                          <button type="button" className="text-neutral-500" onClick={() => setEditingId(null)}>取消</button>
+                        </div>
+                      ) : (
+                        <ChatMsgBar
+                          disabled={busy}
+                          onEdit={m.content === "图" ? undefined : () => startEdit(m)}
+                          onDelete={() => deleteMsg(m.id)}
+                          onRegen={!mine && m.id === lastAsstId ? regenLast : undefined}
                         />
                       )}
-                      {mine ? m.content : m.content === "图" && m.imageUrl ? null : <ChatHtml raw={m.content || (busy ? "…" : "")} regexes={preset?.regexes} />}
                     </div>
                   </div>
                 );
@@ -432,9 +526,12 @@ export default function ZhiHuiJiDock() {
                 {panel === "history" && (
                   <div className="flex-1 overflow-y-auto p-2 space-y-1">
                     {threads.map((t) => (
-                      <button key={t.id} type="button" className={`w-full text-left text-xs px-2 py-2 rounded-xl ${t.id === thread.id ? "bg-fuchsia-950/50" : "hover:bg-white/5"}`} onClick={() => { setThread(t); setPanel("none"); }}>
-                        <div className="text-neutral-200 truncate">{t.title}</div>
-                      </button>
+                      <div key={t.id} className={`flex items-center gap-1 rounded-xl ${t.id === thread.id ? "bg-fuchsia-950/50" : "hover:bg-white/5"}`}>
+                        <button type="button" className="flex-1 min-w-0 text-left text-xs px-2 py-2" onClick={() => { setThread(t); setPanel("none"); }}>
+                          <div className="text-neutral-200 truncate">{t.title}</div>
+                        </button>
+                        <button type="button" className="text-neutral-500 hover:text-rose-300 px-2 text-[11px]" onClick={() => removeThread(t.id)}>删</button>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -588,7 +685,12 @@ export default function ZhiHuiJiDock() {
             {busy ? (
               <button type="button" className="w-9 h-9 rounded-full bg-neutral-700" onClick={() => abortRef.current?.abort()}>停</button>
             ) : (
-              <button type="button" disabled={!draft.trim()} className="w-9 h-9 rounded-full bg-fuchsia-600 text-white disabled:opacity-40" onClick={() => void send()}>➤</button>
+              <>
+                {lastAsstId && (
+                  <button type="button" className="w-9 h-9 rounded-full border border-neutral-700 text-neutral-300 text-[11px]" title="重新生成" onClick={regenLast}>↻</button>
+                )}
+                <button type="button" disabled={!draft.trim()} className="w-9 h-9 rounded-full bg-fuchsia-600 text-white disabled:opacity-40" onClick={() => void send()}>➤</button>
+              </>
             )}
           </div>
           <div
