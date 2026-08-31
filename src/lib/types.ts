@@ -33,6 +33,34 @@ export interface StoredPrompt {
   createdAt: string;
 }
 
+export interface ViewLayer {
+  front: string;
+  back: string;
+}
+
+export interface OutfitPreset {
+  id: string;
+  nameCN: string;
+  nameEN: string;
+  upper: ViewLayer;
+  full: ViewLayer;
+  photoPrompt: string;
+}
+
+export interface AppearanceProfile {
+  nameCN: string;
+  nameEN: string;
+  negative: string;
+  face: ViewLayer;
+  upperSfw: ViewLayer;
+  fullSfw: ViewLayer;
+  upperNsfw: ViewLayer;
+  fullNsfw: ViewLayer;
+  outfits: OutfitPreset[];
+  activeOutfitId: string;
+  photoPrompt: string;
+}
+
 export interface BipolarSliderItem {
   id: string;
   leftLabel: string;
@@ -142,6 +170,8 @@ export interface Character {
   relationships: Relationship[];
   gallery: GalleryImage[];
   prompts: StoredPrompt[];
+  /** Layered 智绘姬-style appearance + outfits. */
+  appearance?: AppearanceProfile;
   createdAt: string;
   updatedAt: string;
 }

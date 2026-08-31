@@ -4,6 +4,7 @@ import type { Character, PreferenceItem, SheetModule, TimelineEvent } from "@/li
 import type { AiApiConfig, AiModelParams, ChatMessage } from "@/lib/aiConfig";
 import { defaultApiConfig, defaultModelParams } from "@/lib/aiConfig";
 import { applyRegexes, collectStRegexes, type ChatRegex } from "@/lib/chatRegex";
+import { appearanceOf, appearanceSummary } from "@/lib/appearance";
 
 const API_KEY = "oc-char-chat-api-v1";
 const PARAMS_KEY = "oc-char-chat-params-v1";
@@ -277,6 +278,10 @@ export function characterCardText(
     `角色类型：${c.sheetRole === "pc" ? "玩家角色" : "NPC"}`,
   ];
   if (c.story.trim()) lines.push(`经历：${c.story.trim().slice(0, 900)}`);
+  const app = appearanceOf(c);
+  if (app.face.front || app.outfits.length) {
+    lines.push("外观分层：\n" + appearanceSummary(app));
+  }
   lines.push(...moduleLines(c.modules));
   const presentIds = new Set(present.map((x) => x.id));
   const rels = (c.relationships || []).filter((r) => presentIds.has(r.targetId));
@@ -354,8 +359,9 @@ export function buildChatMessages(opts: {
   imageUrl?: string;
   allowCardEdit?: boolean;
   testPersona?: TestPersona | null;
+  allowImageGen?: boolean;
 }): ChatMessage[] {
-  const { preset, present, pov, soloMode, scene, history, userLine, imageUrl, allowCardEdit, testPersona } = opts;
+  const { preset, present, pov, soloMode, scene, history, userLine, imageUrl, allowCardEdit, testPersona, allowImageGen } = opts;
   const others = present.filter((c) => c.id !== pov.id);
   const solo = present.length <= 1;
   const usingTest = !!(testPersona && testPersona.body.trim());
@@ -433,6 +439,14 @@ export function buildChatMessages(opts: {
   }
   if (allowCardEdit) {
     out.push({ role: "system", content: APPLY_INSTRUCTION });
+  }
+  if (allowImageGen !== false) {
+    out.push({
+      role: "system",
+      content: `若本轮有明确画面（换装、新场景、用户要看图），在正文后追加：
+<SystemQuery>{"type":"generate_image","characterName":"出场角色名","outfit":"服装名或空","angle":"front","upper":"sfw","extra":"场景与动作 tags"}</SystemQuery>
+闲聊不要出图。外观与服装在角色卡里是分层的，出图会自动组合。`,
+    });
   }
   if (!historyPlaced) out.push(...histMsgs);
   const userText = applyRegexes(`【${playerName}】\n${userLine}`, preset.regexes, "prompt");

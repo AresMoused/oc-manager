@@ -352,10 +352,13 @@ export default function SharedCharacterPage({
         {tab === "prompts" && (
           <PromptBank
             prompts={character.prompts || []}
+            appearance={character.appearance}
+            characterName={character.name}
             editable={editable}
             onChange={(prompts: StoredPrompt[]) =>
               updateCharacter({ prompts })
             }
+            onAppearanceChange={(appearance) => updateCharacter({ appearance })}
           />
         )}
       </main>

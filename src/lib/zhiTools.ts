@@ -1,6 +1,6 @@
 /** 陪玩姬 tool protocol, aligned with 智绘姬 SystemQuery. */
 
-import type { Character } from "@/lib/types";
+import type { AppearanceProfile, Character, OutfitPreset } from "@/lib/types";
 import {
   loadParams,
   loadPromptPresets,
@@ -9,6 +9,11 @@ import {
   runSavedComfyJob,
 } from "@/lib/comfyConfig";
 import { characterCardText } from "@/lib/characterChat";
+import {
+  appearanceOf,
+  appearanceSummary,
+  composeAppearancePrompt,
+} from "@/lib/appearance";
 
 export interface ZhiTaskStep {
   title: string;
@@ -21,26 +26,28 @@ export interface ZhiTask {
   steps: ZhiTaskStep[];
 }
 
-export const TOOL_INSTRUCTION = `需要查资料、生图、改抽卡姬配置时，用工具（对用户可见的正文里不要出现这些标签）：
+export const TOOL_INSTRUCTION = `你可以决定要不要出图。画面有明确视觉（换装、新场景、用户要看图、关键动作）时，对用户说完后追加 generate_image；闲聊、纯问答不要出图。
+
+工具（对用户可见正文里不要出现这些标签）：
 <SystemQuery>{"type":"task_create","title":"短标题","steps":["步骤1","步骤2"]}</SystemQuery>
 <SystemQuery>{"type":"load_module","module":"characters"}</SystemQuery>
-<SystemQuery>{"type":"read","path":"characters"}</SystemQuery>
 <SystemQuery>{"type":"read","path":"characters.角色名"}</SystemQuery>
-<SystemQuery>{"type":"generate_image","characterName":"角色名","extra":"服装或场景，如 bikini, beach"}</SystemQuery>
+<SystemQuery>{"type":"generate_image","characterName":"角色名","outfit":"礼服","angle":"front","upper":"sfw","extra":"beach, bikini, smiling"}</SystemQuery>
+<SystemQuery>{"type":"write_appearance","characterName":"角色名","faceFront":"elf, blonde hair","outfit":{"nameCN":"比基尼","upperFront":"bikini top","fullFront":"bikini bottom"}}</SystemQuery>
 <SystemQuery>{"type":"task_update","step":1,"status":"completed","result":"简述"}</SystemQuery>
-<SystemQuery>{"type":"ui_action","action":"goto","path":"/comfy"}</SystemQuery>
 
-module: characters | comfy | generator | sheet
-path: characters / characters.名 / comfy / comfy.presets
-generate_image 会用该角色「提示词库」里最匹配的一条（可用 extra 匹配「成熟」等标签）加上 extra 去抽卡姬出图。没有工作流时不要假装已经出图。
-先 load_module 再 read，不要编造角色是否存在。一次可以发多条 SystemQuery。`;
+外观和服装是分开的：脸/上身/下身属于角色，裙子等属于服装。改提示词用 write_appearance。
+generate_image 会组合：脸 + 身体分层 + 指定服装 + extra。用户要换装且服装库没有时，先 write_appearance 加一套再出图，或把临时衣服只写在 extra（会自动先不叠日常服）。
+没有抽卡姬工作流时不要假装已经出图。`;
 
 const MODULES: Record<string, string> = {
   characters: `===== 角色管理模块 =====
-read characters → 全部角色摘要（姓名、世界、身份、提示词标签）
-read characters.角色名 → 卡面摘要 + 提示词库（label/text）+ 图库数量
-生成图时用 generate_image.characterName 指定角色，extra 写服装/场景/要哪条词库（如「成熟」）。
-OC Manager 没有 NovelAI 角色参考图预设；角色一致性靠提示词库 + 抽卡姬工作流。`,
+read characters / characters.名 → 卡面、分层外观、服装列表、旧快照标签
+外观：face / upperSfw / fullSfw / NSFW 对应层，正/背。
+服装：独立 outfits，activeOutfitId 为当前穿的。
+write_appearance 改分层或增改一套衣服。
+generate_image: characterName, outfit(服装名可空), angle front|back, upper sfw|nsfw, extra 场景/临时服装。
+不要用 NovelAI charRef 路径。`,
   comfy: `===== 抽卡姬 / ComfyUI =====
 read comfy → 地址、当前工作流、是否可生图
 read comfy.presets → 抽卡姬提示词预设名
@@ -133,6 +140,7 @@ export type ZhiToolCtx = {
   onTask: (t: ZhiTask | null) => void;
   onStatus: (s: string) => void;
   onGoto?: (path: string) => void;
+  onPatchCharacter?: (id: string, patch: Partial<Character>) => void;
 };
 
 export async function runQueries(
@@ -194,26 +202,32 @@ export async function runQueries(
         const hits = characterName ? findCharacters(ctx.characters, characterName) : [];
         const c = hits[0] || ctx.pageCharacter;
         if (c) characterId = c.id;
-        let characterPrompt = "";
-        let usedLabel = "";
-        if (c) {
-          const picked = pickPrompt(c, `${characterName} ${extra}`);
-          if (picked) {
-            characterPrompt = picked.text;
-            usedLabel = picked.label || "";
+        const app = c ? appearanceOf(c) : undefined;
+        const outfitHint = String(q.outfit || q.outfitName || "");
+        const composed = composeAppearancePrompt(app, {
+          angle: q.angle === "back" ? "back" : "front",
+          upper: q.upper === "nsfw" ? "nsfw" : "sfw",
+          lower: q.lower === "hidden" ? "hidden" : q.lower === "nsfw" ? "nsfw" : "sfw",
+          outfitHint,
+          extra,
+        });
+        let characterPrompt = composed;
+        let usedLabel = outfitHint || (app ? "分层外观" : "");
+        if (!composed || composed === extra) {
+          if (c) {
+            const picked = pickPrompt(c, `${characterName} ${extra} ${outfitHint}`);
+            if (picked) {
+              characterPrompt = [picked.text, extra].filter(Boolean).join(", ");
+              usedLabel = picked.label || usedLabel;
+            }
           }
         }
-        const suffix = extra
-          .replace(new RegExp(characterName, "ig"), "")
-          .replace(/角色管理|那个|一下|帮我|生成|一张|图片/g, "")
-          .trim();
-        const job = await runSavedComfyJob(
-          {
-            prompt_character: characterPrompt || extra,
-            prompt_suffix: characterPrompt ? suffix : "",
-          },
-          ctx.signal
-        );
+        const ov: Parameters<typeof runSavedComfyJob>[0] = {
+          prompt_character: characterPrompt || extra,
+          prompt_suffix: "",
+        };
+        if (app?.negative) ov.negative_prompt = app.negative;
+        const job = await runSavedComfyJob(ov, ctx.signal);
         images.push(...job.urls);
         lines.push(
           [
@@ -224,6 +238,22 @@ export async function runQueries(
             `urls:\n${job.urls.join("\n")}`,
           ].join("\n")
         );
+      } else if (type === "write_appearance") {
+        const characterName = String(q.characterName || q.character || "");
+        const hits = characterName ? findCharacters(ctx.characters, characterName) : [];
+        const c = hits[0] || ctx.pageCharacter;
+        if (!c) {
+          lines.push("write_appearance：找不到角色");
+          continue;
+        }
+        if (!ctx.onPatchCharacter) {
+          lines.push("此页不能改卡（分享只读）");
+          continue;
+        }
+        const next = applyAppearanceWrite(appearanceOf(c), q);
+        ctx.onPatchCharacter(c.id, { appearance: next });
+        characterId = c.id;
+        lines.push(`✅ 已更新 ${c.name} 外观\n${appearanceSummary(next)}`);
       } else if (type === "ui_action") {
         const action = String(q.action || "");
         const path = String(q.path || q.value || "");
@@ -286,7 +316,66 @@ function handleRead(path: string, characters: Character[]): string {
       const prompts = (c.prompts || [])
         .map((pr) => `· [${pr.label || "未命名"}] ${pr.text.slice(0, 280)}`)
         .join("\n");
-      return `【${c.name}】\n${characterCardText(c, [c], 4)}\n提示词库：\n${prompts || "（空）"}`;
+      return `【${c.name}】\n${characterCardText(c, [c], 4)}\n\n分层外观：\n${appearanceSummary(appearanceOf(c))}\n提示词快照：\n${prompts || "（空）"}`;
     })
     .join("\n\n");
+}
+
+function applyAppearanceWrite(
+  base: AppearanceProfile,
+  q: Record<string, unknown>
+): AppearanceProfile {
+  const next: AppearanceProfile = {
+    ...base,
+    face: { ...base.face },
+    upperSfw: { ...base.upperSfw },
+    fullSfw: { ...base.fullSfw },
+    upperNsfw: { ...base.upperNsfw },
+    fullNsfw: { ...base.fullNsfw },
+    outfits: base.outfits.map((o) => ({ ...o, upper: { ...o.upper }, full: { ...o.full } })),
+  };
+  if (typeof q.faceFront === "string" && q.faceFront.trim()) next.face.front = q.faceFront;
+  if (typeof q.faceBack === "string") next.face.back = q.faceBack;
+  if (typeof q.upperSfwFront === "string" && q.upperSfwFront.trim()) next.upperSfw.front = q.upperSfwFront;
+  if (typeof q.fullSfwFront === "string") next.fullSfw.front = q.fullSfwFront;
+  if (typeof q.upperNsfwFront === "string") next.upperNsfw.front = q.upperNsfwFront;
+  if (typeof q.fullNsfwFront === "string") next.fullNsfw.front = q.fullNsfwFront;
+  if (typeof q.photoPrompt === "string") next.photoPrompt = q.photoPrompt;
+  if (typeof q.nameCN === "string") next.nameCN = q.nameCN;
+  if (typeof q.nameEN === "string") next.nameEN = q.nameEN;
+  if (typeof q.activeOutfitId === "string") next.activeOutfitId = q.activeOutfitId;
+  const o = q.outfit;
+  if (o && typeof o === "object") {
+    const rec = o as Record<string, unknown>;
+    const nameCN = String(rec.nameCN || rec.name || "");
+    const nameEN = String(rec.nameEN || "");
+    const id = String(rec.id || "");
+    let hit = next.outfits.find(
+      (x) =>
+        (id && x.id === id) ||
+        (nameCN && x.nameCN === nameCN) ||
+        (nameEN && x.nameEN === nameEN)
+    );
+    if (!hit) {
+      const created: OutfitPreset = {
+        id: id || crypto.randomUUID(),
+        nameCN: nameCN || "新服装",
+        nameEN,
+        upper: { front: "", back: "" },
+        full: { front: "", back: "" },
+        photoPrompt: "",
+      };
+      next.outfits.push(created);
+      hit = created;
+    }
+    if (typeof rec.upperFront === "string") hit.upper.front = rec.upperFront;
+    if (typeof rec.upperBack === "string") hit.upper.back = rec.upperBack;
+    if (typeof rec.fullFront === "string") hit.full.front = rec.fullFront;
+    if (typeof rec.fullBack === "string") hit.full.back = rec.fullBack;
+    if (typeof rec.photoPrompt === "string") hit.photoPrompt = rec.photoPrompt;
+    if (nameCN) hit.nameCN = nameCN;
+    if (nameEN) hit.nameEN = nameEN;
+    next.activeOutfitId = hit.id;
+  }
+  return next;
 }

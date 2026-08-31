@@ -195,6 +195,7 @@ export default function ZhiHuiJiDock() {
           },
           onStatus: setStatus,
           onGoto: (path) => router.push(path),
+          onPatchCharacter: onShare ? undefined : (cid, patch) => updateCharacter(cid, patch),
         });
         lastCharId = result.characterId || lastCharId;
         for (const url of result.images) allImages.push({ url, characterId: result.characterId || lastCharId });

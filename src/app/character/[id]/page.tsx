@@ -248,7 +248,10 @@ export default function CharacterPage({
           <>
             <PromptBank
               prompts={character.prompts || []}
+              appearance={character.appearance}
+              characterName={character.name}
               onChange={(prompts) => updateCharacter(id, { prompts })}
+              onAppearanceChange={(appearance) => updateCharacter(id, { appearance })}
               editable={editable}
             />
             <Gallery

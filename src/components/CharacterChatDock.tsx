@@ -35,6 +35,7 @@ import {
   unsummarizedUserCount,
   type TestPersona,
 } from "@/lib/characterChat";
+import { extractSystemQueries, runQueries, stripSystemQueries } from "@/lib/zhiTools";
 import ChatHtml from "@/components/ChatHtml";
 import PresetEditor from "@/components/PresetEditor";
 
@@ -281,15 +282,48 @@ export default function CharacterChatDock({
         onDelta: (full) => {
           setSession((s) => ({
             ...s,
-            messages: s.messages.map((m) => (m.id === asstId ? { ...m, content: full } : m)),
+            messages: s.messages.map((m) =>
+              m.id === asstId ? { ...m, content: stripSystemQueries(full) || full } : m
+            ),
           }));
         },
       });
+      const visible = stripSystemQueries(raw) || raw;
       let finalMsgs: ChatTurn[] = [];
       setSession((s) => {
-        finalMsgs = s.messages.map((m) => (m.id === asstId ? { ...m, content: raw } : m));
+        finalMsgs = s.messages.map((m) => (m.id === asstId ? { ...m, content: visible } : m));
         return { ...s, messages: finalMsgs };
       });
+      const queries = extractSystemQueries(raw);
+      if (queries.length) {
+        const result = await runQueries(queries, {
+          characters: present.length ? present : [host],
+          pageCharacter: host,
+          pathname: `/character/${host.id}`,
+          signal: ac.signal,
+          task: null,
+          onTask: () => {},
+          onStatus: () => {},
+          onPatchCharacter: canEditCard ? onPatchCharacter : undefined,
+        });
+        if (result.images.length) {
+          setSession((s) => ({
+            ...s,
+            messages: [
+              ...s.messages,
+              ...result.images.map((url) => ({
+                id: crypto.randomUUID(),
+                role: "assistant" as const,
+                speakerName: asstName,
+                speakerId: result.characterId,
+                content: "图",
+                imageUrl: url,
+                at: new Date().toISOString(),
+              })),
+            ],
+          }));
+        }
+      }
       const patches = canEditCard && session.allowCardEdit !== false ? extractApplyPatches(raw) : [];
       if (patches.length) setPending({ msgId: asstId, patches });
       if (session.autoSummary && unsummarizedUserCount(finalMsgs) >= 5) {
@@ -430,7 +464,7 @@ export default function CharacterChatDock({
                         )}
                         {mine ? (
                           m.content
-                        ) : (
+                        ) : m.imageUrl && m.content === "图" ? null : (
                           <ChatHtml raw={m.content || (busy ? "…" : "")} regexes={preset?.regexes} />
                         )}
                       </div>
