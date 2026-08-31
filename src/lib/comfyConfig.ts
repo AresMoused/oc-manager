@@ -396,6 +396,30 @@ export async function comfyCheckConnection(baseUrl: string): Promise<string> {
   return String(data?.system?.comfyui_version || data?.system?.python_version || "ok");
 }
 
+/** Queue the currently saved workflow with optional prompt overrides. */
+export async function runSavedComfyJob(
+  overrides: Partial<Pick<ComfyParams, "prompt_character" | "prompt_prefix" | "prompt_suffix" | "negative_prompt" | "prompt">> = {},
+  signal?: AbortSignal
+): Promise<{ urls: string[]; seed: number; prompt: string }> {
+  const settings = loadSettings();
+  const workflows = loadWorkflows();
+  const wf = workflows.find((w) => w.id === settings.activeWorkflowId) || workflows[0];
+  if (!wf) throw new Error("抽卡姬还没有工作流。请先到「抽卡姬」页上传并选择一个 ComfyUI 工作流。");
+  if (!settings.baseUrl.trim()) throw new Error("抽卡姬未填写 ComfyUI 地址。");
+  const params = { ...loadParams(), ...overrides };
+  const seedUsed = params.seed < 0 ? Math.floor(Math.random() * 2 ** 32) : Math.floor(params.seed);
+  const promptGraph = applyPlaceholders(wf.workflow, { ...params, seed: seedUsed });
+  const { prompt_id } = await comfyQueuePrompt(settings.baseUrl, promptGraph);
+  if (!prompt_id) throw new Error("ComfyUI 没有返回 prompt_id");
+  const outs = await comfyWaitForImages(settings.baseUrl, String(prompt_id), { signal });
+  if (!outs.length) throw new Error("ComfyUI 没有输出图片");
+  return {
+    urls: outs.map((img) => comfyImageUrl(settings.baseUrl, img)),
+    seed: seedUsed,
+    prompt: composePositivePrompt(params),
+  };
+}
+
 export function normalizeWorkflowUpload(raw: string): string {
   const { data, restore } = parseWorkflowTemplate(raw);
   if (data && typeof data === "object" && data.prompt && typeof data.prompt === "object") {

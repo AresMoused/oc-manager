@@ -96,6 +96,7 @@ export function stripHiddenBlocks(raw: string): string {
     .replace(/<分析喵>[\s\S]*?<\/分析喵>/gi, "")
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/<apply>[\s\S]*?<\/apply>/gi, "")
+    .replace(/<SystemQuery>[\s\S]*?<\/SystemQuery>/gi, "")
     .trim();
 }
 

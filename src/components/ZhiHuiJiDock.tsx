@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
-import type { AiApiConfig, AiModelParams } from "@/lib/aiConfig";
+import { usePathname, useRouter } from "next/navigation";
+import type { AiApiConfig, AiModelParams, ChatMessage } from "@/lib/aiConfig";
 import { completeChat, fetchModels } from "@/lib/aiConfig";
 import {
   type ApplyPatch,
@@ -30,16 +30,24 @@ import {
   type ZhiPersona,
   type ZhiThread,
 } from "@/lib/zhiHuiJi";
+import {
+  TOOL_INSTRUCTION,
+  extractSystemQueries,
+  runQueries,
+  stripSystemQueries,
+  type ZhiTask,
+} from "@/lib/zhiTools";
 import { useCharacters } from "@/hooks/useCharacters";
 import ChatHtml from "@/components/ChatHtml";
 import PresetEditor from "@/components/PresetEditor";
-import type { Character, StoredPrompt } from "@/lib/types";
+import type { Character, GalleryImage, StoredPrompt } from "@/lib/types";
 
 type Panel = "none" | "settings" | "history";
 type Tab = "api" | "params" | "persona" | "preset" | "features";
 
 export default function ZhiHuiJiDock() {
   const pathname = usePathname() || "/";
+  const router = useRouter();
   const { characters, updateCharacter, addTimelineEvent } = useCharacters();
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>("none");
@@ -56,8 +64,11 @@ export default function ZhiHuiJiDock() {
   const [toast, setToast] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [pending, setPending] = useState<{ msgId: string; patches: ApplyPatch[] } | null>(null);
+  const [task, setTask] = useState<ZhiTask | null>(null);
+  const [status, setStatus] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const taskRef = useRef<ZhiTask | null>(null);
 
   useEffect(() => {
     setPersona(loadZhiPersona());
@@ -130,39 +141,92 @@ export default function ZhiHuiJiDock() {
     const hist = [...thread.messages, userTurn].slice(-12);
     const sys = [
       persona.body,
+      TOOL_INSTRUCTION,
       pageHint(pathname),
       pageChar ? `当前角色卡摘要：\n${pageChar.name} / ${pageChar.identity} / ${pageChar.story.slice(0, 500)}` : "",
       onShare ? "分享页：不要假设能写入对方卡，除非用户有编辑权并点了应用。" : "",
-      pageChar && !onShare ? APPLY_INSTRUCTION : "",
+      !onShare ? APPLY_INSTRUCTION : "",
     ]
       .filter(Boolean)
       .join("\n\n");
     try {
-      const raw = await completeChat({
-        config: cfg,
-        params,
-        signal: ac.signal,
-        messages: [
-          { role: "system", content: sys },
-          ...hist.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-        ],
-        onDelta: (full) => {
-          setThread((t) => ({
-            ...t,
-            messages: t.messages.map((m) => (m.id === asstId ? { ...m, content: full } : m)),
-          }));
-        },
+      const messages: ChatMessage[] = [
+        { role: "system", content: sys },
+        ...hist.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      ];
+      let lastRaw = "";
+      const allImages: { url: string; characterId?: string }[] = [];
+      let lastCharId: string | undefined;
+      for (let round = 0; round < 6; round++) {
+        if (ac.signal.aborted) break;
+        setStatus(round === 0 ? "" : `工具第 ${round} 轮…`);
+        const raw = await completeChat({
+          config: cfg,
+          params,
+          signal: ac.signal,
+          messages,
+          onDelta: (full) => {
+            setThread((t) => ({
+              ...t,
+              messages: t.messages.map((m) =>
+                m.id === asstId ? { ...m, content: stripSystemQueries(full) || full } : m
+              ),
+            }));
+          },
+        });
+        lastRaw = raw;
+        const queries = extractSystemQueries(raw);
+        setThread((t) => ({
+          ...t,
+          messages: t.messages.map((m) =>
+            m.id === asstId ? { ...m, content: stripSystemQueries(raw) || raw } : m
+          ),
+        }));
+        if (!queries.length) break;
+        const result = await runQueries(queries, {
+          characters,
+          pageCharacter: pageChar,
+          pathname,
+          signal: ac.signal,
+          task: taskRef.current,
+          onTask: (t) => {
+            taskRef.current = t;
+            setTask(t);
+          },
+          onStatus: setStatus,
+          onGoto: (path) => router.push(path),
+        });
+        lastCharId = result.characterId || lastCharId;
+        for (const url of result.images) allImages.push({ url, characterId: result.characterId || lastCharId });
+        messages.push({ role: "assistant", content: raw });
+        messages.push({ role: "user", content: `【系统自动回复】\n${result.text}` });
+      }
+      const visible = stripSystemQueries(lastRaw) || lastRaw;
+      setThread((t) => {
+        let messagesNext = t.messages.map((m) => (m.id === asstId ? { ...m, content: visible } : m));
+        for (const img of allImages) {
+          messagesNext = [
+            ...messagesNext,
+            {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              speakerName: persona.name,
+              speakerId: img.characterId,
+              content: "图",
+              imageUrl: img.url,
+              at: new Date().toISOString(),
+            },
+          ];
+        }
+        return { ...t, messages: messagesNext };
       });
-      setThread((t) => ({
-        ...t,
-        messages: t.messages.map((m) => (m.id === asstId ? { ...m, content: raw } : m)),
-      }));
-      const patches = extractApplyPatches(raw);
+      const patches = extractApplyPatches(lastRaw);
       if (patches.length) setPending({ msgId: asstId, patches });
     } catch (e) {
       if ((e as Error).name !== "AbortError") setError(e instanceof Error ? e.message : "失败");
     } finally {
       setBusy(false);
+      setStatus("");
     }
   };
 
@@ -204,6 +268,29 @@ export default function ZhiHuiJiDock() {
     ping("已应用");
   };
 
+  const saveToGallery = async (url: string, characterId?: string) => {
+    const id = characterId || pageChar?.id;
+    const target = characters.find((c) => c.id === id);
+    if (!target) {
+      ping("不知道存进哪张卡，请在角色页再试");
+      return;
+    }
+    try {
+      const blob = await fetch(url).then((r) => r.blob());
+      const file = new File([blob], "gen.png", { type: blob.type || "image/png" });
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "上传失败");
+      const item: GalleryImage = { id: crypto.randomUUID(), url: data.url, caption: "陪玩姬生成" };
+      updateCharacter(target.id, { gallery: [...(target.gallery || []), item] });
+      ping(`已存进 ${target.name} 图库`);
+    } catch (e) {
+      ping(e instanceof Error ? e.message : "保存失败（Comfy 地址需允许跨域）");
+    }
+  };
+
   return (
     <>
       <button
@@ -220,18 +307,31 @@ export default function ZhiHuiJiDock() {
             <div className="w-7 h-7 rounded-full bg-fuchsia-800 text-white text-xs flex items-center justify-center">姬</div>
             <div className="flex-1 min-w-0 ml-1">
               <div className="text-sm text-white truncate">{persona.name}</div>
-              <div className="text-[10px] text-neutral-500 truncate">{thread.title}</div>
+              <div className="text-[10px] text-neutral-500 truncate">
+                {status || task?.title || thread.title}
+              </div>
             </div>
             <button type="button" className="text-neutral-400 w-7 h-7" title="历史" onClick={() => setPanel(panel === "history" ? "none" : "history")}>🕒</button>
-            <button type="button" className="text-neutral-400 w-7 h-7" title="新建" onClick={() => { setThread(emptyZhiThread()); setPanel("none"); }}>🧹</button>
+            <button type="button" className="text-neutral-400 w-7 h-7" title="新建" onClick={() => { setThread(emptyZhiThread()); setTask(null); taskRef.current = null; setPanel("none"); }}>🧹</button>
             <button type="button" className="text-neutral-400 w-7 h-7" title="设置" onClick={() => setPanel(panel === "settings" ? "none" : "settings")}>⚙</button>
             <button type="button" className="text-neutral-400 w-7 h-7" onClick={() => setOpen(false)}>✕</button>
           </div>
           <div className="relative flex-1 min-h-0">
             <div ref={logRef} className="absolute inset-0 overflow-y-auto p-3 space-y-3 flex flex-col">
+              {task && (
+                <div className="text-[11px] border border-fuchsia-900/50 bg-fuchsia-950/30 rounded-xl px-2 py-1.5">
+                  <div className="text-fuchsia-200 mb-1">{task.title}</div>
+                  {task.steps.map((s, i) => (
+                    <div key={i} className="text-neutral-400">
+                      {s.status === "completed" ? "✓" : s.status === "failed" ? "✕" : s.status === "in_progress" ? "…" : "○"} {s.title}
+                      {s.result ? ` · ${s.result}` : ""}
+                    </div>
+                  ))}
+                </div>
+              )}
               {thread.messages.length === 0 && (
                 <div className="text-sm text-neutral-400 bg-[#1c1c20] border border-neutral-800 rounded-2xl px-3 py-2 max-w-[90%]">
-                  你好，我是{persona.name}。问用法、改设定建议都可以。和角色演戏请用「角色对话」。
+                  你好，我是{persona.name}。可以查角色卡、按词库生图、改设定。和角色演戏请用「角色对话」。
                 </div>
               )}
               {thread.messages.map((m) => {
@@ -242,7 +342,21 @@ export default function ZhiHuiJiDock() {
                       {mine ? "你" : "姬"}
                     </div>
                     <div className={`rounded-2xl px-3 py-2 text-sm border ${mine ? "bg-purple-600/20 border-purple-800/50 whitespace-pre-wrap" : "bg-[#1c1c20] border-neutral-800"}`}>
-                      {mine ? m.content : <ChatHtml raw={m.content || (busy ? "…" : "")} regexes={preset?.regexes} />}
+                      {m.imageUrl && (
+                        <div className="mb-1">
+                          <img src={m.imageUrl} alt="" className="max-h-48 rounded-lg" />
+                          {!onShare && (
+                            <button
+                              type="button"
+                              className="mt-1 text-[10px] text-fuchsia-300"
+                              onClick={() => void saveToGallery(m.imageUrl!, m.speakerId)}
+                            >
+                              存进图库
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {mine ? m.content : m.content === "图" && m.imageUrl ? null : <ChatHtml raw={m.content || (busy ? "…" : "")} regexes={preset?.regexes} />}
                       {!mine && pending?.msgId === m.id && (
                         <div className="mt-2 text-[11px]">
                           {pending.patches.map((p, i) => (
@@ -352,7 +466,7 @@ export default function ZhiHuiJiDock() {
                         />
                       )}
                       {tab === "features" && (
-                        <p className="text-neutral-500">角色扮演用右下角旁边的「角色对话」。这里负责改设定、答疑。对话预设和正则在「预设」里改，和原版智绘姬一样从浮窗进。</p>
+                        <p className="text-neutral-500">角色扮演用「角色对话」。陪玩姬可以查角色卡、按提示词库调用抽卡姬生图（需先在抽卡姬页配好工作流）、建议改卡。工具协议和原版智绘姬一样用 SystemQuery。</p>
                       )}
                     </div>
                   </>
@@ -361,6 +475,7 @@ export default function ZhiHuiJiDock() {
             )}
           </div>
           {error && panel === "none" && <div className="px-3 text-[11px] text-rose-400">{error}</div>}
+          {status && panel === "none" && <div className="px-3 text-[11px] text-fuchsia-300">{status}</div>}
           <div className="p-2 border-t border-neutral-800 flex items-end gap-1">
             <textarea
               rows={1}

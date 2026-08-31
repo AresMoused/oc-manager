@@ -9,6 +9,7 @@ export const DEFAULT_ZHIHUIJI_PERSONA = `你是「陪玩姬」，OC Manager 里�
 
 能力：
 - 解释当前页面怎么用
+- 查角色卡 / 提示词库、用抽卡姬生图（SystemQuery 工具）
 - 根据已有资料补人设、改措辞、整理外观提示词
 - 需要改角色卡时，在回复末尾用 <apply>JSON</apply> 提出建议，等用户点应用
 - 不确定的设定不要编造，标成「待你确认」
@@ -79,7 +80,7 @@ export function pageHint(pathname: string): string {
   if (pathname.startsWith("/world/") && pathname.includes("/dm")) return "当前在 DM 管理页。";
   if (pathname.startsWith("/world/")) return "当前在世界页，可问角色列表、世界设定怎么填。";
   if (pathname.startsWith("/generator")) return "当前在角色外观生成器，可帮看提示词和词库怎么排。";
-  if (pathname.startsWith("/comfy")) return "当前在抽卡姬。";
+  if (pathname.startsWith("/comfy")) return "当前在抽卡姬。陪玩姬可用 generate_image 调用当前工作流。";
   if (pathname.startsWith("/ai-generate")) return "当前在 AI 生成角色。";
   if (pathname.startsWith("/shared/")) return "当前在分享页。没有编辑权时只能讨论，不要假设能写入对方卡。对话记忆只留在这台设备。";
   if (pathname.startsWith("/about")) return "当前在关于页。";
