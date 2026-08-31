@@ -4,6 +4,7 @@ import type { Character, PreferenceItem, SheetModule, TimelineEvent } from "@/li
 import type { AiApiConfig, AiModelParams, ChatMessage } from "@/lib/aiConfig";
 import { defaultApiConfig, defaultModelParams } from "@/lib/aiConfig";
 import { applyRegexes, collectStRegexes, type ChatRegex } from "@/lib/chatRegex";
+import { unwrapWorldInfo } from "@/lib/chatHtml";
 import { appearanceOf, appearanceSummary } from "@/lib/appearance";
 
 const API_KEY = "oc-char-chat-api-v1";
@@ -309,7 +310,7 @@ export function characterCardText(
 }
 
 export function displayReply(raw: string): string {
-  let s = String(raw || "");
+  let s = unwrapWorldInfo(String(raw || ""));
   s = s.replace(/<分析喵>[\s\S]*?<\/分析喵>/gi, "");
   s = s.replace(/<think>[\s\S]*?<\/think>/gi, "");
   s = s.replace(/<apply>[\s\S]*?<\/apply>/gi, "");
@@ -317,7 +318,7 @@ export function displayReply(raw: string): string {
   if (content) s = content[1] || s;
   s = s.replace(/<summary>[\s\S]*?<\/summary>/gi, "");
   s = s.replace(/<\/?content>/gi, "");
-  return s.trim() || String(raw || "").trim();
+  return s.trim() || unwrapWorldInfo(String(raw || "")).trim();
 }
 
 function slotId(e: ChatPromptEntry): string {
@@ -410,7 +411,7 @@ export function buildChatMessages(opts: {
     content:
       t.role === "user"
         ? applyRegexes(`【${t.speakerName}】\n${t.content}`, preset.regexes, "prompt")
-        : applyRegexes(t.content, preset.regexes, "prompt"),
+        : applyRegexes(unwrapWorldInfo(t.content), preset.regexes, "prompt"),
   }));
 
   const inject: Record<string, string> = {

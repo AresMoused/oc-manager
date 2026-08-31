@@ -15,7 +15,7 @@ import {
 } from "@/lib/comfyConfig";
 import { rollLexiconHint } from "@/lib/comfyLexicon";
 import { pushDebugLog } from "@/lib/debugLog";
-import { characterCardText } from "@/lib/characterChat";
+import { unwrapWorldInfo } from "@/lib/chatHtml";
 import {
   appearanceOf,
   appearanceSummary,
@@ -64,10 +64,11 @@ export function extractSystemQueries(raw: string): Record<string, unknown>[] {
 }
 
 export function stripSystemQueries(raw: string): string {
-  return String(raw || "")
-    .replace(/<SystemQuery>[\s\S]*?<\/SystemQuery>/gi, "")
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .trim();
+  return unwrapWorldInfo(
+    String(raw || "")
+      .replace(/<SystemQuery>[\s\S]*?<\/SystemQuery>/gi, "")
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+  );
 }
 
 function findCharacters(list: Character[], q: string): Character[] {
