@@ -503,15 +503,17 @@ export default function ZhiHuiJiDock() {
 
   return (
     <>
-      <button
-        type="button"
-        title="陪玩姬"
-        className="fixed z-[70] w-14 h-14 rounded-full bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-900/40 hover:bg-fuchsia-500 text-lg"
-        style={fabStyle(56, { right: 20, bottom: 20 })}
-        {...fabDrag(() => setOpen((v) => !v), 56)}
-      >
-        姬
-      </button>
+      {!open && (
+        <button
+          type="button"
+          title="陪玩姬"
+          className="fixed z-[70] w-14 h-14 rounded-full bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-900/40 hover:bg-fuchsia-500 text-lg"
+          style={fabStyle(56, { right: 20, bottom: 20 })}
+          {...fabDrag(() => setOpen(true))}
+        >
+          姬
+        </button>
+      )}
       {open && (
         <div
           ref={panelRef}

@@ -2,13 +2,44 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as REPointerEvent } from "react";
 
-export type DockGeo = { w: number; h: number; x: number | null; y: number | null };
+export type DockGeo = {
+  w: number;
+  h: number;
+  x: number | null;
+  y: number | null;
+  fx: number | null;
+  fy: number | null;
+};
+
+const RESET_EVENT = "oc-dock-reset";
+export const DOCK_GEO_KEYS = [
+  "oc-logs-geo-v1",
+  "oc-zhihuiji-geo-v1",
+  "oc-character-chat-geo-v1",
+];
+
+export function resetAllDockGeo() {
+  if (typeof window === "undefined") return;
+  for (const k of DOCK_GEO_KEYS) {
+    try { localStorage.removeItem(k); } catch { /* ignore */ }
+  }
+  window.dispatchEvent(new Event(RESET_EVENT));
+}
 
 function load(key: string, fb: DockGeo): DockGeo {
   if (typeof window === "undefined") return fb;
   try {
-    const v = JSON.parse(localStorage.getItem(key) || "null") as DockGeo | null;
-    if (v && typeof v.w === "number" && typeof v.h === "number") return v;
+    const v = JSON.parse(localStorage.getItem(key) || "null") as Partial<DockGeo> | null;
+    if (v && typeof v.w === "number" && typeof v.h === "number") {
+      return {
+        w: v.w,
+        h: v.h,
+        x: typeof v.x === "number" ? v.x : null,
+        y: typeof v.y === "number" ? v.y : null,
+        fx: typeof v.fx === "number" ? v.fx : null,
+        fy: typeof v.fy === "number" ? v.fy : null,
+      };
+    }
   } catch { /* ignore */ }
   return fb;
 }
@@ -17,13 +48,11 @@ function clamp(g: DockGeo): DockGeo {
   if (typeof window === "undefined") return g;
   const w = Math.min(Math.max(280, g.w), window.innerWidth - 16);
   const h = Math.min(Math.max(320, g.h), window.innerHeight - 16);
-  if (g.x == null || g.y == null) return { w, h, x: null, y: null };
-  return {
-    w,
-    h,
-    x: Math.min(Math.max(8, g.x), Math.max(8, window.innerWidth - 80)),
-    y: Math.min(Math.max(8, g.y), Math.max(8, window.innerHeight - 80)),
-  };
+  const nx = g.x == null ? null : Math.min(Math.max(8, g.x), Math.max(8, window.innerWidth - 80));
+  const ny = g.y == null ? null : Math.min(Math.max(8, g.y), Math.max(8, window.innerHeight - 80));
+  const fx = g.fx == null ? null : Math.min(Math.max(8, g.fx), Math.max(8, window.innerWidth - 48));
+  const fy = g.fy == null ? null : Math.min(Math.max(8, g.fy), Math.max(8, window.innerHeight - 48));
+  return { w, h, x: nx, y: ny, fx, fy };
 }
 
 export function useDockGeo(
@@ -36,6 +65,8 @@ export function useDockGeo(
     h: defaults?.h ?? 560,
     x: defaults?.x ?? null,
     y: defaults?.y ?? null,
+    fx: null,
+    fy: null,
   };
   const [geo, setGeo] = useState<DockGeo>(fb);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -46,14 +77,19 @@ export function useDockGeo(
     startY: number;
     fabLeft: number;
     fabTop: number;
-    size: number;
     moved: boolean;
   } | null>(null);
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     setGeo(clamp(load(storageKey, fb)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
+
+  useEffect(() => {
+    reload();
+    window.addEventListener(RESET_EVENT, reload);
+    return () => window.removeEventListener(RESET_EVENT, reload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey, reload]);
 
   const persist = useCallback((g: DockGeo) => {
     const n = clamp(g);
@@ -66,30 +102,19 @@ export function useDockGeo(
     height: geo.h,
     ...(geo.x == null || geo.y == null
       ? fabAlign === "start"
-        ? { left: 12, top: 56 }
+        ? { left: 12, top: 52 }
         : { right: 16, bottom: 80 }
       : { left: geo.x, top: geo.y, right: "auto", bottom: "auto" }),
   };
 
   const fabStyle = (
-    size: number,
+    _size: number,
     fallback: { right?: number; bottom?: number; left?: number; top?: number }
   ): CSSProperties => {
-    if (fabAlign === "start") {
-      if (geo.x == null || geo.y == null) {
-        return { left: fallback.left ?? 12, top: fallback.top ?? 12 };
-      }
-      return { left: geo.x, top: geo.y, right: "auto", bottom: "auto" };
+    if (geo.fx != null && geo.fy != null) {
+      return { left: geo.fx, top: geo.fy, right: "auto", bottom: "auto" };
     }
-    if (geo.x == null || geo.y == null) {
-      return { right: fallback.right, bottom: fallback.bottom };
-    }
-    return {
-      left: geo.x + geo.w - size,
-      top: geo.y + geo.h + 8,
-      right: "auto",
-      bottom: "auto",
-    };
+    return fallback;
   };
 
   const headerDrag = {
@@ -138,7 +163,7 @@ export function useDockGeo(
     onPointerUp: () => { resizeRef.current = null; },
   };
 
-  const fabDrag = (onClick: () => void, size: number) => ({
+  const fabDrag = (onClick: () => void) => ({
     onPointerDown: (e: REPointerEvent<HTMLElement>) => {
       const r = e.currentTarget.getBoundingClientRect();
       fabDragRef.current = {
@@ -146,7 +171,6 @@ export function useDockGeo(
         startY: e.clientY,
         fabLeft: r.left,
         fabTop: r.top,
-        size,
         moved: false,
       };
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -157,21 +181,11 @@ export function useDockGeo(
       const dist = Math.hypot(e.clientX - d.startX, e.clientY - d.startY);
       if (dist < 6) return;
       d.moved = true;
-      if (fabAlign === "start") {
-        setGeo((g) =>
-          persist({
-            ...g,
-            x: d.fabLeft + (e.clientX - d.startX),
-            y: d.fabTop + (e.clientY - d.startY),
-          })
-        );
-        return;
-      }
       setGeo((g) =>
         persist({
           ...g,
-          x: d.fabLeft + d.size - g.w + (e.clientX - d.startX),
-          y: d.fabTop - 8 - g.h + (e.clientY - d.startY),
+          fx: d.fabLeft + (e.clientX - d.startX),
+          fy: d.fabTop + (e.clientY - d.startY),
         })
       );
     },
@@ -182,5 +196,5 @@ export function useDockGeo(
     },
   });
 
-  return { geo, panelRef, panelStyle, fabStyle, headerDrag, resizeHandle, fabDrag };
+  return { geo, panelRef, panelStyle, fabStyle, headerDrag, resizeHandle, fabDrag, reset: () => resetAllDockGeo() };
 }

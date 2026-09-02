@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useDockGeo } from "@/hooks/useDockGeo";
+import { resetAllDockGeo, useDockGeo } from "@/hooks/useDockGeo";
 import { clearDebugLogs, loadDebugLogs, type DebugLogEntry } from "@/lib/debugLog";
 
 const SOURCES = ["全部", "陪玩姬", "角色对话", "抽卡姬", "AI生成角色"] as const;
@@ -11,9 +11,9 @@ export default function LogsDock() {
   const [tick, setTick] = useState(0);
   const [source, setSource] = useState<(typeof SOURCES)[number]>("全部");
   const [openId, setOpenId] = useState<string | null>(null);
-  const { panelRef, panelStyle, fabStyle, headerDrag, resizeHandle, fabDrag } = useDockGeo(
+  const { panelRef, panelStyle, headerDrag, resizeHandle } = useDockGeo(
     "oc-logs-geo-v1",
-    { w: 440, h: 520, x: 12, y: 12, fab: "start" }
+    { w: 440, h: 520, x: 12, y: 52, fab: "start" }
   );
 
   useEffect(() => {
@@ -35,17 +35,29 @@ export default function LogsDock() {
 
   return (
     <>
-      {!open && (
+      <div className="fixed z-[82] left-3 top-3 flex items-center gap-1">
+        {!open && (
+          <button
+            type="button"
+            className="h-9 px-3 rounded-full bg-neutral-800/95 border border-neutral-600 text-neutral-200 text-xs shadow-lg hover:bg-neutral-700"
+            title="请求日志"
+            onClick={() => setOpen(true)}
+          >
+            日志{logs.length ? ` ${Math.min(logs.length, 99)}` : ""}
+          </button>
+        )}
         <button
           type="button"
-          style={fabStyle(40, { left: 12, top: 12 })}
-          className="fixed z-[82] h-9 px-3 rounded-full bg-neutral-800/95 border border-neutral-600 text-neutral-200 text-xs shadow-lg hover:bg-neutral-700"
-          title="请求日志"
-          {...fabDrag(() => setOpen(true), 40)}
+          className="h-9 w-9 rounded-full bg-neutral-800/95 border border-neutral-600 text-neutral-200 text-sm shadow-lg hover:bg-neutral-700"
+          title="重置所有悬浮窗和悬浮球位置"
+          onClick={() => {
+            resetAllDockGeo();
+            setOpen(false);
+          }}
         >
-          日志{logs.length ? ` ${Math.min(logs.length, 99)}` : ""}
+          ↺
         </button>
-      )}
+      </div>
       {open && (
         <div
           ref={panelRef}

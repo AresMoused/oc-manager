@@ -629,15 +629,17 @@ export default function CharacterChatDock({
 
   return (
     <>
-      <button
-        type="button"
-        title="角色对话"
-        className="fixed z-[70] w-12 h-12 rounded-full bg-violet-700 text-white shadow-lg hover:bg-violet-600 text-base"
-        style={fabStyle(48, { right: 80, bottom: 20 })}
-        {...fabDrag(() => setOpen((v) => !v), 48)}
-      >
-        💬
-      </button>
+      {!open && (
+        <button
+          type="button"
+          title="角色对话"
+          className="fixed z-[70] w-12 h-12 rounded-full bg-violet-700 text-white shadow-lg hover:bg-violet-600 text-base"
+          style={fabStyle(48, { right: 80, bottom: 20 })}
+          {...fabDrag(() => setOpen(true))}
+        >
+          💬
+        </button>
+      )}
 
       {open && (
         <div
