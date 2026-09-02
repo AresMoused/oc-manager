@@ -43,6 +43,7 @@ export interface ChatTurn {
   speakerName: string;
   content: string;
   imageUrl?: string;
+  imageUrls?: string[];
   at: string;
   summarized?: boolean;
 }

@@ -69,6 +69,7 @@ export async function illustrateReply(opts: {
   params: AiModelParams;
   signal?: AbortSignal;
   source?: string;
+  onProgress?: (urls: string[]) => void;
 }): Promise<{ body: string; urls: string[] }> {
   const body = (opts.body || "").trim();
   if (!body || !opts.config.apiKey) return { body, urls: [] };
@@ -99,6 +100,7 @@ export async function illustrateReply(opts: {
       note: `${opts.character.name} 插图`,
     });
     for (const url of job.urls) urls.push(url);
+    opts.onProgress?.(urls);
   }
   return { body, urls };
 }

@@ -129,6 +129,7 @@ export default function CharacterChatDock({
   const abortRef = useRef<AbortController | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLInputElement>(null);
+  const pinScrollRef = useRef(false);
   const storeId = sessionKey || host.id;
 
   const worldMates = useMemo(() => {
@@ -156,6 +157,7 @@ export default function CharacterChatDock({
   }, [session]);
 
   useEffect(() => {
+    if (pinScrollRef.current) return;
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [session.messages, busy]);
 
@@ -392,22 +394,17 @@ export default function CharacterChatDock({
             params,
             signal: ac.signal,
             source: "角色对话",
+            onProgress: (urls) => {
+              setSession((s) => ({
+                ...s,
+                messages: s.messages.map((m) => (m.id === asstId ? { ...m, imageUrls: urls } : m)),
+              }));
+            },
           });
           if (illus.urls.length) {
             setSession((s) => ({
               ...s,
-              messages: [
-                ...s.messages,
-                ...illus.urls.map((url) => ({
-                  id: crypto.randomUUID(),
-                  role: "assistant" as const,
-                  speakerName: subject.name,
-                  speakerId: subject.id,
-                  content: "图",
-                  imageUrl: url,
-                  at: new Date().toISOString(),
-                })),
-              ],
+              messages: s.messages.map((m) => (m.id === asstId ? { ...m, imageUrls: illus.urls } : m)),
             }));
           }
         } catch (e) {
@@ -469,6 +466,7 @@ export default function CharacterChatDock({
     const subject = solo ? star : others[0] || host;
     ping(`出图中 · ${subject.name}`);
     setBusy(true);
+    pinScrollRef.current = true;
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
@@ -488,29 +486,32 @@ export default function CharacterChatDock({
         params,
         signal: ac.signal,
         source: "角色对话",
+        onProgress: (urls) => {
+          setSession((s) => ({
+            ...s,
+            messages: s.messages.map((m) => (m.id === asstId ? { ...m, imageUrls: urls } : m)),
+          }));
+        },
       });
       setSession((s) => {
         const at = s.messages.findIndex((m) => m.id === asstId);
         if (at < 0) return s;
-        const next = [...s.messages];
-        let i = at + 1;
-        while (i < next.length && isStill(next[i]!)) next.splice(i, 1);
-        const imgs = illus.urls.map((url) => ({
-          id: crypto.randomUUID(),
-          role: "assistant" as const,
-          speakerName: subject.name,
-          speakerId: subject.id,
-          content: "图",
-          imageUrl: url,
-          at: new Date().toISOString(),
-        }));
-        next.splice(at + 1, 0, ...imgs);
-        return { ...s, messages: next };
+        const cleaned: ChatTurn[] = [];
+        for (let i = 0; i < s.messages.length; i++) {
+          const m = s.messages[i]!;
+          if (i > at && isStill(m)) {
+            const between = s.messages.slice(at + 1, i);
+            if (between.every(isStill)) continue;
+          }
+          cleaned.push(m.id === asstId ? { ...m, imageUrls: illus.urls } : m);
+        }
+        return { ...s, messages: cleaned };
       });
-      if (!illus.urls.length) ping("没有解析到图片");
+      ping(illus.urls.length ? `已插入 ${illus.urls.length} 张` : "没有解析到图片");
     } catch (e) {
       ping(e instanceof Error ? e.message : "出图失败");
     } finally {
+      pinScrollRef.current = false;
       setBusy(false);
     }
   };
@@ -712,6 +713,15 @@ export default function CharacterChatDock({
                         ) : (
                           <ChatHtml raw={m.content} regexes={preset?.regexes} />
                         )}
+                        {(m.imageUrls || []).map((url) => (
+                          <ChatImage
+                            key={url}
+                            url={url}
+                            canSave={canEditCard && !localOnly}
+                            onPreview={() => setPreview({ url, charId: m.speakerId })}
+                            onSave={() => void saveToGallery(url, m.speakerId)}
+                          />
+                        ))}
                       </div>
                       {editing ? (
                         <div className="flex gap-1.5 mt-1 text-[10px]">

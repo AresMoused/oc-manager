@@ -82,6 +82,7 @@ export default function ZhiHuiJiDock() {
   const abortRef = useRef<AbortController | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const taskRef = useRef<ZhiTask | null>(null);
+  const pinScrollRef = useRef(false);
   const { panelRef, panelStyle, fabStyle, headerDrag, resizeHandle, fabDrag } = useDockGeo("oc-zhihuiji-geo-v1");
 
   useEffect(() => {
@@ -100,6 +101,7 @@ export default function ZhiHuiJiDock() {
   }, [thread]);
 
   useEffect(() => {
+    if (pinScrollRef.current) return;
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [thread.messages, busy]);
 
@@ -256,9 +258,17 @@ export default function ZhiHuiJiDock() {
             params,
             signal: ac.signal,
             source: "陪玩姬",
+            onProgress: (urls) => {
+              setThread((t) => ({
+                ...t,
+                messages: t.messages.map((m) => (m.id === asstId ? { ...m, imageUrls: urls } : m)),
+              }));
+            },
           });
-          lastCharId = subject.id;
-          for (const url of illus.urls) allImages.push({ url, characterId: subject.id });
+          setThread((t) => ({
+            ...t,
+            messages: t.messages.map((m) => (m.id === asstId ? { ...m, imageUrls: illus.urls } : m)),
+          }));
         } catch (e) {
           ping(e instanceof Error ? e.message : "出图失败");
         }
@@ -337,6 +347,7 @@ export default function ZhiHuiJiDock() {
     }
     setStatus(`出图中 · ${subject.name}`);
     setBusy(true);
+    pinScrollRef.current = true;
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
@@ -356,29 +367,32 @@ export default function ZhiHuiJiDock() {
         params,
         signal: ac.signal,
         source: "陪玩姬",
+        onProgress: (urls) => {
+          setThread((t) => ({
+            ...t,
+            messages: t.messages.map((m) => (m.id === asstId ? { ...m, imageUrls: urls } : m)),
+          }));
+        },
       });
       setThread((t) => {
         const at = t.messages.findIndex((m) => m.id === asstId);
         if (at < 0) return t;
-        const next = [...t.messages];
-        let i = at + 1;
-        while (i < next.length && isStill(next[i]!)) next.splice(i, 1);
-        const imgs = illus.urls.map((url) => ({
-          id: crypto.randomUUID(),
-          role: "assistant" as const,
-          speakerName: persona.name,
-          speakerId: subject.id,
-          content: "图",
-          imageUrl: url,
-          at: new Date().toISOString(),
-        }));
-        next.splice(at + 1, 0, ...imgs);
-        return { ...t, messages: next };
+        const cleaned: ChatTurn[] = [];
+        for (let i = 0; i < t.messages.length; i++) {
+          const m = t.messages[i]!;
+          if (i > at && isStill(m)) {
+            const between = t.messages.slice(at + 1, i);
+            if (between.every(isStill)) continue;
+          }
+          cleaned.push(m.id === asstId ? { ...m, imageUrls: illus.urls } : m);
+        }
+        return { ...t, messages: cleaned };
       });
-      if (!illus.urls.length) ping("没有解析到图片");
+      ping(illus.urls.length ? `已插入 ${illus.urls.length} 张` : "没有解析到图片");
     } catch (e) {
       ping(e instanceof Error ? e.message : "出图失败");
     } finally {
+      pinScrollRef.current = false;
       setBusy(false);
       setStatus("");
     }
@@ -569,6 +583,18 @@ export default function ZhiHuiJiDock() {
                         ) : (
                           <ChatHtml raw={m.content} regexes={preset?.regexes} />
                         )}
+                        {(m.imageUrls || []).map((url) => (
+                          <ChatImage
+                            key={url}
+                            url={url}
+                            canSave={!!(pageChar || characters[0]) && !onShare}
+                            onPreview={() => setPreview({ url, charId: m.speakerId || pageChar?.id })}
+                            onSave={() => {
+                              const id = m.speakerId || pageChar?.id || characters[0]?.id;
+                              if (id) void saveToGallery(url, id);
+                            }}
+                          />
+                        ))}
                       </div>
                       {editing ? (
                         <div className="flex gap-1.5 mt-1 text-[10px]">
