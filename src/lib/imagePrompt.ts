@@ -230,9 +230,59 @@ export function extractImagePrompt(raw: string, chars: Character[]): string {
   return parseImageInserts(raw, chars)[0]?.prompt || "";
 }
 
+const CJK_TALK =
+  /所以|但是|需要注意|角色调用|原文是|并未指明|可调用|这是|应该使用|不能调用|注意规则|全裸时|画面中|须注意|二设|第二人称/;
+
+function cjkRatio(s: string): number {
+  const cjk = (s.match(/[\u4e00-\u9fff]/g) || []).length;
+  const latin = (s.match(/[A-Za-z]/g) || []).length;
+  const n = cjk + latin;
+  return n ? cjk / n : 0;
+}
+
+/** 英文 comma tags / girl1 结构才算提示词，中文思考过程丢掉。 */
+export function looksLikeImageTags(s: string): boolean {
+  const t = String(s || "").trim();
+  if (t.length < 8) return false;
+  const latin = (t.match(/[A-Za-z]/g) || []).length;
+  if (latin < 12) return false;
+  if (cjkRatio(t) > 0.28) return false;
+  if (CJK_TALK.test(t) && (t.match(/[\u4e00-\u9fff]/g) || []).length > 6) return false;
+  return /[,:]/.test(t) || /(?:1girl|1boy|2girls|girl1|boy1)\b/i.test(t);
+}
+
+export function stripThinkBlocks(s: string): string {
+  return String(s || "")
+    .replace(/<(img)?think\b[^>]*>[\s\S]*?<\/(img)?think>/gi, "\n")
+    .replace(/<(img)?think\b[^>]*>[\s\S]*/gi, "\n")
+    .replace(/<(disclaimer|reason|reasoning|analysis)\b[^>]*>[\s\S]*?<\/\1>/gi, "\n");
+}
+
+function pickTagChunk(s: string): string {
+  const src = stripThinkBlocks(s);
+  const hashed = [...src.matchAll(/image###([\s\S]*?)(?:###|$)/gi)].map((m) => m[1]!.trim());
+  const hashedOk = hashed.find(looksLikeImageTags);
+  if (hashedOk) return hashedOk;
+  const ticks = [...src.matchAll(/`{1,3}([^`]+)`{1,3}/g)]
+    .map((m) => m[1]!.trim())
+    .filter(looksLikeImageTags);
+  if (ticks.length) return ticks.join(", ");
+  const girl = [...src.matchAll(/girl\d+\s+is\s+[\s\S]{0,120}\(girl\d+:[\s\S]*?\)[\s\S]{0,160}/gi)].map((m) =>
+    m[0]!.trim()
+  );
+  if (girl.length && girl.every(looksLikeImageTags)) return girl.join(", ");
+  const lines = src
+    .split(/[\n。！？]/)
+    .map((l) => l.trim())
+    .filter(looksLikeImageTags);
+  if (lines.length) return lines.join(", ");
+  const dropped = src.replace(/[\u4e00-\u9fff][^,\n`]{0,24}/g, " ").replace(/\s+/g, " ").trim();
+  return looksLikeImageTags(dropped) ? dropped : "";
+}
+
 /** 从 <image1>… / <image> / image### 抽出每张图的 tags。 */
 export function parseImageInserts(raw: string, chars: Character[]): { regex: string; prompt: string }[] {
-  const src = String(raw || "");
+  const src = stripThinkBlocks(String(raw || ""));
   const numbered = [...src.matchAll(/<image(\d+)>([\s\S]*?)<\/image\1>/gi)].sort(
     (a, b) => Number(a[1]) - Number(b[1])
   );
@@ -246,25 +296,16 @@ export function parseImageInserts(raw: string, chars: Character[]): { regex: str
       .trim()
       .replace(/^\$\{|\}$/g, "")
       .trim();
-    const promptRaw = (t.match(/image###([\s\S]*?)###/i)?.[1] || "").trim();
-    const prompt = resolveComfyPrompt(promptRaw.replace(/\s+/g, " ").trim(), chars);
-    if (!prompt || seen.has(prompt)) continue;
+    const chunk = pickTagChunk(t);
+    const prompt = resolveComfyPrompt(chunk.replace(/\s+/g, " ").trim(), chars);
+    if (!prompt || !looksLikeImageTags(prompt) || seen.has(prompt)) continue;
     seen.add(prompt);
     out.push({ regex, prompt });
   }
   if (!out.length) {
-    const cleaned = src
-      .replace(/<think>[\s\S]*?<\/think>/gi, "")
-      .replace(/<imgthink>[\s\S]*?<\/imgthink>/gi, "")
-      .replace(/<disclaimer>[\s\S]*?<\/disclaimer>/gi, "")
-      .trim();
-    const pick =
-      cleaned
-        .split("\n")
-        .map((l) => l.trim())
-        .find((l) => l.length > 24 && /[a-z]/i.test(l) && l.includes(",")) || "";
-    const prompt = resolveComfyPrompt(pick.replace(/\s+/g, " ").trim(), chars);
-    if (prompt) out.push({ regex: "", prompt });
+    const chunk = pickTagChunk(src);
+    const prompt = resolveComfyPrompt(chunk.replace(/\s+/g, " ").trim(), chars);
+    if (prompt && looksLikeImageTags(prompt)) out.push({ regex: "", prompt });
   }
   return out.slice(0, 4);
 }
