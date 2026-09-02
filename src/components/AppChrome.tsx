@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import ZhiHuiJiDock from "@/components/ZhiHuiJiDock";
+import LogsDock from "@/components/LogsDock";
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const path = usePathname() || "/";
@@ -10,6 +11,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
     <>
       {children}
       {!hide && <ZhiHuiJiDock />}
+      {!hide && <LogsDock />}
     </>
   );
 }

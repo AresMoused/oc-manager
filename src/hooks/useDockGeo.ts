@@ -26,8 +26,17 @@ function clamp(g: DockGeo): DockGeo {
   };
 }
 
-export function useDockGeo(storageKey: string, defaults?: { w?: number; h?: number }) {
-  const fb: DockGeo = { w: defaults?.w ?? 380, h: defaults?.h ?? 560, x: null, y: null };
+export function useDockGeo(
+  storageKey: string,
+  defaults?: { w?: number; h?: number; x?: number | null; y?: number | null; fab?: "end" | "start" }
+) {
+  const fabAlign = defaults?.fab ?? "end";
+  const fb: DockGeo = {
+    w: defaults?.w ?? 380,
+    h: defaults?.h ?? 560,
+    x: defaults?.x ?? null,
+    y: defaults?.y ?? null,
+  };
   const [geo, setGeo] = useState<DockGeo>(fb);
   const panelRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ ox: number; oy: number } | null>(null);
@@ -56,11 +65,22 @@ export function useDockGeo(storageKey: string, defaults?: { w?: number; h?: numb
     width: geo.w,
     height: geo.h,
     ...(geo.x == null || geo.y == null
-      ? { right: 16, bottom: 80 }
+      ? fabAlign === "start"
+        ? { left: 12, top: 56 }
+        : { right: 16, bottom: 80 }
       : { left: geo.x, top: geo.y, right: "auto", bottom: "auto" }),
   };
 
-  const fabStyle = (size: number, fallback: { right: number; bottom: number }): CSSProperties => {
+  const fabStyle = (
+    size: number,
+    fallback: { right?: number; bottom?: number; left?: number; top?: number }
+  ): CSSProperties => {
+    if (fabAlign === "start") {
+      if (geo.x == null || geo.y == null) {
+        return { left: fallback.left ?? 12, top: fallback.top ?? 12 };
+      }
+      return { left: geo.x, top: geo.y, right: "auto", bottom: "auto" };
+    }
     if (geo.x == null || geo.y == null) {
       return { right: fallback.right, bottom: fallback.bottom };
     }
@@ -137,6 +157,16 @@ export function useDockGeo(storageKey: string, defaults?: { w?: number; h?: numb
       const dist = Math.hypot(e.clientX - d.startX, e.clientY - d.startY);
       if (dist < 6) return;
       d.moved = true;
+      if (fabAlign === "start") {
+        setGeo((g) =>
+          persist({
+            ...g,
+            x: d.fabLeft + (e.clientX - d.startX),
+            y: d.fabTop + (e.clientY - d.startY),
+          })
+        );
+        return;
+      }
       setGeo((g) =>
         persist({
           ...g,

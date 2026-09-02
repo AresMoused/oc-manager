@@ -56,7 +56,6 @@ export default function Navbar({ worldColor }: { worldColor?: string }) {
           <Link href="/generator" className={linkClass("/generator")}>角色外观生成器</Link>
           <Link href="/ai-generate" className={linkClass("/ai-generate")}>AI生成角色</Link>
           <Link href="/comfy" className={linkClass("/comfy")}>抽卡姬</Link>
-          <Link href="/logs" className={linkClass("/logs")}>日志</Link>
           <Link href="/about" className={linkClass("/about")}>关于</Link>
           <AuthUserMenu />
         </nav>
