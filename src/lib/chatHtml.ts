@@ -97,6 +97,11 @@ export function unwrapWorldInfo(raw: string): string {
     /\[details\]\s*\[summary\]([\s\S]*?)\[\/summary\]([\s\S]*?)\[\/details\]/gi,
     "\n<details><summary>$1</summary>$2</details>\n"
   );
+  s = s.replace(/\[world_info\][\s\S]*?\[\/world_info\]/gi, (block) => {
+    const inner = block.replace(/\[\/?world_info\]/gi, "").replace(/\[\/?content\]/gi, "").trim();
+    if (!inner || inner === "..." || inner === "…") return "";
+    return inner;
+  });
   s = s.replace(/\[\/?world_info\]/gi, "");
   s = s.replace(/\[\/?content\]/gi, "");
   s = s.replace(/\[\/?details\]/gi, "");
@@ -116,8 +121,12 @@ export function stripHiddenBlocks(raw: string): string {
 }
 
 export function formatChatHtml(raw: string, regexes?: ChatRegex[]): string {
-  let s = stripHiddenBlocks(raw);
+  const src = String(raw || "").trim();
+  if (!src || src === "…" || src === "...") return src === "…" || src === "..." ? "…" : "";
+  let s = stripHiddenBlocks(src);
   s = applyRegexes(s, regexes, "display");
+  s = stripHiddenBlocks(s);
+  if (!s || s === "…" || s === "...") return s ? "…" : "";
   s = markdownLite(s);
   return sanitizeChatHtml(s);
 }

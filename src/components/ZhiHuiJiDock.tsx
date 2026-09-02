@@ -495,8 +495,10 @@ export default function ZhiHuiJiDock() {
                           />
                         ) : mine ? (
                           m.content
-                        ) : m.content === "图" && m.imageUrl ? null : (
-                          <ChatHtml raw={m.content || (busy ? "…" : "")} regexes={preset?.regexes} />
+                        ) : m.content === "图" && m.imageUrl ? null : !String(m.content || "").trim() ? (
+                          <span className="text-neutral-500">{busy ? "…" : ""}</span>
+                        ) : (
+                          <ChatHtml raw={m.content} regexes={preset?.regexes} />
                         )}
                       </div>
                       {editing ? (

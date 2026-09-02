@@ -631,8 +631,10 @@ export default function CharacterChatDock({
                           />
                         ) : mine ? (
                           m.content
-                        ) : m.imageUrl && m.content === "图" ? null : (
-                          <ChatHtml raw={m.content || (busy ? "…" : "")} regexes={preset?.regexes} />
+                        ) : m.imageUrl && m.content === "图" ? null : !String(m.content || "").trim() ? (
+                          <span className="text-neutral-500">{busy ? "…" : ""}</span>
+                        ) : (
+                          <ChatHtml raw={m.content} regexes={preset?.regexes} />
                         )}
                       </div>
                       {editing ? (
