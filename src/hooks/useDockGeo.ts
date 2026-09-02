@@ -102,7 +102,7 @@ export function useDockGeo(
     height: geo.h,
     ...(geo.x == null || geo.y == null
       ? fabAlign === "start"
-        ? { left: 12, top: 52 }
+        ? { left: 12, bottom: 56 }
         : { right: 16, bottom: 80 }
       : { left: geo.x, top: geo.y, right: "auto", bottom: "auto" }),
   };

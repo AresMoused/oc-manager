@@ -13,7 +13,7 @@ export default function LogsDock() {
   const [openId, setOpenId] = useState<string | null>(null);
   const { panelRef, panelStyle, headerDrag, resizeHandle } = useDockGeo(
     "oc-logs-geo-v1",
-    { w: 440, h: 520, x: 12, y: 52, fab: "start" }
+    { w: 440, h: 520, fab: "start" }
   );
 
   useEffect(() => {
@@ -35,7 +35,7 @@ export default function LogsDock() {
 
   return (
     <>
-      <div className="fixed z-[82] left-3 top-3 flex items-center gap-1">
+      <div className="fixed z-[82] left-3 bottom-3 flex items-center gap-1">
         {!open && (
           <button
             type="button"
