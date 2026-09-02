@@ -395,10 +395,9 @@ export async function writeImagePrompt(opts: {
   }
   messages.push({
     role: "user",
-    content: `角色分组写法（必须遵守）：
-每个出场角色用 girl1 / girl2（男用 boy1 / boy2）。把该角色的全部外貌、服装、宏放进括号 (girlN: …) 里；括号外只写位置和动作。
-单人：girl1 is in the center of the image (girl1: appearance tags) [action]
-双人：girl1 is standing on the left side of the image (girl1: 第一个角色的提示词) [action], girl2 is sitting on the right side of the image (girl2: 第二个角色的提示词) [action]
+    content: `只输出提示词，禁止任何思考过程。整段回复必须是 <image1>…</image1><image2>…</image2>… 第一字是 <image1>。不要 imgthink、不要中文分析、不要解释。
+角色分组：单人 girl1 is in the center of the image (girl1: appearance tags) [action]
+双人 girl1 is standing on the left side of the image (girl1: 第一个角色的提示词) [action], girl2 is sitting on the right side of the image (girl2: 第二个角色的提示词) [action]
 image### 里按这个结构写，不要把两个角色的 tag 混在一起。`,
   });
   const raw = await completeChat({

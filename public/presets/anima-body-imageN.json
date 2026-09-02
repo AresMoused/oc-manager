@@ -23,7 +23,7 @@
         "id": "entry_1768452088904_1",
         "name": "anima",
         "role": "user",
-        "content": "##出图规则（必须英文 comma，禁止分号和中文）\n顺序: safety, 人数, girl1/girl2 分组, 场景, 2-4句英文画面\n\nsafety: safe / sensitive / nsfw / explicit\n人数: 1girl / 2girls / 1girl, 1boy …\n\n##调用宏（两个 $ 包裹）\n角色: ${\"name\":\"英文名\",\"angle\":\"from front\",\"upperBody\":\"sfw|nsfw|hidden\",\"lowerBody\":\"sfw|nsfw|hidden\"}$\n服装: ${\"name\":\"服装英文名\",\"upperBody\":\"visible|hidden\",\"lowerBody\":\"visible|hidden\"}$\n- nsfw=赤裸部位, sfw=穿着, hidden=不在画面\n- 全裸不要调用服装\n- 列表匹配<70%就自己写英文外貌，不要硬套\n\n##输出格式（只输出标签，不要输出思考过程，不要重复正文）\n每张图一组，至少 3 组：\n<image1>\nimage###sensitive, 1girl,\ngirl1 is in the center of the image (girl1: ${\"name\":\"角色\",\"angle\":\"from front\",\"upperBody\":\"sfw\",\"lowerBody\":\"sfw\"}$, 外貌) sitting, looking at viewer,\nA short English description of the scene.###\n</image1>\n<image2>…</image2>\n<image3>…</image3>\n\n多人必须写左右位置，外貌只放进括号：\ngirl1 is standing on the left side of the image (girl1: 第一个角色的宏和外貌) reaching out,\ngirl2 is sitting on the right side of the image (girl2: 第二个角色的提示词) looking at girl1\n\nimage### 里面只能是英文 tags 和英文句子，禁止中文分析。\n\n##可用角色和服装\n{{角色启用列表}}\n\n{{通用服装启用列表}}\n",
+        "content": "【最高优先级】整段回复只能是 <image1>…</image1><image2>…</image2><image3>…</image3>。\n禁止：思考过程、imgthink、<think>、中文分析、解释、道歉、复述正文、任何标签外的文字。\n即使想分析角色/服装，也不要写出来，直接把结论写进 image### 的英文 tags。\n\n##出图规则（必须英文 comma，禁止分号和中文）\n顺序: safety, 人数, girl1/girl2 分组, 场景, 2-4句英文画面\n\nsafety: safe / sensitive / nsfw / explicit\n人数: 1girl / 2girls / 1girl, 1boy …\n\n##调用宏（两个 $ 包裹）\n角色: ${\"name\":\"英文名\",\"angle\":\"from front\",\"upperBody\":\"sfw|nsfw|hidden\",\"lowerBody\":\"sfw|nsfw|hidden\"}$\n服装: ${\"name\":\"服装英文名\",\"upperBody\":\"visible|hidden\",\"lowerBody\":\"visible|hidden\"}$\n- nsfw=赤裸部位, sfw=穿着, hidden=不在画面\n- 全裸不要调用服装\n- 列表匹配<70%就自己写英文外貌，不要硬套\n\n##唯一合法输出\n<image1>\nimage###sensitive, 1girl, girl1 is in the center of the image (girl1: ${\"name\":\"角色\",\"angle\":\"from front\",\"upperBody\":\"sfw\",\"lowerBody\":\"sfw\"}$, appearance) sitting, looking at viewer, A short English description.###\n</image1>\n<image2>\nimage###…###\n</image2>\n<image3>\nimage###…###\n</image3>\n\n多人：girl1 is standing on the left side of the image (girl1: 第一个角色的宏和外貌) [action], girl2 is sitting on the right side of the image (girl2: 第二个角色的提示词) [action]\n括号里放外貌服装，括号外只写位置和动作。image### 里禁止中文。\n\n##可用角色和服装\n{{角色启用列表}}\n\n{{通用服装启用列表}}\n",
         "enabled": true,
         "triggerMode": "always",
         "triggerWords": ""
@@ -32,7 +32,7 @@
         "id": "entry_1768238163560_4",
         "name": "AI回复 2",
         "role": "assistant",
-        "content": "好的，给我正文。我会按规则输出 <image1><image2><image3>，每组 image###英文tags###。",
+        "content": "<image1></image1> 我只会输出标签，不会写思考。请给正文。",
         "enabled": true,
         "triggerMode": "always",
         "triggerWords": ""
@@ -41,7 +41,7 @@
         "id": "entry_1768238163560_5",
         "name": "用户消息 3",
         "role": "user",
-        "content": "***********<需要配置插图的正文>***************\n-----------------------------------------------------------------------------------\n{{正文}}\n-----------------------------------------------------------------------------------\n***************</需要配置插图的正文>***************\n\n这是需要配置插图的正文。只根据这一段出图。\n",
+        "content": "***********<需要配置插图的正文>***************\n-----------------------------------------------------------------------------------\n{{正文}}\n-----------------------------------------------------------------------------------\n***************</需要配置插图的正文>***************\n\n只根据这一段出图。回复里不要出现这段正文，不要出现任何思考。\n",
         "enabled": true,
         "triggerMode": "always",
         "triggerWords": ""
@@ -50,7 +50,7 @@
         "id": "entry_1768238163560_6",
         "name": "AI回复 3",
         "role": "assistant",
-        "content": "收到正文。接下来只输出 <image1><image2><image3>，image### 里用 (girl1: …) 分组，不写思考。",
+        "content": "<image1>",
         "enabled": true,
         "triggerMode": "always",
         "triggerWords": ""
@@ -59,7 +59,7 @@
         "id": "entry_1768238163560_7",
         "name": "用户消息 4",
         "role": "user",
-        "content": "开始输出至少 3 组：<image1>…</image1><image2>…</image2><image3>…</image3>。每组内部只有 image###英文tags###。不要 imgthink，不要中文，不要重复正文。{{用户需求}}",
+        "content": "【最高优先级】整段回复只能是 <image1>…</image1><image2>…</image2><image3>…</image3>。\n禁止：思考过程、imgthink、<think>、中文分析、解释、道歉、复述正文、任何标签外的文字。\n即使想分析角色/服装，也不要写出来，直接把结论写进 image### 的英文 tags。\n现在立刻输出至少 3 组 <image1></image1><image2></image2><image3></image3>，每组内部只有 image###英文tags###。第一字必须是 <image1>。{{用户需求}}",
         "enabled": true,
         "triggerMode": "always",
         "triggerWords": ""
