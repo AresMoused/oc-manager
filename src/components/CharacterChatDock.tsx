@@ -17,6 +17,7 @@ import {
   emptySession,
   extractApplyPatches,
   fieldsFromPatch,
+  imageTurnContext,
   isStillTurn,
   listChatThreads,
   loadChatApiConfig,
@@ -393,10 +394,10 @@ export default function CharacterChatDock({
             character: subject,
             characters,
             body: displayReply(visible),
-            history: [...nextMsgs, { speakerName: asstName, content: visible }]
-              .map((m) => `${m.speakerName}: ${m.content}`)
-              .join("\n")
-              .slice(-4000),
+            history: imageTurnContext(
+              [...nextMsgs, { id: asstId, role: "assistant", speakerName: asstName, content: visible, at: "" }],
+              asstId
+            ),
             config: cfg,
             params,
             signal: ac.signal,
@@ -480,17 +481,11 @@ export default function CharacterChatDock({
     const ac = new AbortController();
     abortRef.current = ac;
     try {
-      const hist = session.messages
-        .slice(0, idx + 1)
-        .filter((m) => !isStill(m))
-        .map((m) => `${m.speakerName}: ${m.content}`)
-        .join("\n")
-        .slice(-4000);
       const illus = await illustrateReply({
         character: subject,
         characters,
         body,
-        history: hist,
+        history: imageTurnContext(session.messages, asstId),
         config: cfg,
         params,
         signal: ac.signal,

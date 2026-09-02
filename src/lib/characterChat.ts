@@ -258,6 +258,27 @@ export function spliceStills(
   return [...kept.slice(0, at2 + 1), ...stills, ...kept.slice(at2 + 1)];
 }
 
+/** 出图只带这一轮：该条正文紧前面的用户句 + 这条回复。 */
+export function imageTurnContext(messages: ChatTurn[], asstId: string): string {
+  const at = messages.findIndex((m) => m.id === asstId);
+  const asst = at >= 0 ? messages[at] : messages.filter((m) => m.role === "assistant" && !isStillTurn(m)).at(-1);
+  let user: ChatTurn | undefined;
+  const from = at >= 0 ? at - 1 : messages.length - 1;
+  for (let i = from; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role === "user" && !isStillTurn(m)) {
+      user = m;
+      break;
+    }
+  }
+  return [
+    user ? `${user.speakerName}: ${user.content}` : "",
+    asst ? `${asst.speakerName}: ${asst.content}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function parseSillyTavernPreset(raw: string): ChatPresetFile {
   const data = JSON.parse(raw);
   const prompts = Array.isArray(data?.prompts) ? data.prompts : null;

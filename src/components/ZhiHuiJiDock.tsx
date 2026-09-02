@@ -9,6 +9,7 @@ import {
   type ChatTurn,
   APPLY_INSTRUCTION,
   extractApplyPatches,
+  imageTurnContext,
   isStillTurn,
   loadChatApiConfig,
   loadChatParams,
@@ -255,7 +256,10 @@ export default function ZhiHuiJiDock() {
             character: subject,
             characters,
             body: visible,
-            history: `${thread.messages.map((m) => `${m.role}: ${m.content}`).join("\n")}\nassistant: ${visible}`.slice(-4000),
+            history: imageTurnContext(
+              [...thread.messages, { id: asstId, role: "assistant", speakerName: persona.name, content: visible, at: "" }],
+              asstId
+            ),
             config: cfg,
             params,
             signal: ac.signal,
@@ -353,17 +357,11 @@ export default function ZhiHuiJiDock() {
     const ac = new AbortController();
     abortRef.current = ac;
     try {
-      const hist = thread.messages
-        .slice(0, idx + 1)
-        .filter((m) => !isStill(m))
-        .map((m) => `${m.role}: ${m.content}`)
-        .join("\n")
-        .slice(-4000);
       const illus = await illustrateReply({
         character: subject,
         characters,
         body,
-        history: hist,
+        history: imageTurnContext(thread.messages, asstId),
         config: cfg,
         params,
         signal: ac.signal,
