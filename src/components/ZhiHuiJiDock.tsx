@@ -44,7 +44,7 @@ import ChatHtml from "@/components/ChatHtml";
 import ChatImage, { ImagePreview } from "@/components/ChatImage";
 import PresetEditor from "@/components/PresetEditor";
 import RequestTypesPanel from "@/components/RequestTypesPanel";
-import { generateCharacterStill } from "@/lib/chatImage";
+import { illustrateReply } from "@/lib/chatImage";
 import type { Character, GalleryImage } from "@/lib/types";
 import ChatMsgBar from "@/components/ChatMsgBar";
 import { useDockGeo } from "@/hooks/useDockGeo";
@@ -75,7 +75,6 @@ export default function ZhiHuiJiDock() {
   const [pending, setPending] = useState<ZhiPendingChange[]>([]);
   const [task, setTask] = useState<ZhiTask | null>(null);
   const [status, setStatus] = useState("");
-  const [autoImage, setAutoImage] = useState(false);
   const [preview, setPreview] = useState<{ url: string; charId?: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
@@ -91,7 +90,6 @@ export default function ZhiHuiJiDock() {
     const cur = store.threads.find((t) => t.id === store.currentId) || store.threads[0];
     setThreads(store.threads);
     if (cur) setThread(cur);
-    setAutoImage(localStorage.getItem("oc-zhi-auto-image") === "1");
   }, []);
 
   useEffect(() => {
@@ -195,9 +193,7 @@ export default function ZhiHuiJiDock() {
         });
         lastRaw = raw;
         const queries = extractSystemQueries(raw);
-        const runQ = autoImage
-          ? queries.filter((q) => String(q.skill || q.type) !== "generate_image")
-          : queries;
+        const runQ = queries;
         setThread((t) => ({
           ...t,
           messages: t.messages.map((m) =>
@@ -245,29 +241,26 @@ export default function ZhiHuiJiDock() {
         messages.push({ role: "assistant", content: raw });
         messages.push({ role: "user", content: `【系统自动回复】\n${result.text}` });
       }
-      if (autoImage && !allImages.length) {
-        const subject = pageChar || characters[0];
-        if (subject) {
-          setStatus(`出图中 · ${subject.name}`);
-          try {
-            const job = await generateCharacterStill(subject, "", ac.signal, "陪玩姬", {
-              config: cfg,
-              params,
-              history: `${thread.messages.map((m) => `${m.role}: ${m.content}`).join("\n")}\nassistant: ${lastRaw}`.slice(-4000),
-              userLine: text,
-              body: stripSystemQueries(lastRaw) || lastRaw,
-              characters,
-            });
-            lastCharId = subject.id;
-            for (const url of job.urls) allImages.push({ url, characterId: subject.id });
-          } catch (e) {
-            ping(e instanceof Error ? e.message : "出图失败");
-          }
-        } else {
-          ping("自动出图需要角色页或至少一张卡");
+      let visible = stripSystemQueries(lastRaw) || lastRaw;
+      const subject = pageChar || characters[0];
+      if (subject && visible.trim() && cfg.apiKey && !allImages.length) {
+        setStatus(`插图中 · ${subject.name}`);
+        try {
+          const illus = await illustrateReply({
+            character: subject,
+            characters,
+            body: visible,
+            history: `${thread.messages.map((m) => `${m.role}: ${m.content}`).join("\n")}\nassistant: ${visible}`.slice(-4000),
+            config: cfg,
+            params,
+            signal: ac.signal,
+            source: "陪玩姬",
+          });
+          if (illus.body) visible = illus.body;
+        } catch (e) {
+          ping(e instanceof Error ? e.message : "插图失败");
         }
       }
-      const visible = stripSystemQueries(lastRaw) || lastRaw;
       setThread((t) => {
         let messagesNext = t.messages.map((m) => (m.id === asstId ? { ...m, content: visible } : m));
         for (const img of allImages) {
@@ -622,18 +615,7 @@ export default function ZhiHuiJiDock() {
                       {tab === "types" && <RequestTypesPanel onPing={ping} />}
                       {tab === "features" && (
                         <>
-                          <label className="flex items-center gap-2 text-neutral-300">
-                            <input
-                              type="checkbox"
-                              checked={autoImage}
-                              onChange={(e) => {
-                                setAutoImage(e.target.checked);
-                                localStorage.setItem("oc-zhi-auto-image", e.target.checked ? "1" : "0");
-                              }}
-                            />
-                            每轮对话自动出一张图（当前角色卡提示词）
-                          </label>
-                          <p className="text-neutral-500">先看技能列表再决定调哪一个。读立刻执行；写只出待确认草稿，你点应用才入库。</p>
+                          <p className="text-neutral-500">先看技能列表再决定调哪一个。读立刻执行；写只出待确认草稿，你点应用才入库。对话回复会按生图预设把插图嵌进正文。</p>
                         </>
                       )}
                     </div>
@@ -660,18 +642,6 @@ export default function ZhiHuiJiDock() {
           {error && panel === "none" && <div className="px-3 text-[11px] text-rose-400">{error}</div>}
           {status && panel === "none" && <div className="px-3 text-[11px] text-fuchsia-300">{status}</div>}
           <div className="p-2 border-t border-neutral-800 flex items-end gap-1">
-            <button
-              type="button"
-              title={autoImage ? "自动出图开" : "自动出图关"}
-              className={`w-9 h-9 rounded-full text-sm shrink-0 ${autoImage ? "bg-fuchsia-600 text-white" : "text-neutral-400 hover:bg-white/10"}`}
-              onClick={() => {
-                const next = !autoImage;
-                setAutoImage(next);
-                localStorage.setItem("oc-zhi-auto-image", next ? "1" : "0");
-              }}
-            >
-              图
-            </button>
             <textarea
               rows={1}
               className="flex-1 bg-[#1c1c20] border border-neutral-700 rounded-2xl px-3 py-2 text-sm resize-none"

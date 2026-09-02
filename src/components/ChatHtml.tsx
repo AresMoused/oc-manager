@@ -17,7 +17,7 @@ export default function ChatHtml({
   if (!html) return null;
   return (
     <div
-      className={`chat-html text-sm leading-relaxed ${className || ""}`}
+      className={`chat-html text-sm leading-relaxed [&_img]:max-h-64 [&_img]:rounded-lg [&_img]:my-2 [&_img]:block ${className || ""}`}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

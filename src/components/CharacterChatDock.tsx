@@ -36,7 +36,7 @@ import {
   type TestPersona,
 } from "@/lib/characterChat";
 import { extractSystemQueries, runQueries, stripSystemQueries } from "@/lib/zhiTools";
-import { generateCharacterStill } from "@/lib/chatImage";
+import { illustrateReply } from "@/lib/chatImage";
 import { type ZhiPendingChange } from "@/lib/zhiSkills";
 import ChatHtml from "@/components/ChatHtml";
 import ChatImage, { ImagePreview } from "@/components/ChatImage";
@@ -376,38 +376,31 @@ export default function CharacterChatDock({
           }));
         }
       }
-      if (session.autoImage) {
+      if (visible.trim() && cfg.apiKey) {
         const subject = solo ? star : others[0] || host;
-        ping(`出图中 · ${subject.name}`);
+        ping(`插图中 · ${subject.name}`);
         try {
-          const job = await generateCharacterStill(subject, session.scene, ac.signal, "角色对话", {
-            config: cfg,
-            params,
+          const illus = await illustrateReply({
+            character: subject,
+            characters,
+            body: displayReply(visible),
             history: [...nextMsgs, { speakerName: asstName, content: visible }]
               .map((m) => `${m.speakerName}: ${m.content}`)
               .join("\n")
               .slice(-4000),
-            userLine: text,
-            body: displayReply(visible),
-            characters,
+            config: cfg,
+            params,
+            signal: ac.signal,
+            source: "角色对话",
           });
-          setSession((s) => ({
-            ...s,
-            messages: [
-              ...s.messages,
-              ...job.urls.map((url) => ({
-                id: crypto.randomUUID(),
-                role: "assistant" as const,
-                speakerName: subject.name,
-                speakerId: subject.id,
-                content: "图",
-                imageUrl: url,
-                at: new Date().toISOString(),
-              })),
-            ],
-          }));
+          if (illus.body !== displayReply(visible)) {
+            setSession((s) => ({
+              ...s,
+              messages: s.messages.map((m) => (m.id === asstId ? { ...m, content: illus.body } : m)),
+            }));
+          }
         } catch (e) {
-          ping(e instanceof Error ? e.message : "出图失败");
+          ping(e instanceof Error ? e.message : "插图失败");
         }
       }
       const patches = canEditCard && session.allowCardEdit !== false ? extractApplyPatches(raw) : [];
@@ -813,10 +806,6 @@ export default function CharacterChatDock({
                       {setTab === "features" && (
                         <>
                           <label className="flex items-center gap-2 text-neutral-300">
-                            <input type="checkbox" checked={!!session.autoImage} onChange={(e) => setSession((s) => ({ ...s, autoImage: e.target.checked }))} />
-                            每轮对话自动出一张图（画对方角色；单人时画这张卡）
-                          </label>
-                          <label className="flex items-center gap-2 text-neutral-300">
                             <input type="checkbox" checked={session.autoSummary} onChange={(e) => setSession((s) => ({ ...s, autoSummary: e.target.checked }))} />
                             每 5 次对话自动写入时间线（{unsummarizedUserCount(session.messages)}/5）
                           </label>
@@ -961,14 +950,6 @@ export default function CharacterChatDock({
               </div>
             )}
             <div className="flex items-end gap-1">
-              <button
-                type="button"
-                title={session.autoImage ? "自动出图开" : "自动出图关"}
-                className={`w-9 h-9 rounded-full text-sm ${session.autoImage ? "bg-purple-600 text-white" : "text-neutral-400 hover:bg-white/10"}`}
-                onClick={() => setSession((s) => ({ ...s, autoImage: !s.autoImage }))}
-              >
-                图
-              </button>
               <button type="button" title="添加图片" className="w-9 h-9 rounded-full text-neutral-400 hover:bg-white/10" onClick={() => imgRef.current?.click()}>🖼</button>
               <input ref={imgRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
                 const f = e.target.files?.[0];

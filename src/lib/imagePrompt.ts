@@ -227,23 +227,43 @@ function expandOneMacro(raw: string, chars: Character[]): string {
 }
 
 export function extractImagePrompt(raw: string, chars: Character[]): string {
-  const blocks = [...String(raw || "").matchAll(/image###([\s\S]*?)###/gi)].map((m) =>
-    m[1]!.trim()
-  );
-  let pick = blocks[0] || "";
-  if (!pick) {
-    const cleaned = String(raw || "")
+  return parseImageInserts(raw, chars)[0]?.prompt || "";
+}
+
+/** 智绘姬：从 <images>/<image>/image### 里抽出插图点（regex 原句 + tags）。 */
+export function parseImageInserts(raw: string, chars: Character[]): { regex: string; prompt: string }[] {
+  const src = String(raw || "");
+  const inner = src.match(/<images>([\s\S]*?)<\/images>/i)?.[1] || src;
+  const chunks = [...inner.matchAll(/<image>([\s\S]*?)<\/image>/gi)].map((m) => m[1]!);
+  const texts = chunks.length ? chunks : [inner];
+  const out: { regex: string; prompt: string }[] = [];
+  const seen = new Set<string>();
+  for (const t of texts) {
+    const regex = (t.match(/regex::\s*(.+)/i)?.[1] || t.match(/regex[:：]\s*(.+)/i)?.[1] || "")
+      .trim()
+      .replace(/^\$\{|\}$/g, "")
+      .trim();
+    const promptRaw = t.match(/image###([\s\S]*?)###/i)?.[1]?.trim() || "";
+    const prompt = resolveComfyPrompt(promptRaw.replace(/\s+/g, " ").trim(), chars);
+    if (!prompt || seen.has(prompt)) continue;
+    seen.add(prompt);
+    out.push({ regex, prompt });
+  }
+  if (!out.length) {
+    const cleaned = src
       .replace(/<think>[\s\S]*?<\/think>/gi, "")
       .replace(/<imgthink>[\s\S]*?<\/imgthink>/gi, "")
       .replace(/<disclaimer>[\s\S]*?<\/disclaimer>/gi, "")
       .trim();
-    pick =
+    const pick =
       cleaned
         .split("\n")
         .map((l) => l.trim())
-        .find((l) => l.length > 24 && /[a-z]/i.test(l) && l.includes(",")) || cleaned;
+        .find((l) => l.length > 24 && /[a-z]/i.test(l) && l.includes(",")) || "";
+    const prompt = resolveComfyPrompt(pick.replace(/\s+/g, " ").trim(), chars);
+    if (prompt) out.push({ regex: "", prompt });
   }
-  return resolveComfyPrompt(pick.replace(/\s+/g, " ").trim(), chars);
+  return out.slice(0, 4);
 }
 
 function packMessages(pack: ContextPack, vars: Record<string, string>): { messages: ChatMessage[]; slotted: boolean } {
@@ -285,7 +305,7 @@ export async function writeImagePrompt(opts: {
   signal?: AbortSignal;
   fallback?: string;
   source?: string;
-}): Promise<{ prompt: string; raw: string; packName: string }> {
+}): Promise<{ prompt: string; raw: string; packName: string; inserts: { regex: string; prompt: string }[] }> {
   const chars = opts.characters?.length
     ? opts.characters
     : opts.character
@@ -293,19 +313,24 @@ export async function writeImagePrompt(opts: {
       : [];
   const fallback = (opts.fallback || "").trim();
   if (!opts.config.apiKey) {
-    if (fallback) return { prompt: fallback, raw: "", packName: "fallback" };
+    if (fallback) return { prompt: fallback, raw: "", packName: "fallback", inserts: fallback ? [{ regex: "", prompt: fallback }] : [] };
     throw new Error("出图需要先在陪玩姬里填 API Key，用来写提示词");
   }
   const focus = opts.character ? [opts.character] : chars;
   const pack = packForImage();
   const charBlock = characterListBlock(focus);
   const outfitBlock = outfitListBlock(focus);
-  const body = (opts.body || "").trim();
+  const charName = opts.character?.name || "";
+  const rawBody = (opts.body || "").trim();
+  const body =
+    charName && rawBody && !rawBody.startsWith("（本次角色是")
+      ? `（本次角色是${charName}）\n${rawBody}`
+      : rawBody;
   const vars: Record<string, string> = {
     上下文: opts.history || "",
     正文: body,
     场景: opts.scene || "",
-    用户需求: opts.userLine || opts.extra || "",
+    用户需求: opts.userLine || "",
     世界书触发: "",
     角色启用列表: charBlock,
     通用角色启用列表: charBlock,
@@ -326,19 +351,19 @@ export async function writeImagePrompt(opts: {
   }
   const raw = await completeChat({
     config: opts.config,
-    params: { ...opts.params, maxTokens: Math.min(opts.params.maxTokens || 2048, 2048) },
+    params: { ...opts.params, maxTokens: Math.min(Math.max(opts.params.maxTokens || 2048, 3072), 4096) },
     messages,
     signal: opts.signal,
     logSource: opts.source || "出图提示词",
     logTitle: pack.name,
   });
-  const prompt = extractImagePrompt(raw, chars) || fallback;
+  const inserts = parseImageInserts(raw, chars);
+  const prompt = inserts[0]?.prompt || fallback;
   pushDebugLog({
     source: opts.source || "出图提示词",
     kind: "chat",
     title: `writeImagePrompt · ${pack.name}`,
-    payload: { pack: pack.name, prompt: prompt.slice(0, 500), raw: raw.slice(0, 800) },
+    payload: { pack: pack.name, prompt: prompt.slice(0, 500), count: inserts.length, raw: raw.slice(0, 1200) },
   });
-  if (!prompt.trim()) throw new Error("陪玩姬没有写出可用提示词");
-  return { prompt, raw, packName: pack.name };
+  return { prompt, raw, packName: pack.name, inserts };
 }
