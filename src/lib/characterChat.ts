@@ -330,25 +330,52 @@ function isHistorySlot(e: ChatPromptEntry): boolean {
   return e.marker && (id.includes("chathistory") || id.includes("chat history") || e.name.includes("Chat History"));
 }
 
-function fillSlot(e: ChatPromptEntry, filled: string): ChatMessage | null {
-  if (!e.enabled) return null;
-  const text = filled.trim();
-  if (!text && !e.content.trim()) return null;
-  const content = e.content.trim() ? `${e.content.trim()}\n${text}` : text;
-  return { role: e.role, content };
+export interface MacroCtx {
+  userName: string;
+  charName: string;
+  persona: string;
+  description: string;
+  personality: string;
+  scenario: string;
+  worldInfo: string;
+  userLine: string;
+  group: string;
 }
 
-export function recentUnsummarized(messages: ChatTurn[], maxTurns = 5): ChatTurn[] {
-  const pending = messages.filter((m) => !m.summarized);
-  const userTurns = pending.filter((m) => m.role === "user");
-  const keepUsers = userTurns.slice(-maxTurns);
-  if (!keepUsers.length) return pending.slice(-maxTurns * 2);
-  const first = pending.findIndex((m) => m.id === keepUsers[0]!.id);
-  return pending.slice(first < 0 ? 0 : first);
+/** SillyTavern-style {{user}} / {{char}} / <USER> / <BOT> substitution. */
+export function fillMacros(text: string, ctx: MacroCtx): string {
+  const pairs: [RegExp, string][] = [
+    [/\{\{user\}\}/gi, ctx.userName],
+    [/\{\{char\}\}/gi, ctx.charName],
+    [/\{\{bot\}\}/gi, ctx.charName],
+    [/\{\{persona\}\}/gi, ctx.persona],
+    [/\{\{description\}\}/gi, ctx.description],
+    [/\{\{personality\}\}/gi, ctx.personality],
+    [/\{\{scenario\}\}/gi, ctx.scenario],
+    [/\{\{charPrompt\}\}/gi, ""],
+    [/\{\{mesExamples\}\}/gi, ""],
+    [/\{\{exampleDialogue\}\}/gi, ""],
+    [/\{\{lastMessage\}\}/gi, ctx.userLine],
+    [/\{\{lastUserMessage\}\}/gi, ctx.userLine],
+    [/\{\{newline\}\}/gi, "\n"],
+    [/\{\{group\}\}/gi, ctx.group],
+    [/<\s*user\s*>/gi, ctx.userName],
+    [/<\s*char\s*>/gi, ctx.charName],
+    [/<\s*bot\s*>/gi, ctx.charName],
+  ];
+  let s = String(text || "");
+  for (const [re, val] of pairs) s = s.replace(re, val);
+  return s;
 }
 
-export function unsummarizedUserCount(messages: ChatTurn[]): number {
-  return messages.filter((m) => m.role === "user" && !m.summarized).length;
+function slotInject(e: ChatPromptEntry, ctx: MacroCtx): string {
+  const id = slotId(e).replace(/[^a-z]/g, "");
+  if (id === "personadescription" || id === "persona") return ctx.persona;
+  if (id === "chardescription" || id === "description") return ctx.description;
+  if (id === "charpersonality" || id === "personality") return ctx.personality;
+  if (id === "scenario" || id === "charscenario") return ctx.scenario;
+  if (id.includes("worldinfo")) return ctx.worldInfo;
+  return "";
 }
 
 export function buildChatMessages(opts: {
@@ -369,25 +396,32 @@ export function buildChatMessages(opts: {
   const solo = present.length <= 1;
   const usingTest = !!(testPersona && testPersona.body.trim());
   const star = present[0] || pov;
-  const voiceName =
-    soloMode === "monologue" ? "脑内的声音" : "神秘声音";
-  const playerName = usingTest
-    ? testPersona!.name || "玩家"
-    : solo
-      ? voiceName
-      : pov.name;
+  const voiceName = soloMode === "monologue" ? "脑内的声音" : "神秘声音";
+  const bots = solo ? [star] : others.length ? others : [star];
+  const charPrimary = bots[0]!;
 
-  const persona = solo
-    ? `【扮演角色】\n你是「${star.name}」，不是玩家。用户是${voiceName}（没有可见身体），不要把用户写成 ${star.name}，也不要替这个声音说话。用 ${star.name} 的第一人称回应。\n\n${characterCardText(star, present)}`
-    : usingTest
-      ? `【玩家视角·测试人设】\n玩家自称「${playerName}」。正式游玩请改用角色卡当人设。\n不要代替玩家说话或做决定。\n\n${testPersona!.body.trim()}`
-      : `【玩家视角】\n玩家是「${pov.name}」。你正在写其他角色与环境；不要代替 ${pov.name} 说话或做决定。\n\n${characterCardText(pov, present)}`;
-  const chars = solo
-    ? characterCardText(star, present)
-    : others.length
-      ? others.map((c) => characterCardText(c, present)).join("\n\n---\n\n")
+  const userName = usingTest ? testPersona!.name || "玩家" : solo ? voiceName : pov.name;
+  const charName = bots.map((c) => c.name).join("、");
+
+  const persona = usingTest
+    ? testPersona!.body.trim()
+    : solo
+      ? `${userName}。没有可见身体，不是「${star.name}」，不要替 ${star.name} 说话以外的人设。`
       : characterCardText(pov, present);
-  const worldMem = present
+
+  const description = bots.map((c) => characterCardText(c, present)).join("\n\n---\n\n");
+  const personality = description;
+
+  let scenario = scene.trim();
+  if (solo && soloMode === "monologue") {
+    scenario += `\n{{user}} 是 ${star.name} 脑海里的声音。只写 {{char}} 的回应。`;
+  } else if (solo && soloMode === "mystery") {
+    scenario += `\n{{user}} 是来源不明的神秘声音。{{char}} 用自己的言行回应。`;
+  } else if (others.length) {
+    scenario += `\n只写 {{char}} 的言行，不要写 {{user}} 的行动或台词。`;
+  }
+
+  const worldInfo = present
     .map((c) => {
       const tl = (c.timeline || []).slice(-6);
       if (!tl.length) return "";
@@ -396,35 +430,37 @@ export function buildChatMessages(opts: {
     .filter(Boolean)
     .join("\n\n");
 
-  let scenario = scene.trim() ? `当前场景：${scene.trim()}` : "";
-  if (solo && soloMode === "monologue") {
-    scenario += `\n用户是 ${star.name} 脑海里的声音。你只写 ${star.name} 的回应（像在和自己内心说话）。不要把用户写成 ${star.name}。`;
-  } else if (solo && soloMode === "mystery") {
-    scenario += `\n用户是来源不明的神秘声音（不要给声音真名或身体）。你是 ${star.name}，用她的言行回应这个声音。`;
-  } else if (others.length) {
-    scenario += `\n在场其他角色：${others.map((c) => c.name).join("、")}。只写他们的言行，不写玩家「${playerName}」的行动。出图时画这些对方角色，不要画 ${playerName}。`;
-  }
+  const ctx: MacroCtx = {
+    userName,
+    charName,
+    persona,
+    description,
+    personality,
+    scenario: fillMacros(scenario, {
+      userName,
+      charName,
+      persona,
+      description,
+      personality,
+      scenario: scene.trim(),
+      worldInfo,
+      userLine,
+      group: present.map((c) => c.name).join("、"),
+    }),
+    worldInfo,
+    userLine,
+    group: present.map((c) => c.name).join("、"),
+  };
+
+  const finish = (s: string) => applyRegexes(fillMacros(s, ctx), preset.regexes, "prompt");
 
   const hist = recentUnsummarized(history, 5);
   const histMsgs: ChatMessage[] = hist.map((t) => ({
     role: t.role,
-    content:
-      t.role === "user"
-        ? applyRegexes(`【${t.speakerName}】\n${t.content}`, preset.regexes, "prompt")
-        : applyRegexes(unwrapWorldInfo(t.content), preset.regexes, "prompt"),
+    content: finish(
+      t.role === "user" ? `${t.speakerName || userName}: ${t.content}` : `${t.speakerName || charName}: ${unwrapWorldInfo(t.content)}`
+    ),
   }));
-
-  const inject: Record<string, string> = {
-    persona,
-    personadescription: persona,
-    chardescription: `【在场角色卡】\n${chars}`,
-    charpersonality: `【在场角色性格与模块】\n${chars}`,
-    worldinfobefore: worldMem ? `【长期记忆·时间线】\n${worldMem}` : "",
-    worldinfoafter: worldMem ? `【长期记忆·时间线】\n${worldMem}` : "",
-    worldinfo: worldMem ? `【长期记忆·时间线】\n${worldMem}` : "",
-    scenario,
-    dialogueexamples: "",
-  };
 
   const out: ChatMessage[] = [];
   let historyPlaced = false;
@@ -435,37 +471,30 @@ export function buildChatMessages(opts: {
       historyPlaced = true;
       continue;
     }
-    const id = slotId(e).replace(/[^a-z]/g, "");
-    let extra = "";
-    for (const [k, v] of Object.entries(inject)) {
-      if (id.includes(k)) {
-        extra = v;
-        break;
-      }
-    }
+    let body = fillMacros(e.content, ctx);
     if (e.marker) {
-      const msg = fillSlot(e, extra);
-      if (msg) out.push({ ...msg, content: applyRegexes(String(msg.content), preset.regexes, "prompt") });
-      continue;
+      const injected = slotInject(e, ctx);
+      if (!body.trim()) body = injected;
+      else if (injected && !body.includes(injected.slice(0, 40))) body = `${body}\n${injected}`;
     }
-    const body = extra ? `${e.content}\n${extra}` : e.content;
-    if (body.trim()) out.push({ role: e.role, content: applyRegexes(body, preset.regexes, "prompt") });
+    if (!body.trim()) continue;
+    out.push({ role: e.role, content: applyRegexes(body, preset.regexes, "prompt") });
   }
   if (allowCardEdit) {
-    out.push({ role: "system", content: APPLY_INSTRUCTION });
+    out.push({ role: "system", content: finish(APPLY_INSTRUCTION) });
   }
   if (allowImageGen !== false) {
-    const drawName = solo ? star.name : others.map((c) => c.name).join("、") || star.name;
     out.push({
       role: "system",
-      content: `玩家是「${playerName}」。对话气泡里的图是对方发出的，入画角色必须是 ${drawName}，不要画 ${playerName}。
-用户明确说「给我看你/她」才出对方；说自己穿/自拍才画 ${playerName}。
+      content: finish(
+        `{{user}} is the player. Reply images are sent by {{char}} — draw {{char}}, not {{user}}.
 闲聊不要出图。
-<SystemQuery>{"type":"generate_image","characterName":"${solo ? star.name : others[0]?.name || star.name}","angle":"front","upper":"sfw","extra":"场景与服装 tags"}</SystemQuery>`,
+<SystemQuery>{"type":"generate_image","characterName":"${charPrimary.name}","angle":"front","upper":"sfw","extra":"场景与服装 tags"}</SystemQuery>`
+      ),
     });
   }
   if (!historyPlaced) out.push(...histMsgs);
-  const userText = applyRegexes(`【${playerName}】\n${userLine}`, preset.regexes, "prompt");
+  const userText = finish(`${userName}: ${userLine}`);
   if (imageUrl) {
     out.push({
       role: "user",
@@ -479,6 +508,20 @@ export function buildChatMessages(opts: {
   }
   return out;
 }
+
+export function recentUnsummarized(messages: ChatTurn[], maxTurns = 5): ChatTurn[] {
+  const pending = messages.filter((m) => !m.summarized);
+  const userTurns = pending.filter((m) => m.role === "user");
+  const keepUsers = userTurns.slice(-maxTurns);
+  if (!keepUsers.length) return pending.slice(-maxTurns * 2);
+  const first = pending.findIndex((m) => m.id === keepUsers[0]!.id);
+  return pending.slice(first < 0 ? 0 : first);
+}
+
+export function unsummarizedUserCount(messages: ChatTurn[]): number {
+  return messages.filter((m) => m.role === "user" && !m.summarized).length;
+}
+
 
 export const SUMMARY_SYSTEM = `你是剧情记录员。根据对话写一条时间线记忆。
 必须写清每个说话或行动的人的名字（用角色名，不要用“他/她”替代主语）。
