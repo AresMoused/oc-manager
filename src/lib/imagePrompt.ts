@@ -51,13 +51,12 @@ export function characterAppearanceBlock(c: Character): string {
     `\${"name":"${en}","angle":"from front","upperBody":"nsfw","lowerBody":"nsfw"}$`,
   ];
   if (outfits.length) {
-    lines.push("", `可调用服装（共${outfits.length}套，须用宏调用，不要改衣服原文）:`);
+    lines.push("", `可调用服装（共${outfits.length}套，细节在服装列表，须用宏调用）:`);
     for (const o of outfits) {
       const oen = (o.nameEN || o.nameCN || o.id).trim();
       const ocn = (o.nameCN || o.nameEN || o.id).trim();
       lines.push(`- ${ocn} / ${oen} → \${"name":"${oen}","upperBody":"visible","lowerBody":"visible"}$`);
     }
-    lines.push("", outfitBlockForChars([c]));
   }
   const snaps = c.prompts || [];
   if (snaps.length) {
@@ -393,13 +392,16 @@ export async function writeImagePrompt(opts: {
       content: `入画角色完整提示词：\n${charBlock}\n\n衣服信息：\n${outfitBlock}`,
     });
   }
-  messages.push({
-    role: "user",
-    content: `只输出提示词，禁止任何思考过程。整段回复必须是 <image1>…</image1><image2>…</image2>… 第一字是 <image1>。不要 imgthink、不要中文分析、不要解释。
+  const packBlob = pack.entries.map((e) => e.content).join("\n");
+  if (!/<image1>/i.test(packBlob)) {
+    messages.push({
+      role: "user",
+      content: `只输出提示词，禁止任何思考过程。整段回复必须是 <image1>…</image1><image2>…</image2>… 第一字是 <image1>。不要 imgthink、不要中文分析、不要解释。
 角色分组：单人 girl1 is in the center of the image (girl1: appearance tags) [action]
 双人 girl1 is standing on the left side of the image (girl1: 第一个角色的提示词) [action], girl2 is sitting on the right side of the image (girl2: 第二个角色的提示词) [action]
 image### 里按这个结构写，不要把两个角色的 tag 混在一起。`,
-  });
+    });
+  }
   const raw = await completeChat({
     config: opts.config,
     params: { ...opts.params, maxTokens: Math.max(opts.params.maxTokens || 4096, 8192) },
