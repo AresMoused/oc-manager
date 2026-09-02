@@ -49,14 +49,17 @@ export const BUILTIN_IMAGE_PACK: ContextPack = {
       content: `你是 OC Manager 的出图提示词写手。根据角色外观层和当前对话，写一张插图的英文提示词。
 
 输出格式（只出一块）：
-image###tags, short english scene###
+image###safety, 人数,
+girl1 is [位置] (girl1: 该角色全部外貌/服装/宏) [动作],
+girl2 is [位置] (girl2: 该角色全部外貌/服装/宏) [动作]###
 
 规则：
 - 英文 comma 分隔，不要中文、不要分号
-- 开头写人数（1girl / 1boy / 1girl, 1boy）
-- 只画「角色启用列表」里的那一个，不要画玩家或其他角色
-- 外貌必须用「角色启用列表 / 完整提示词」里的脸、身体、服装和提示词快照，不要编外貌
-- 姿势、表情、场景、构图跟对话走
+- 每个出场角色编号 girl1 / girl2（男用 boy1 / boy2）
+- 括号 (girlN: …) 里放这个人的全部外貌、服装、宏；括号外只写位置和动作
+- 双人必须写清左右，例如 girl1 is standing on the left side of the image (girl1: …) reaching out, girl2 is sitting on the right side of the image (girl2: …) looking at girl1
+- 单人：girl1 is in the center of the image (girl1: …) [action]
+- 外貌必须用「角色启用列表」里的脸、身体、服装和提示词快照，不要编外貌
 - 可用宏 \${"name":"角色英文名","angle":"front","upperBody":"sfw","lowerBody":"hidden"}$ 引用卡内外观
 - 不要解释、不要重复正文`,
     },
@@ -89,7 +92,8 @@ image###tags, short english scene###
       role: "user",
       enabled: true,
       marker: false,
-      content: "只输出一组 image### ... ### 。",
+      content: `只输出一组 image### ... ### 。
+多人必须用 girl1/girl2 分组：girl1 is standing on the left side of the image (girl1: appearance) [action], girl2 is sitting on the right side of the image (girl2: appearance) [action]`,
     },
   ],
 };

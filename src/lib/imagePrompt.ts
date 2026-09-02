@@ -352,6 +352,14 @@ export async function writeImagePrompt(opts: {
       content: `入画角色完整提示词：\n${charBlock}\n\n衣服信息：\n${outfitBlock}`,
     });
   }
+  messages.push({
+    role: "user",
+    content: `角色分组写法（必须遵守）：
+每个出场角色用 girl1 / girl2（男用 boy1 / boy2）。把该角色的全部外貌、服装、宏放进括号 (girlN: …) 里；括号外只写位置和动作。
+单人：girl1 is in the center of the image (girl1: appearance tags) [action]
+双人：girl1 is standing on the left side of the image (girl1: 第一个角色的提示词) [action], girl2 is sitting on the right side of the image (girl2: 第二个角色的提示词) [action]
+image### 里按这个结构写，不要把两个角色的 tag 混在一起。`,
+  });
   const raw = await completeChat({
     config: opts.config,
     params: { ...opts.params, maxTokens: Math.max(opts.params.maxTokens || 4096, 8192) },
