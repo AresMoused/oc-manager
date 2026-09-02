@@ -27,7 +27,6 @@ export async function generateCharacterStill(
     params: AiModelParams;
     history?: string;
     userLine?: string;
-    /** 刚生成的角色回复，填进绘图预设的「正文」。 */
     body?: string;
     characters?: Character[];
   }
@@ -60,27 +59,7 @@ export async function generateCharacterStill(
   return runSavedComfyJob(ov, signal, { source, note: `${c.name} 对话出图` });
 }
 
-function imgTag(url: string): string {
-  return `\n<img src="${url}" alt="" class="chat-inline-img" />\n`;
-}
-
-export function insertImagesIntoBody(
-  body: string,
-  items: { regex: string; url: string }[]
-): string {
-  let s = body;
-  for (const it of items) {
-    const tag = imgTag(it.url);
-    if (it.regex && s.includes(it.regex)) {
-      s = s.replace(it.regex, `${it.regex}${tag}`);
-    } else {
-      s += tag;
-    }
-  }
-  return s;
-}
-
-/** 智绘姬：用生图预设给回复插图，把图嵌进正文。 */
+/** 生图预设写 tags，每个 <imageN> 出一张图，挂在对话里（不插入正文）。 */
 export async function illustrateReply(opts: {
   character: Character;
   characters?: Character[];
@@ -111,7 +90,6 @@ export async function illustrateReply(opts: {
   );
   if (!inserts.length) return { body, urls: [] };
   const app = appearanceOf(opts.character);
-  const placed: { regex: string; url: string }[] = [];
   const urls: string[] = [];
   for (const it of inserts) {
     const ov: Parameters<typeof runSavedComfyJob>[0] = { prompt_character: it.prompt, prompt_suffix: "" };
@@ -120,10 +98,7 @@ export async function illustrateReply(opts: {
       source: opts.source || "正文插图",
       note: `${opts.character.name} 插图`,
     });
-    const url = job.urls[0];
-    if (!url) continue;
-    urls.push(url);
-    placed.push({ regex: it.regex, url });
+    for (const url of job.urls) urls.push(url);
   }
-  return { body: insertImagesIntoBody(body, placed), urls };
+  return { body, urls };
 }

@@ -114,6 +114,7 @@ function asEntry(p: Record<string, unknown>, i: number): ChatPromptEntry {
     content: String(p.content || ""),
     enabled: p.enabled !== false,
     marker: !!p.marker,
+    triggerMode: String(p.triggerMode || "always"),
   };
 }
 

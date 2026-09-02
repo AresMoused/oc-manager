@@ -230,12 +230,15 @@ export function extractImagePrompt(raw: string, chars: Character[]): string {
   return parseImageInserts(raw, chars)[0]?.prompt || "";
 }
 
-/** 智绘姬：从 <images>/<image>/image### 里抽出插图点（regex 原句 + tags）。 */
+/** 从 <image1>… / <image> / image### 抽出每张图的 tags。 */
 export function parseImageInserts(raw: string, chars: Character[]): { regex: string; prompt: string }[] {
   const src = String(raw || "");
-  const inner = src.match(/<images>([\s\S]*?)<\/images>/i)?.[1] || src;
-  const chunks = [...inner.matchAll(/<image>([\s\S]*?)<\/image>/gi)].map((m) => m[1]!);
-  const texts = chunks.length ? chunks : [inner];
+  const numbered = [...src.matchAll(/<image(\d+)>([\s\S]*?)<\/image\1>/gi)].sort(
+    (a, b) => Number(a[1]) - Number(b[1])
+  );
+  const wrapped = src.match(/<images>([\s\S]*?)<\/images>/i)?.[1] || src;
+  const plain = [...wrapped.matchAll(/<image>([\s\S]*?)<\/image>/gi)].map((m) => m[1]!);
+  const texts = numbered.length ? numbered.map((m) => m[2]!) : plain.length ? plain : [wrapped];
   const out: { regex: string; prompt: string }[] = [];
   const seen = new Set<string>();
   for (const t of texts) {
@@ -243,7 +246,7 @@ export function parseImageInserts(raw: string, chars: Character[]): { regex: str
       .trim()
       .replace(/^\$\{|\}$/g, "")
       .trim();
-    const promptRaw = t.match(/image###([\s\S]*?)###/i)?.[1]?.trim() || "";
+    const promptRaw = (t.match(/image###([\s\S]*?)###/i)?.[1] || "").trim();
     const prompt = resolveComfyPrompt(promptRaw.replace(/\s+/g, " ").trim(), chars);
     if (!prompt || seen.has(prompt)) continue;
     seen.add(prompt);
@@ -278,7 +281,7 @@ function packMessages(pack: ContextPack, vars: Record<string, string>): { messag
     参考资料: vars.上下文 || "",
     可用绘图角色列表: vars.角色启用列表 || "",
   };
-  const source = pack.entries.filter((e) => e.enabled);
+  const source = pack.entries.filter((e) => e.enabled && (e.triggerMode || "always") !== "trigger");
   const hadSlot = source.some((e) =>
     /<角色信息>|<衣服信息>|<角色启用列表>|<需要配置插图的正文>|<参考资料>|\{\{角色启用列表\}\}|\{\{通用角色启用列表\}\}|\{\{通用服装启用列表\}\}|\{\{正文\}\}/.test(
       e.content

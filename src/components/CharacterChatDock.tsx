@@ -376,9 +376,9 @@ export default function CharacterChatDock({
           }));
         }
       }
-      if (visible.trim() && cfg.apiKey) {
+      if (session.autoImage && visible.trim() && cfg.apiKey) {
         const subject = solo ? star : others[0] || host;
-        ping(`插图中 · ${subject.name}`);
+        ping(`出图中 · ${subject.name}`);
         try {
           const illus = await illustrateReply({
             character: subject,
@@ -393,14 +393,25 @@ export default function CharacterChatDock({
             signal: ac.signal,
             source: "角色对话",
           });
-          if (illus.body !== displayReply(visible)) {
+          if (illus.urls.length) {
             setSession((s) => ({
               ...s,
-              messages: s.messages.map((m) => (m.id === asstId ? { ...m, content: illus.body } : m)),
+              messages: [
+                ...s.messages,
+                ...illus.urls.map((url) => ({
+                  id: crypto.randomUUID(),
+                  role: "assistant" as const,
+                  speakerName: subject.name,
+                  speakerId: subject.id,
+                  content: "图",
+                  imageUrl: url,
+                  at: new Date().toISOString(),
+                })),
+              ],
             }));
           }
         } catch (e) {
-          ping(e instanceof Error ? e.message : "插图失败");
+          ping(e instanceof Error ? e.message : "出图失败");
         }
       }
       const patches = canEditCard && session.allowCardEdit !== false ? extractApplyPatches(raw) : [];
@@ -806,6 +817,10 @@ export default function CharacterChatDock({
                       {setTab === "features" && (
                         <>
                           <label className="flex items-center gap-2 text-neutral-300">
+                            <input type="checkbox" checked={!!session.autoImage} onChange={(e) => setSession((s) => ({ ...s, autoImage: e.target.checked }))} />
+                            回复后用生图预设出图（默认关，每组一张）
+                          </label>
+                          <label className="flex items-center gap-2 text-neutral-300">
                             <input type="checkbox" checked={session.autoSummary} onChange={(e) => setSession((s) => ({ ...s, autoSummary: e.target.checked }))} />
                             每 5 次对话自动写入时间线（{unsummarizedUserCount(session.messages)}/5）
                           </label>
@@ -950,6 +965,14 @@ export default function CharacterChatDock({
               </div>
             )}
             <div className="flex items-end gap-1">
+              <button
+                type="button"
+                title={session.autoImage ? "生图开" : "生图关"}
+                className={`w-9 h-9 rounded-full text-sm ${session.autoImage ? "bg-purple-600 text-white" : "text-neutral-400 hover:bg-white/10"}`}
+                onClick={() => setSession((s) => ({ ...s, autoImage: !s.autoImage }))}
+              >
+                图
+              </button>
               <button type="button" title="添加图片" className="w-9 h-9 rounded-full text-neutral-400 hover:bg-white/10" onClick={() => imgRef.current?.click()}>🖼</button>
               <input ref={imgRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
                 const f = e.target.files?.[0];

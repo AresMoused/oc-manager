@@ -23,6 +23,7 @@ export interface ChatPromptEntry {
   content: string;
   enabled: boolean;
   marker: boolean;
+  triggerMode?: string;
 }
 
 export interface ChatPresetFile {

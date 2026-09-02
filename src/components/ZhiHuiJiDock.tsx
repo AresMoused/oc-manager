@@ -75,6 +75,7 @@ export default function ZhiHuiJiDock() {
   const [pending, setPending] = useState<ZhiPendingChange[]>([]);
   const [task, setTask] = useState<ZhiTask | null>(null);
   const [status, setStatus] = useState("");
+  const [autoImage, setAutoImage] = useState(false);
   const [preview, setPreview] = useState<{ url: string; charId?: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
@@ -243,8 +244,8 @@ export default function ZhiHuiJiDock() {
       }
       let visible = stripSystemQueries(lastRaw) || lastRaw;
       const subject = pageChar || characters[0];
-      if (subject && visible.trim() && cfg.apiKey && !allImages.length) {
-        setStatus(`插图中 · ${subject.name}`);
+      if (autoImage && subject && visible.trim() && cfg.apiKey && !allImages.length) {
+        setStatus(`出图中 · ${subject.name}`);
         try {
           const illus = await illustrateReply({
             character: subject,
@@ -256,9 +257,10 @@ export default function ZhiHuiJiDock() {
             signal: ac.signal,
             source: "陪玩姬",
           });
-          if (illus.body) visible = illus.body;
+          lastCharId = subject.id;
+          for (const url of illus.urls) allImages.push({ url, characterId: subject.id });
         } catch (e) {
-          ping(e instanceof Error ? e.message : "插图失败");
+          ping(e instanceof Error ? e.message : "出图失败");
         }
       }
       setThread((t) => {
@@ -615,7 +617,15 @@ export default function ZhiHuiJiDock() {
                       {tab === "types" && <RequestTypesPanel onPing={ping} />}
                       {tab === "features" && (
                         <>
-                          <p className="text-neutral-500">先看技能列表再决定调哪一个。读立刻执行；写只出待确认草稿，你点应用才入库。对话回复会按生图预设把插图嵌进正文。</p>
+                          <label className="flex items-center gap-2 text-neutral-300">
+                            <input
+                              type="checkbox"
+                              checked={autoImage}
+                              onChange={(e) => setAutoImage(e.target.checked)}
+                            />
+                            回复后用生图预设出图（默认关）
+                          </label>
+                          <p className="text-neutral-500">先看技能列表再决定调哪一个。读立刻执行；写只出待确认草稿，你点应用才入库。</p>
                         </>
                       )}
                     </div>
@@ -642,6 +652,14 @@ export default function ZhiHuiJiDock() {
           {error && panel === "none" && <div className="px-3 text-[11px] text-rose-400">{error}</div>}
           {status && panel === "none" && <div className="px-3 text-[11px] text-fuchsia-300">{status}</div>}
           <div className="p-2 border-t border-neutral-800 flex items-end gap-1">
+            <button
+              type="button"
+              title={autoImage ? "生图开" : "生图关"}
+              className={`w-9 h-9 rounded-full text-sm shrink-0 ${autoImage ? "bg-fuchsia-600 text-white" : "text-neutral-400 hover:bg-white/10"}`}
+              onClick={() => setAutoImage((v) => !v)}
+            >
+              图
+            </button>
             <textarea
               rows={1}
               className="flex-1 bg-[#1c1c20] border border-neutral-700 rounded-2xl px-3 py-2 text-sm resize-none"
