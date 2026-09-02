@@ -985,7 +985,9 @@ export default function CharacterChatDock({
                 );
               })}
               {solo ? (
-                <span className="ml-auto text-[10px] text-neutral-500">你是{voiceName}</span>
+                <span className="ml-auto text-[10px] text-neutral-500">
+                  {session.soloMode === "monologue" ? `输入即是${star.name}的内心` : `你是${voiceName}`}
+                </span>
               ) : (
                 <select
                   className="ml-auto bg-transparent text-[10px] text-neutral-400 max-w-[7rem]"

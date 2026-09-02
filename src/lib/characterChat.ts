@@ -446,21 +446,34 @@ export function buildChatMessages(opts: {
   const bots = solo ? [star] : others.length ? others : [star];
   const charPrimary = bots[0]!;
 
-  const userName = usingTest ? testPersona!.name || "玩家" : solo ? voiceName : pov.name;
+  const userName = usingTest
+    ? testPersona!.name || "玩家"
+    : solo
+      ? soloMode === "monologue"
+        ? `${star.name}的内心`
+        : voiceName
+      : pov.name;
   const charName = bots.map((c) => c.name).join("、");
+  const inner = solo && !usingTest && soloMode === "monologue";
 
   const persona = usingTest
     ? testPersona!.body.trim()
-    : solo
-      ? `${userName}。没有可见身体，不是「${star.name}」，不要替 ${star.name} 说话以外的人设。`
-      : characterCardText(pov, present);
+    : inner
+      ? `这不是另一个人。{{user}} 就是 {{char}}（${star.name}）自己脑中的想法与内心独白，没有独立人格、没有可见身体，也不会开口对 {{char}} 说话。`
+      : solo
+        ? `${userName}。没有可见身体，不是「${star.name}」，不要替 ${star.name} 说话以外的人设。`
+        : characterCardText(pov, present);
 
   const description = bots.map((c) => characterCardText(c, present)).join("\n\n---\n\n");
   const personality = description;
 
   let scenario = scene.trim();
-  if (solo && soloMode === "monologue") {
-    scenario += `\n{{user}} 是 ${star.name} 脑海里的声音。只写 {{char}} 的回应。`;
+  if (inner) {
+    scenario += `
+【内心独白规则】
+玩家每一句输入都是 {{char}} 自己此刻真实在想的事，不是外来声音，也不是第二个人格。
+{{char}} 不会听见「脑内的声音」、不会和自己的想法对话、反驳或应答；那些话就是 {{char}} 的真实念头。
+只写 {{char}} 的神态、行动，以及顺着这些念头流出来的内心戏。不要写成两个人在说话。`;
   } else if (solo && soloMode === "mystery") {
     scenario += `\n{{user}} 是来源不明的神秘声音。{{char}} 用自己的言行回应。`;
   } else if (others.length) {
@@ -504,7 +517,11 @@ export function buildChatMessages(opts: {
   const histMsgs: ChatMessage[] = hist.map((t) => ({
     role: t.role,
     content: finish(
-      t.role === "user" ? `${t.speakerName || userName}: ${t.content}` : `${t.speakerName || charName}: ${unwrapWorldInfo(t.content)}`
+      t.role === "user"
+        ? inner
+          ? `（{{char}}内心）${t.content}`
+          : `${t.speakerName || userName}: ${t.content}`
+        : `${t.speakerName || charName}: ${unwrapWorldInfo(t.content)}`
     ),
   }));
 
@@ -540,7 +557,7 @@ export function buildChatMessages(opts: {
     });
   }
   if (!historyPlaced) out.push(...histMsgs);
-  const userText = finish(`${userName}: ${userLine}`);
+  const userText = finish(inner ? `（{{char}}内心）${userLine}` : `${userName}: ${userLine}`);
   if (imageUrl) {
     out.push({
       role: "user",
