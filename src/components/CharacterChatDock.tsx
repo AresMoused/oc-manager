@@ -448,6 +448,73 @@ export default function CharacterChatDock({
     void send(msgs[userIdx]!.content, msgs.slice(0, userIdx));
   };
 
+  const isStill = (m: ChatTurn) => !!(m.imageUrl && (m.content === "图" || !String(m.content || "").trim()));
+
+  const regenImages = async (asstId: string) => {
+    if (busy) return;
+    if (!cfg.apiKey.trim()) {
+      setError("请先在设置里填写对话 API");
+      setPanel("settings");
+      setSetTab("api");
+      return;
+    }
+    const idx = session.messages.findIndex((m) => m.id === asstId);
+    const msg = session.messages[idx];
+    if (!msg || msg.role !== "assistant") return;
+    const body = displayReply(msg.content);
+    if (!body.trim()) {
+      ping("这条没有正文");
+      return;
+    }
+    const subject = solo ? star : others[0] || host;
+    ping(`出图中 · ${subject.name}`);
+    setBusy(true);
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    try {
+      const hist = session.messages
+        .slice(0, idx + 1)
+        .filter((m) => !isStill(m))
+        .map((m) => `${m.speakerName}: ${m.content}`)
+        .join("\n")
+        .slice(-4000);
+      const illus = await illustrateReply({
+        character: subject,
+        characters,
+        body,
+        history: hist,
+        config: cfg,
+        params,
+        signal: ac.signal,
+        source: "角色对话",
+      });
+      setSession((s) => {
+        const at = s.messages.findIndex((m) => m.id === asstId);
+        if (at < 0) return s;
+        const next = [...s.messages];
+        let i = at + 1;
+        while (i < next.length && isStill(next[i]!)) next.splice(i, 1);
+        const imgs = illus.urls.map((url) => ({
+          id: crypto.randomUUID(),
+          role: "assistant" as const,
+          speakerName: subject.name,
+          speakerId: subject.id,
+          content: "图",
+          imageUrl: url,
+          at: new Date().toISOString(),
+        }));
+        next.splice(at + 1, 0, ...imgs);
+        return { ...s, messages: next };
+      });
+      if (!illus.urls.length) ping("没有解析到图片");
+    } catch (e) {
+      ping(e instanceof Error ? e.message : "出图失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const deleteMsg = (id: string) => {
     setSession((s) => ({ ...s, messages: s.messages.filter((m) => m.id !== id) }));
     if (editingId === id) setEditingId(null);
@@ -657,6 +724,7 @@ export default function CharacterChatDock({
                           onEdit={m.content === "图" ? undefined : () => startEdit(m)}
                           onDelete={() => deleteMsg(m.id)}
                           onRegen={!mine && m.id === lastAsstId ? regenLast : undefined}
+                          onRegenImage={!mine && !isStill(m) && String(m.content || "").trim() ? () => void regenImages(m.id) : undefined}
                         />
                       )}
                       {!mine && pending?.msgId === m.id && (

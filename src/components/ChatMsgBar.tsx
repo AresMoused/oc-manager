@@ -4,11 +4,13 @@ export default function ChatMsgBar({
   onEdit,
   onDelete,
   onRegen,
+  onRegenImage,
   disabled,
 }: {
   onEdit?: () => void;
   onDelete?: () => void;
   onRegen?: () => void;
+  onRegenImage?: () => void;
   disabled?: boolean;
 }) {
   return (
@@ -26,6 +28,11 @@ export default function ChatMsgBar({
       {onRegen && (
         <button type="button" className="text-neutral-500 hover:text-fuchsia-300" onClick={onRegen}>
           重新生成
+        </button>
+      )}
+      {onRegenImage && (
+        <button type="button" className="text-neutral-500 hover:text-sky-300" onClick={onRegenImage}>
+          重新生成图片
         </button>
       )}
     </div>
