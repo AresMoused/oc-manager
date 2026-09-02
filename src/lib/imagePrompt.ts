@@ -354,7 +354,7 @@ export async function writeImagePrompt(opts: {
   }
   const raw = await completeChat({
     config: opts.config,
-    params: { ...opts.params, maxTokens: Math.min(Math.max(opts.params.maxTokens || 2048, 3072), 4096) },
+    params: { ...opts.params, maxTokens: Math.max(opts.params.maxTokens || 4096, 8192) },
     messages,
     signal: opts.signal,
     logSource: opts.source || "出图提示词",
@@ -366,7 +366,14 @@ export async function writeImagePrompt(opts: {
     source: opts.source || "出图提示词",
     kind: "chat",
     title: `writeImagePrompt · ${pack.name}`,
-    payload: { pack: pack.name, prompt: prompt.slice(0, 500), count: inserts.length, raw: raw.slice(0, 1200) },
+    payload: { pack: pack.name, prompt: prompt.slice(0, 500), count: inserts.length, raw: raw.slice(0, 2000) },
   });
+  if (!inserts.length && !fallback.trim()) {
+    throw new Error(
+      raw.trim()
+        ? "生图预设有回复，但没解析到 <image1> / image###。打开日志看 reply。"
+        : "生图预设空回复。推理模型常把字写在 reasoning 里或把 token 用完。已记下 reasoning/finish；可把 max tokens 调到 8192，或换非推理模型，或关掉流式。"
+    );
+  }
   return { prompt, raw, packName: pack.name, inserts };
 }

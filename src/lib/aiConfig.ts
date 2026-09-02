@@ -289,9 +289,16 @@ export async function completeChat(opts: {
     }
 
     let text = "";
+    let reasoning = "";
+    let finish = "";
+    let usage: unknown = null;
     if (!config.stream) {
       const data = await res.json();
-      text = data.choices?.[0]?.message?.content || "";
+      const msg = data.choices?.[0]?.message || {};
+      text = String(msg.content || "");
+      reasoning = String(msg.reasoning_content || msg.reasoning || "");
+      finish = String(data.choices?.[0]?.finish_reason || "");
+      usage = data.usage || null;
     } else {
       const reader = res.body?.getReader();
       if (!reader) throw new Error("无法读取流式响应");
@@ -311,14 +318,21 @@ export async function completeChat(opts: {
           if (payload === "[DONE]") continue;
           try {
             const json = JSON.parse(payload);
-            const delta =
-              json.choices?.[0]?.delta?.content ||
-              json.choices?.[0]?.message?.content ||
+            const choice = json.choices?.[0] || {};
+            const delta = choice.delta || {};
+            const piece = delta.content || choice.message?.content || "";
+            const think =
+              delta.reasoning_content ||
+              delta.reasoning ||
+              choice.message?.reasoning_content ||
               "";
-            if (delta) {
-              full += delta;
+            if (piece) {
+              full += piece;
               onDelta?.(full);
             }
+            if (think) reasoning += think;
+            if (choice.finish_reason) finish = String(choice.finish_reason);
+            if (json.usage) usage = json.usage;
           } catch {
             /* skip */
           }
@@ -326,11 +340,16 @@ export async function completeChat(opts: {
       }
       text = full;
     }
+    if (!text.trim() && reasoning.trim()) text = reasoning;
     log("chat", {
       model: config.model,
       ms: Date.now() - started,
       messages: slim,
       reply: text,
+      reasoning: reasoning && reasoning !== text ? reasoning.slice(0, 4000) : undefined,
+      finish,
+      usage,
+      empty: !text.trim(),
     });
     return text;
   } catch (e) {
