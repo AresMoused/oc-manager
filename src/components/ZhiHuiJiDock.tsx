@@ -9,6 +9,7 @@ import {
   type ChatTurn,
   APPLY_INSTRUCTION,
   extractApplyPatches,
+  isStillTurn,
   loadChatApiConfig,
   loadChatParams,
   loadChatPreset,
@@ -16,6 +17,7 @@ import {
   saveChatApiConfig,
   saveChatParams,
   saveChatPreset,
+  spliceStills,
 } from "@/lib/characterChat";
 import {
   defaultZhiPersona,
@@ -258,17 +260,9 @@ export default function ZhiHuiJiDock() {
             params,
             signal: ac.signal,
             source: "陪玩姬",
-            onProgress: (urls) => {
-              setThread((t) => ({
-                ...t,
-                messages: t.messages.map((m) => (m.id === asstId ? { ...m, imageUrls: urls } : m)),
-              }));
-            },
+            onProgress: (urls) => putStills(asstId, urls, subject.name, subject.id),
           });
-          setThread((t) => ({
-            ...t,
-            messages: t.messages.map((m) => (m.id === asstId ? { ...m, imageUrls: illus.urls } : m)),
-          }));
+          putStills(asstId, illus.urls, subject.name, subject.id);
         } catch (e) {
           ping(e instanceof Error ? e.message : "出图失败");
         }
@@ -322,7 +316,14 @@ export default function ZhiHuiJiDock() {
     void send(msgs[userIdx]!.content, msgs.slice(0, userIdx));
   };
 
-  const isStill = (m: ChatTurn) => !!(m.imageUrl && (m.content === "图" || !String(m.content || "").trim()));
+  const isStill = isStillTurn;
+
+  const putStills = (asstId: string, urls: string[], speakerName: string, speakerId?: string) => {
+    setThread((t) => ({
+      ...t,
+      messages: spliceStills(t.messages, asstId, urls, { speakerName, speakerId }),
+    }));
+  };
 
   const regenImages = async (asstId: string) => {
     if (busy) return;
@@ -367,27 +368,9 @@ export default function ZhiHuiJiDock() {
         params,
         signal: ac.signal,
         source: "陪玩姬",
-        onProgress: (urls) => {
-          setThread((t) => ({
-            ...t,
-            messages: t.messages.map((m) => (m.id === asstId ? { ...m, imageUrls: urls } : m)),
-          }));
-        },
+        onProgress: (urls) => putStills(asstId, urls, subject.name, subject.id),
       });
-      setThread((t) => {
-        const at = t.messages.findIndex((m) => m.id === asstId);
-        if (at < 0) return t;
-        const cleaned: ChatTurn[] = [];
-        for (let i = 0; i < t.messages.length; i++) {
-          const m = t.messages[i]!;
-          if (i > at && isStill(m)) {
-            const between = t.messages.slice(at + 1, i);
-            if (between.every(isStill)) continue;
-          }
-          cleaned.push(m.id === asstId ? { ...m, imageUrls: illus.urls } : m);
-        }
-        return { ...t, messages: cleaned };
-      });
+      putStills(asstId, illus.urls, subject.name, subject.id);
       ping(illus.urls.length ? `已插入 ${illus.urls.length} 张` : "没有解析到图片");
     } catch (e) {
       ping(e instanceof Error ? e.message : "出图失败");
@@ -585,18 +568,6 @@ export default function ZhiHuiJiDock() {
                         ) : (
                           <ChatHtml raw={m.content} regexes={preset?.regexes} />
                         )}
-                        {(m.imageUrls || []).map((url) => (
-                          <ChatImage
-                            key={url}
-                            url={url}
-                            canSave={!!(pageChar || characters[0]) && !onShare}
-                            onPreview={() => setPreview({ url, charId: m.speakerId || pageChar?.id })}
-                            onSave={() => {
-                              const id = m.speakerId || pageChar?.id || characters[0]?.id;
-                              if (id) void saveToGallery(url, id);
-                            }}
-                          />
-                        ))}
                       </div>
                       {editing ? (
                         <div className="flex gap-1.5 mt-1 text-[10px]">

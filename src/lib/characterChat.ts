@@ -44,6 +44,8 @@ export interface ChatTurn {
   content: string;
   imageUrl?: string;
   imageUrls?: string[];
+  /** 这张图属于哪一条正文（重出图插在该条后面）。 */
+  imageOf?: string;
   at: string;
   summarized?: boolean;
 }
@@ -212,6 +214,48 @@ export function emptySession(hostId: string): ChatSession {
     summaries: [],
     updatedAt: new Date().toISOString(),
   };
+}
+
+export function isStillTurn(m: ChatTurn): boolean {
+  return !!(m.imageUrl && (m.content === "图" || !String(m.content || "").trim()) && !m.imageUrls?.length);
+}
+
+/** 把生成的图插到指定正文后面；同一条的旧图先撤掉。 */
+export function spliceStills(
+  messages: ChatTurn[],
+  asstId: string,
+  urls: string[],
+  info: { speakerName: string; speakerId?: string }
+): ChatTurn[] {
+  const at = messages.findIndex((m) => m.id === asstId);
+  if (at < 0) return messages;
+  const kept: ChatTurn[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!;
+    if (m.id === asstId) {
+      kept.push({ ...m, imageUrls: urls });
+      continue;
+    }
+    if (m.imageOf === asstId) continue;
+    if (i > at && isStillTurn(m)) {
+      const between = messages.slice(at + 1, i);
+      if (between.every((x) => isStillTurn(x) || x.imageOf === asstId)) continue;
+    }
+    kept.push(m);
+  }
+  const at2 = kept.findIndex((m) => m.id === asstId);
+  if (at2 < 0) return kept;
+  const stills: ChatTurn[] = urls.map((url) => ({
+    id: `img-${asstId}-${url.slice(-12)}`,
+    role: "assistant",
+    speakerName: info.speakerName,
+    speakerId: info.speakerId,
+    content: "图",
+    imageUrl: url,
+    imageOf: asstId,
+    at: new Date().toISOString(),
+  }));
+  return [...kept.slice(0, at2 + 1), ...stills, ...kept.slice(at2 + 1)];
 }
 
 export function parseSillyTavernPreset(raw: string): ChatPresetFile {

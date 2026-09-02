@@ -17,6 +17,7 @@ import {
   emptySession,
   extractApplyPatches,
   fieldsFromPatch,
+  isStillTurn,
   listChatThreads,
   loadChatApiConfig,
   loadChatParams,
@@ -31,6 +32,7 @@ import {
   saveChatPreset,
   saveChatSession,
   saveTestPersona,
+  spliceStills,
   toTimelineEvent,
   unsummarizedUserCount,
   type TestPersona,
@@ -130,6 +132,8 @@ export default function CharacterChatDock({
   const logRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLInputElement>(null);
   const pinScrollRef = useRef(false);
+  const readyRef = useRef(false);
+  const busyRef = useRef(false);
   const storeId = sessionKey || host.id;
 
   const worldMates = useMemo(() => {
@@ -140,6 +144,7 @@ export default function CharacterChatDock({
   const refreshThreads = (hostId: string) => setThreads(listChatThreads(hostId));
 
   useEffect(() => {
+    if (busyRef.current) return;
     setPreset(loadChatPreset());
     setTestPersona(loadTestPersona());
     const saved = loadChatSession(storeId);
@@ -149,12 +154,14 @@ export default function CharacterChatDock({
     setSession(s);
     refreshThreads(storeId);
     setPanel("none");
-  }, [storeId, localOnly, canEditCard]);
+    readyRef.current = true;
+  }, [storeId]);
 
   useEffect(() => {
-    saveChatSession(session);
-    refreshThreads(session.hostId);
-  }, [session]);
+    if (!readyRef.current) return;
+    saveChatSession({ ...session, hostId: storeId });
+    refreshThreads(storeId);
+  }, [session, storeId]);
 
   useEffect(() => {
     if (pinScrollRef.current) return;
@@ -394,19 +401,9 @@ export default function CharacterChatDock({
             params,
             signal: ac.signal,
             source: "角色对话",
-            onProgress: (urls) => {
-              setSession((s) => ({
-                ...s,
-                messages: s.messages.map((m) => (m.id === asstId ? { ...m, imageUrls: urls } : m)),
-              }));
-            },
+            onProgress: (urls) => putStills(asstId, urls, subject.name, subject.id),
           });
-          if (illus.urls.length) {
-            setSession((s) => ({
-              ...s,
-              messages: s.messages.map((m) => (m.id === asstId ? { ...m, imageUrls: illus.urls } : m)),
-            }));
-          }
+          putStills(asstId, illus.urls, subject.name, subject.id);
         } catch (e) {
           ping(e instanceof Error ? e.message : "出图失败");
         }
@@ -445,7 +442,18 @@ export default function CharacterChatDock({
     void send(msgs[userIdx]!.content, msgs.slice(0, userIdx));
   };
 
-  const isStill = (m: ChatTurn) => !!(m.imageUrl && (m.content === "图" || !String(m.content || "").trim()));
+  const isStill = isStillTurn;
+
+  const putStills = (asstId: string, urls: string[], speakerName: string, speakerId?: string) => {
+    setSession((s) => {
+      const next = spliceStills(s.messages, asstId, urls, { speakerName, speakerId });
+      const n = { ...s, hostId: storeId, messages: next };
+      try {
+        saveChatSession(n);
+      } catch { /* quota */ }
+      return n;
+    });
+  };
 
   const regenImages = async (asstId: string) => {
     if (busy) return;
@@ -466,6 +474,7 @@ export default function CharacterChatDock({
     const subject = solo ? star : others[0] || host;
     ping(`出图中 · ${subject.name}`);
     setBusy(true);
+    busyRef.current = true;
     pinScrollRef.current = true;
     abortRef.current?.abort();
     const ac = new AbortController();
@@ -486,32 +495,15 @@ export default function CharacterChatDock({
         params,
         signal: ac.signal,
         source: "角色对话",
-        onProgress: (urls) => {
-          setSession((s) => ({
-            ...s,
-            messages: s.messages.map((m) => (m.id === asstId ? { ...m, imageUrls: urls } : m)),
-          }));
-        },
+        onProgress: (urls) => putStills(asstId, urls, subject.name, subject.id),
       });
-      setSession((s) => {
-        const at = s.messages.findIndex((m) => m.id === asstId);
-        if (at < 0) return s;
-        const cleaned: ChatTurn[] = [];
-        for (let i = 0; i < s.messages.length; i++) {
-          const m = s.messages[i]!;
-          if (i > at && isStill(m)) {
-            const between = s.messages.slice(at + 1, i);
-            if (between.every(isStill)) continue;
-          }
-          cleaned.push(m.id === asstId ? { ...m, imageUrls: illus.urls } : m);
-        }
-        return { ...s, messages: cleaned };
-      });
+      putStills(asstId, illus.urls, subject.name, subject.id);
       ping(illus.urls.length ? `已插入 ${illus.urls.length} 张` : "没有解析到图片");
     } catch (e) {
       ping(e instanceof Error ? e.message : "出图失败");
     } finally {
       pinScrollRef.current = false;
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -715,15 +707,6 @@ export default function CharacterChatDock({
                         ) : (
                           <ChatHtml raw={m.content} regexes={preset?.regexes} />
                         )}
-                        {(m.imageUrls || []).map((url) => (
-                          <ChatImage
-                            key={url}
-                            url={url}
-                            canSave={canEditCard && !localOnly}
-                            onPreview={() => setPreview({ url, charId: m.speakerId })}
-                            onSave={() => void saveToGallery(url, m.speakerId)}
-                          />
-                        ))}
                       </div>
                       {editing ? (
                         <div className="flex gap-1.5 mt-1 text-[10px]">
