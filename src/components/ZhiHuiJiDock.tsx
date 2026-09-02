@@ -231,6 +231,7 @@ export default function ZhiHuiJiDock() {
           onGoto: (path) => router.push(path),
           logSource: "陪玩姬",
           lastUserLine: text,
+          lastAssistantLine: stripSystemQueries(raw) || raw,
           preferCharacter: pageChar,
           worlds,
           lore,
@@ -252,8 +253,9 @@ export default function ZhiHuiJiDock() {
             const job = await generateCharacterStill(subject, "", ac.signal, "陪玩姬", {
               config: cfg,
               params,
-              history: thread.messages.map((m) => `${m.role}: ${m.content}`).join("\n").slice(-4000),
+              history: `${thread.messages.map((m) => `${m.role}: ${m.content}`).join("\n")}\nassistant: ${lastRaw}`.slice(-4000),
               userLine: text,
+              body: stripSystemQueries(lastRaw) || lastRaw,
               characters,
             });
             lastCharId = subject.id;

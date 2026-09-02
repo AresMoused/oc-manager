@@ -131,6 +131,7 @@ export type ZhiToolCtx = {
   onGoto?: (path: string) => void;
   logSource?: string;
   lastUserLine?: string;
+  lastAssistantLine?: string;
   preferCharacter?: Character;
   selfCharacter?: Character;
   canWrite?: boolean;
@@ -271,6 +272,7 @@ export async function runQueries(
               characters: ctx.characters,
               extra,
               scene: extra,
+              body: ctx.lastAssistantLine || "",
               history: ctx.historyText,
               userLine: ctx.lastUserLine || extra,
               config: ctx.ai.config,

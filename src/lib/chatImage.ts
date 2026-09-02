@@ -27,6 +27,8 @@ export async function generateCharacterStill(
     params: AiModelParams;
     history?: string;
     userLine?: string;
+    /** 刚生成的角色回复，填进绘图预设的「正文」。 */
+    body?: string;
     characters?: Character[];
   }
 ): Promise<{ urls: string[]; seed: number; prompt: string }> {
@@ -38,8 +40,9 @@ export async function generateCharacterStill(
       characters: llm.characters || [c],
       extra,
       scene: extra,
+      body: llm.body || "",
       history: llm.history,
-      userLine: llm.userLine || extra,
+      userLine: llm.userLine || "",
       config: llm.config,
       params: llm.params,
       signal,

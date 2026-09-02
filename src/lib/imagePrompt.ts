@@ -254,10 +254,13 @@ function packMessages(pack: ContextPack, vars: Record<string, string>): { messag
     衣服信息: vars.衣服信息 || vars.通用服装启用列表 || "",
     服装启用列表: vars.通用服装启用列表 || "",
     通用服装启用列表: vars.通用服装启用列表 || "",
+    需要配置插图的正文: vars.正文 || "",
+    参考资料: vars.上下文 || "",
+    可用绘图角色列表: vars.角色启用列表 || "",
   };
   const source = pack.entries.filter((e) => e.enabled);
   const hadSlot = source.some((e) =>
-    /<角色信息>|<衣服信息>|<角色启用列表>|<衣服启用列表>|\{\{角色启用列表\}\}|\{\{通用角色启用列表\}\}|\{\{通用服装启用列表\}\}|\{\{衣服信息\}\}|\{\{角色信息\}\}/.test(
+    /<角色信息>|<衣服信息>|<角色启用列表>|<需要配置插图的正文>|<参考资料>|\{\{角色启用列表\}\}|\{\{通用角色启用列表\}\}|\{\{通用服装启用列表\}\}|\{\{正文\}\}/.test(
       e.content
     )
   );
@@ -273,6 +276,8 @@ export async function writeImagePrompt(opts: {
   characters?: Character[];
   extra?: string;
   scene?: string;
+  /** 要插图的正文：必须是刚生成的回复，不要用玩家输入。 */
+  body?: string;
   history?: string;
   userLine?: string;
   config: AiApiConfig;
@@ -295,10 +300,13 @@ export async function writeImagePrompt(opts: {
   const pack = packForImage();
   const charBlock = characterListBlock(focus);
   const outfitBlock = outfitListBlock(focus);
+  const body = (opts.body || "").trim();
   const vars: Record<string, string> = {
     上下文: opts.history || "",
-    正文: opts.scene || opts.extra || opts.userLine || "",
+    正文: body,
+    场景: opts.scene || "",
     用户需求: opts.userLine || opts.extra || "",
+    世界书触发: "",
     角色启用列表: charBlock,
     通用角色启用列表: charBlock,
     角色信息: charBlock,

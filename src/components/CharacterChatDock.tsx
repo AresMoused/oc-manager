@@ -350,6 +350,7 @@ export default function CharacterChatDock({
           onStatus: () => {},
           logSource: "角色对话",
           lastUserLine: text,
+          lastAssistantLine: visible,
           preferCharacter: solo ? star : others[0] || host,
           selfCharacter: solo ? star : pov,
           canWrite: canEditCard && !localOnly,
@@ -382,8 +383,12 @@ export default function CharacterChatDock({
           const job = await generateCharacterStill(subject, session.scene, ac.signal, "角色对话", {
             config: cfg,
             params,
-            history: nextMsgs.map((m) => `${m.speakerName}: ${m.content}`).join("\n").slice(-4000),
+            history: [...nextMsgs, { speakerName: asstName, content: visible }]
+              .map((m) => `${m.speakerName}: ${m.content}`)
+              .join("\n")
+              .slice(-4000),
             userLine: text,
+            body: displayReply(visible),
             characters,
           });
           setSession((s) => ({
