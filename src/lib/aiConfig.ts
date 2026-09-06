@@ -100,7 +100,7 @@ face / upperSfw / fullSfw / upperNsfw / fullNsfw 各 {front, back}
 outfits: 1-4 套 [{id, nameCN, nameEN, upper:{front,back}, full:{front,back}}]
 - id 用英文下划线，如 Char_daily
 - upper=上半身服装，full=下半身/裙摆/鞋
-- 调用名 nameEN 供宏 \\${"name":"Name","upperBody":"visible","lowerBody":"visible"}$
+- 调用名 nameEN 供宏 \${"name":"Name","upperBody":"visible","lowerBody":"visible"}$
 activeOutfitId 填默认那套 id
 prompts: [{label,text}] 至少一条「角色」外观快照（1girl/1boy + 种族 + 发瞳）
 
