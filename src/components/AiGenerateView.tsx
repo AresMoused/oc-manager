@@ -114,10 +114,10 @@ export default function AiGenerateView() {
     } finally { setGenerating(false); }
   };
 
-  const buildCharacterFromOutput = useCallback((): Partial<Character> => {
+  const buildCharacterFromOutput = useCallback((): Partial<Character> | null => {
     const parsed = parseCharacterJson(output);
     const base = defaultCharacter();
-    if (!parsed) return { ...base, name: newCharName.trim() || "AI 角色", story: output };
+    if (!parsed) return null;
     const mapBipolar = (arr: unknown, fb: BipolarSliderItem[]) =>
       Array.isArray(arr) ? (arr as BipolarSliderItem[]).map((t) => ({
         id: t.id || newId(), leftLabel: t.leftLabel || "左", rightLabel: t.rightLabel || "", value: Number(t.value) || 50,
@@ -194,7 +194,7 @@ export default function AiGenerateView() {
       birthplace: String(parsed.birthplace || ""),
       world: String(parsed.world || ""),
       sheetRole: parsed.sheetRole === "npc" ? "npc" : "pc",
-      story: String(parsed.story || output),
+      story: String(parsed.story || ""),
       traits,
       combat,
       preferences,
@@ -210,11 +210,20 @@ export default function AiGenerateView() {
 
   const handleImportCard = async () => {
     if (!output.trim()) { showToast("没有生成内容"); return; }
+    const parsed = parseCharacterJson(output);
+    if (!parsed) {
+      showToast("JSON 无法解析，请先修正生成结果");
+      return;
+    }
     const w = worlds.find((x) => x.id === targetWorldId);
     const partial = buildCharacterFromOutput();
+    if (!partial) {
+      showToast("JSON 无法解析，请先修正生成结果");
+      return;
+    }
     try {
       await addCharacter({ ...partial, name: newCharName.trim() || partial.name || "AI 角色", world: w?.name || "" });
-      setImportOpen(false); showToast("已导入为角色卡");
+      setImportOpen(false); showToast(`已导入「${newCharName.trim() || partial.name || "AI 角色"}」`);
     } catch (e) {
       showToast(e instanceof Error ? e.message : "导入失败");
     }
@@ -375,7 +384,7 @@ export default function AiGenerateView() {
           <section className="bg-[#141414] border border-neutral-800 rounded-2xl p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <h2 className="text-sm font-semibold text-neutral-200">生成结果</h2>
-              <span className="text-xs text-neutral-500">{generating ? "生成中…" : "可直接修改下方内容后再导入"}</span>
+              <span className="text-xs text-neutral-500">{generating ? "生成中…" : (parseCharacterJson(output) ? "已识别角色卡 JSON" : "可直接修改下方内容后再导入")}</span>
             </div>
             <textarea
               className="w-full min-h-[220px] bg-[#0a0a0a] border border-neutral-700 focus:border-purple-500 rounded-xl px-4 py-3 text-sm font-mono outline-none text-neutral-200 resize-y"
