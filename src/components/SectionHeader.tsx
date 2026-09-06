@@ -7,6 +7,7 @@ interface Props {
   onAdd?: () => void;
   children?: ReactNode;
   showKebab?: boolean;
+  onBarClick?: () => void;
 }
 
 export default function SectionHeader({
@@ -14,13 +15,18 @@ export default function SectionHeader({
   onAdd,
   children,
   showKebab = false,
+  onBarClick,
 }: Props) {
   return (
-    <div className="flex items-center justify-between bg-gradient-to-r from-[#6b21a8] to-[#7c3aed] px-3 py-1.5 rounded-t-md gap-2">
+    <div
+      className={`flex items-center justify-between bg-gradient-to-r from-[#6b21a8] to-[#7c3aed] px-3 py-1.5 rounded-t-md gap-2 ${onBarClick ? "cursor-pointer select-none" : ""}`}
+      onClick={onBarClick}
+      role={onBarClick ? "button" : undefined}
+    >
       <div className="text-sm font-semibold text-white tracking-wide min-w-0 truncate">
         {title}
       </div>
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
         {children}
         {onAdd && (
           <button

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { AppearanceProfile, OutfitPreset, StoredPrompt, ViewLayer } from "@/lib/types";
 import {
+  composeAppearancePrompt,
   importZhiCharacterJson,
   normalizeAppearance,
 } from "@/lib/appearance";
@@ -16,6 +17,8 @@ interface Props {
   characterName?: string;
   editable?: boolean;
 }
+
+type ComboKind = "sfw-half" | "sfw-full" | "nsfw-half" | "nsfw-full";
 
 export default function PromptBank({
   prompts,
@@ -31,8 +34,11 @@ export default function PromptBank({
   const [label, setLabel] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [toast, setToast] = useState("");
+  const [copyOutfitId, setCopyOutfitId] = useState("");
+  const [openSnaps, setOpenSnaps] = useState<Record<string, boolean>>({});
   const app = normalizeAppearance(appearance);
   const canLook = !!onAppearanceChange;
+  const outfitId = copyOutfitId || app.activeOutfitId || app.outfits[0]?.id || "";
 
   const ping = (m: string) => {
     setToast(m);
@@ -67,6 +73,19 @@ export default function PromptBank({
     }
   };
 
+  const comboPrompt = (kind: ComboKind) => {
+    const nsfw = kind.startsWith("nsfw");
+    const half = kind.endsWith("half");
+    return composeAppearancePrompt(app, {
+      angle: "front",
+      upper: nsfw ? "nsfw" : "sfw",
+      lower: half ? "hidden" : nsfw ? "nsfw" : "sfw",
+      outfitHint: nsfw ? "" : outfitId,
+      skipOutfit: nsfw,
+      extra: half ? "upper body" : "full body",
+    });
+  };
+
   const importFile = async (file: File) => {
     try {
       const { appearance: next, importedName } = importZhiCharacterJson(
@@ -81,17 +100,24 @@ export default function PromptBank({
     }
   };
 
+  const combos = useMemo(
+    () =>
+      [
+        ["sfw-half", "SFW 半身"],
+        ["sfw-full", "SFW 全身"],
+        ["nsfw-half", "NSFW 半身"],
+        ["nsfw-full", "NSFW 全身"],
+      ] as const,
+    []
+  );
+
   return (
     <div className="mb-4">
-      <SectionHeader title="外观 / 提示词" onAdd={editable && open && tab === "snap" ? () => setShowForm(true) : undefined}>
-        <button
-          type="button"
-          className="px-2 h-5 rounded bg-white/20 hover:bg-white/30 text-white text-[11px]"
-          onClick={() => setOpen((v) => !v)}
-        >
-          {open ? "收起" : "展开"}
-        </button>
-      </SectionHeader>
+      <SectionHeader
+        title={`外观 / 提示词${open ? "" : " · 收起"}`}
+        onBarClick={() => setOpen((v) => !v)}
+        onAdd={editable && open && tab === "snap" ? () => setShowForm(true) : undefined}
+      />
       {open && (
       <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md">
         <div className="flex text-[11px] border-b border-neutral-800">
@@ -126,10 +152,39 @@ export default function PromptBank({
           )}
         </div>
         <div className="p-3 space-y-2">
+          <div className="border border-neutral-800 rounded-lg p-2 space-y-2 bg-[#0c0c0c]">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-neutral-400">快速复制组合提示词</span>
+              <select
+                className="bg-neutral-900 border border-neutral-700 rounded px-2 py-0.5 text-[11px] text-neutral-200 max-w-[12rem]"
+                value={outfitId}
+                onChange={(e) => setCopyOutfitId(e.target.value)}
+                title="SFW 组合用的服装"
+              >
+                {!app.outfits.length && <option value="">无服装</option>}
+                {app.outfits.map((o) => (
+                  <option key={o.id} value={o.id}>{o.nameCN || o.nameEN || o.id}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              {combos.map(([k, lab]) => (
+                <button
+                  key={k}
+                  type="button"
+                  className="px-2 py-1.5 rounded border border-neutral-700 text-[11px] text-neutral-200 hover:border-purple-500 hover:text-purple-200"
+                  onClick={() => void copy(comboPrompt(k))}
+                >
+                  {lab}{k.startsWith("sfw") && outfitId ? ` · ${app.outfits.find((o) => o.id === outfitId)?.nameCN || ""}` : ""}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-neutral-600">SFW 带所选服装；NSFW 不带服装，只用裸层。</p>
+          </div>
           {tab === "look" && canLook && (
             <>
               <p className="text-[11px] text-neutral-500">
-                和智绘姬一样：脸/上身/下身与服装分开。陪玩姬生图会按当前服装组合。
+                和智绘姬一样：脸/上身/下身与服装分开。点整条标题可收起。
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="中文名" value={app.nameCN} disabled={!editable} onChange={(v) => setApp({ ...app, nameCN: v })} />
@@ -205,7 +260,7 @@ export default function PromptBank({
           )}
           {tab === "snap" && (
             <>
-              <p className="text-[11px] text-neutral-500">旧的整段提示词快照，仍可供抽卡姬点选。分层外观请用上面两个页签。</p>
+              <p className="text-[11px] text-neutral-500">点整条快照可展开/收起。旧快照仍可供抽卡姬点选。</p>
               {showForm && editable && (
                 <div className="p-3 bg-[#0a0a0a] border border-purple-800/40 rounded-lg space-y-2 mb-2">
                   <input className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-sm" placeholder="标签（可选）" value={label} onChange={(e) => setLabel(e.target.value)} />
@@ -219,20 +274,33 @@ export default function PromptBank({
               {prompts.length === 0 ? (
                 <p className="text-neutral-600 text-sm text-center py-4">暂无快照</p>
               ) : (
-                prompts.map((p) => (
-                  <div key={p.id} className="group relative border border-neutral-800 rounded-lg p-3 bg-[#0c0c0c]">
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="text-xs text-purple-400 font-medium">{p.label || "提示词"}</span>
-                      <div className="flex gap-1">
-                        <button type="button" onClick={() => void copy(p.text)} className="text-[11px] px-2 py-0.5 rounded border border-neutral-700 text-neutral-400">复制</button>
-                        {editable && (
-                          <button type="button" onClick={() => onChange(prompts.filter((x) => x.id !== p.id))} className="text-[11px] px-2 py-0.5 rounded border border-neutral-700 text-rose-400/80">删除</button>
-                        )}
-                      </div>
+                prompts.map((p) => {
+                  const shown = openSnaps[p.id] === true;
+                  return (
+                    <div key={p.id} className="border border-neutral-800 rounded-lg bg-[#0c0c0c] overflow-hidden">
+                      <button
+                        type="button"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5"
+                        onClick={() => setOpenSnaps((s) => ({ ...s, [p.id]: !shown }))}
+                      >
+                        <span className="text-xs text-purple-400 font-medium truncate">{p.label || "提示词"}</span>
+                        <span className="flex-1 min-w-0 font-mono text-[11px] text-neutral-500 truncate">{shown ? "" : p.text}</span>
+                        <span className="text-[10px] text-neutral-600 shrink-0">{shown ? "收起" : "展开"}</span>
+                      </button>
+                      {shown && (
+                        <div className="px-3 pb-3 space-y-2">
+                          <p className="font-mono text-[11px] text-neutral-400 break-all leading-relaxed">{p.text}</p>
+                          <div className="flex gap-1">
+                            <button type="button" onClick={() => void copy(p.text)} className="text-[11px] px-2 py-0.5 rounded border border-neutral-700 text-neutral-400">复制</button>
+                            {editable && (
+                              <button type="button" onClick={() => onChange(prompts.filter((x) => x.id !== p.id))} className="text-[11px] px-2 py-0.5 rounded border border-neutral-700 text-rose-400/80">删除</button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <p className="font-mono text-[11px] text-neutral-400 break-all leading-relaxed">{p.text}</p>
-                  </div>
-                ))
+                  );
+                })
               )}
             </>
           )}
@@ -282,23 +350,37 @@ function LayerEd({
   onChange: (l: ViewLayer) => void;
   editable: boolean;
 }) {
+  const [open, setOpen] = useState(true);
+  const preview = (layer.front || layer.back || "空").slice(0, 72);
   return (
-    <div className="border border-neutral-800 rounded-lg p-2 space-y-1">
-      <div className="text-[11px] text-neutral-400">{title}</div>
-      <textarea
-        className="w-full min-h-[44px] bg-neutral-900 border border-neutral-700 rounded px-2 py-1 font-mono text-[11px] text-neutral-200"
-        placeholder="正面 tags"
-        disabled={!editable}
-        value={layer.front}
-        onChange={(e) => onChange({ ...layer, front: e.target.value })}
-      />
-      <textarea
-        className="w-full min-h-[36px] bg-neutral-900 border border-neutral-700 rounded px-2 py-1 font-mono text-[11px] text-neutral-300"
-        placeholder="背面 tags（可空，空则用正面）"
-        disabled={!editable}
-        value={layer.back}
-        onChange={(e) => onChange({ ...layer, back: e.target.value })}
-      />
+    <div className="border border-neutral-800 rounded-lg overflow-hidden">
+      <button
+        type="button"
+        className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-white/5"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="text-[11px] text-neutral-300 shrink-0">{title}</span>
+        {!open && <span className="flex-1 min-w-0 font-mono text-[10px] text-neutral-600 truncate">{preview}</span>}
+        <span className="ml-auto text-[10px] text-neutral-600">{open ? "收起" : "展开"}</span>
+      </button>
+      {open && (
+        <div className="px-2 pb-2 space-y-1">
+          <textarea
+            className="w-full min-h-[44px] bg-neutral-900 border border-neutral-700 rounded px-2 py-1 font-mono text-[11px] text-neutral-200"
+            placeholder="正面 tags"
+            disabled={!editable}
+            value={layer.front}
+            onChange={(e) => onChange({ ...layer, front: e.target.value })}
+          />
+          <textarea
+            className="w-full min-h-[36px] bg-neutral-900 border border-neutral-700 rounded px-2 py-1 font-mono text-[11px] text-neutral-300"
+            placeholder="背面 tags（可空，空则用正面）"
+            disabled={!editable}
+            value={layer.back}
+            onChange={(e) => onChange({ ...layer, back: e.target.value })}
+          />
+        </div>
+      )}
     </div>
   );
 }
