@@ -1,0 +1,70 @@
+{
+  "version": 3,
+  "format": "oc-manager-single-character",
+  "exportedAt": "",
+  "character": {
+    "id": "",
+    "name": "",
+    "gender": "",
+    "age": "",
+    "race": "",
+    "height": "",
+    "weight": "",
+    "affiliation": "",
+    "identity": "",
+    "residence": "",
+    "faction": "",
+    "birthplace": "",
+    "avatar": "",
+    "world": "",
+    "sheetRole": "pc",
+    "playerName": "",
+    "story": "",
+    "traits": [
+      { "id": "optimistic", "leftLabel": "乐观", "rightLabel": "悲观", "value": 50 }
+    ],
+    "emotions": [
+      { "id": "extrovert", "leftLabel": "外向", "rightLabel": "内向", "value": 3 }
+    ],
+    "combat": {
+      "experience": 50,
+      "collaboration": 50,
+      "conflict": 50,
+      "intelligence": 50,
+      "adaptability": 50
+    },
+    "happiness": [{ "id": "family", "label": "家庭", "value": 3 }],
+    "preferences": [{ "id": "", "title": "", "content": "" }],
+    "outward": [{ "id": "friendly", "label": "友善", "value": 3 }],
+    "modules": [],
+    "appearance": {
+      "nameCN": "",
+      "nameEN": "",
+      "negative": "",
+      "face": { "front": "", "back": "" },
+      "upperSfw": { "front": "", "back": "" },
+      "fullSfw": { "front": "", "back": "" },
+      "upperNsfw": { "front": "", "back": "" },
+      "fullNsfw": { "front": "", "back": "" },
+      "outfits": [
+        {
+          "id": "daily",
+          "nameCN": "日常",
+          "nameEN": "daily",
+          "upper": { "front": "", "back": "" },
+          "full": { "front": "", "back": "" },
+          "photoPrompt": ""
+        }
+      ],
+      "activeOutfitId": "daily",
+      "photoPrompt": "1girl, solo, looking at viewer"
+    },
+    "prompts": [{ "id": "", "label": "角色", "text": "", "createdAt": "" }],
+    "timeline": [],
+    "relationships": [],
+    "gallery": [],
+    "play": null,
+    "createdAt": "",
+    "updatedAt": ""
+  }
+}

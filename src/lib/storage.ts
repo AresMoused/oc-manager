@@ -136,6 +136,44 @@ export function importCharacters(json: string): Character[] {
   return (data as Character[]).map(normalizeCharacter);
 }
 
+export function orderedCharacter(c: Character): Character {
+  const n = normalizeCharacter(c);
+  return {
+    id: n.id,
+    name: n.name,
+    gender: n.gender,
+    age: n.age,
+    race: n.race,
+    height: n.height,
+    weight: n.weight,
+    affiliation: n.affiliation,
+    identity: n.identity,
+    residence: n.residence,
+    faction: n.faction,
+    birthplace: n.birthplace,
+    avatar: n.avatar,
+    world: n.world,
+    sheetRole: n.sheetRole,
+    playerName: n.playerName,
+    story: n.story,
+    traits: n.traits,
+    emotions: n.emotions,
+    combat: n.combat,
+    happiness: n.happiness,
+    preferences: n.preferences,
+    outward: n.outward,
+    modules: n.modules,
+    appearance: n.appearance,
+    prompts: n.prompts,
+    timeline: n.timeline,
+    relationships: n.relationships,
+    gallery: n.gallery,
+    play: n.play,
+    createdAt: n.createdAt,
+    updatedAt: n.updatedAt,
+  };
+}
+
 /** Single character card export */
 export function exportSingleCharacter(c: Character): string {
   return JSON.stringify(
@@ -143,7 +181,7 @@ export function exportSingleCharacter(c: Character): string {
       version: 3,
       format: "oc-manager-single-character",
       exportedAt: new Date().toISOString(),
-      character: normalizeCharacter(c),
+      character: orderedCharacter(c),
     },
     null,
     2

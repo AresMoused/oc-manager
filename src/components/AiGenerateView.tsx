@@ -14,8 +14,10 @@ import {
 } from "@/lib/aiConfig";
 import {
   BipolarSliderItem, Character, PreferenceItem, defaultCharacter, defaultCombatAxes,
-  defaultModules, SliderModule, RadarModule, TextListModule,
+  defaultModules, SliderModule, RadarModule, TextListModule, BipolarDotItem, DotItem,
+  TimelineEvent, StoredPrompt,
 } from "@/lib/types";
+import { normalizeAppearance } from "@/lib/appearance";
 import { newId, roleLabel, roleColor, parsePresetImport } from "@/lib/aiGenerateHelpers";
 
 export default function AiGenerateView() {
@@ -97,7 +99,9 @@ export default function AiGenerateView() {
       if (!prompt) prompt = "请根据上下文预设与角色设定，生成一份完整的角色卡 JSON。";
       if (refImages.length) prompt += `\n\n[用户附带了 ${refImages.length} 张参考图片，请结合参考风格生成。]`;
       const text = await chatCompletion({
-        config: cfg, params, preset: active, userPrompt: prompt,
+        config: cfg,
+        params: { ...params, maxTokens: Math.max(params.maxTokens || 3000, 8192) },
+        preset: active, userPrompt: prompt,
         signal: ac.signal, onDelta: (t) => setOutput(t),
         logSource: "AI生成角色",
         logTitle: "生成角色卡",
@@ -128,14 +132,52 @@ export default function AiGenerateView() {
       intelligence: Number((parsed.combat as Character["combat"]).intelligence) || 50,
       adaptability: Number((parsed.combat as Character["combat"]).adaptability) || 50,
     } : base.combat;
+    const mapDots = (arr: unknown, fb: DotItem[]): DotItem[] =>
+      Array.isArray(arr)
+        ? (arr as DotItem[]).map((t) => ({
+            id: t.id || newId(),
+            label: t.label || "项",
+            value: Math.max(0, Math.min(5, Number(t.value) || 3)),
+          }))
+        : fb;
+    const mapEmo = (arr: unknown, fb: BipolarDotItem[]): BipolarDotItem[] =>
+      Array.isArray(arr)
+        ? (arr as BipolarDotItem[]).map((t) => ({
+            id: t.id || newId(),
+            leftLabel: t.leftLabel || "左",
+            rightLabel: t.rightLabel || "右",
+            value: Math.max(1, Math.min(5, Number(t.value) || 3)),
+          }))
+        : fb;
     const traits = mapBipolar(parsed.traits, base.traits);
     const preferences = mapPrefs(parsed.preferences);
+    const emotions = mapEmo(parsed.emotions, base.emotions);
+    const happiness = mapDots(parsed.happiness, base.happiness);
+    const outward = mapDots(parsed.outward, base.outward);
     const modules = defaultModules().map((m) => {
       if (m.type === "sliders") return { ...m, items: traits } as SliderModule;
       if (m.type === "radar") return { ...m, axes: defaultCombatAxes(combat) } as RadarModule;
       if (m.type === "text-list") return { ...m, items: preferences } as TextListModule;
       return m;
     });
+    const timeline: TimelineEvent[] = Array.isArray(parsed.timeline)
+      ? (parsed.timeline as TimelineEvent[]).map((t) => ({
+          id: t.id || newId(),
+          date: String(t.date || ""),
+          title: String(t.title || ""),
+          description: String(t.description || ""),
+          importance: t.importance === "major" || t.importance === "critical" ? t.importance : "normal",
+        }))
+      : [];
+    const prompts: StoredPrompt[] = Array.isArray(parsed.prompts)
+      ? (parsed.prompts as StoredPrompt[]).map((p) => ({
+          id: p.id || newId(),
+          label: p.label || "",
+          text: String(p.text || ""),
+          createdAt: p.createdAt || new Date().toISOString(),
+        }))
+      : [];
+    const appearance = parsed.appearance ? normalizeAppearance(parsed.appearance) : base.appearance;
     return {
       ...base,
       name: String(parsed.name || newCharName.trim() || "AI 角色"),
@@ -149,14 +191,19 @@ export default function AiGenerateView() {
       residence: String(parsed.residence || ""),
       faction: String(parsed.faction || ""),
       birthplace: String(parsed.birthplace || ""),
+      world: String(parsed.world || ""),
+      sheetRole: parsed.sheetRole === "npc" ? "npc" : "pc",
       story: String(parsed.story || output),
       traits,
       combat,
       preferences,
-      emotions: [],
-      happiness: [],
-      outward: [],
+      emotions,
+      happiness,
+      outward,
       modules,
+      timeline,
+      prompts,
+      appearance,
     };
   }, [output, newCharName]);
 

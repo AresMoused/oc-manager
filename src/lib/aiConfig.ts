@@ -61,46 +61,116 @@ export const defaultModelParams = (): AiModelParams => ({
 export function defaultCharacterPreset(): ContextPreset {
   const now = new Date().toISOString();
   return {
-    id: "default-oc-design",
-    name: "角色卡设计默认",
+    id: "default-oc-card-v2",
+    name: "OC完整角色卡",
     updatedAt: now,
     entries: [
       {
         id: "sys-1",
         role: "system",
         name: "System",
-        content:
-          "你是一位专业的 TRPG / 原创角色（OC）设定助手。用户会描述角色概念，你需要输出完整的角色卡 JSON。只输出 JSON，不要 markdown 代码块以外的解释。字段：name, gender, age, race, height, weight, affiliation, identity, residence, faction, birthplace, story, traits(数组{leftLabel,rightLabel,value:0-100}，rightLabel可空), preferences(数组{title,content}), combat({experience,collaboration,conflict,intelligence,adaptability} 0-100)。中文填写。",
+        content: `你是 OC Manager 的角色卡写手。用户给概念、参考图或残缺设定，你输出一张可直接导入的角色卡 JSON。
+
+只输出 JSON，不要 markdown 围栏，不要解释，不要思考过程。
+
+根对象可以是角色本身，或 { "version": 3, "format": "oc-manager-single-character", "character": { ... } }。
+
+【必填字段】
+name, gender, age, race, height, weight, affiliation, identity, residence, faction, birthplace, world, sheetRole("pc"|"npc"), story
+
+【性格与模块】中文
+traits: [{id,leftLabel,rightLabel,value:0-100}] 默认轴：乐观/悲观、开放/保守、感性/理性、果断/犹豫、健谈/寡言、冒险/谨慎、随和/挑剔
+emotions: [{id,leftLabel,rightLabel,value:1-5}] 外向/内向、积极/消极、勇敢/胆小、热情/冷漠、勤奋/懒惰、慷慨/吝啬、诚实/虚伪、宽容/苛刻、坚强/脆弱、开朗/忧郁
+happiness: [{id,label,value:1-5}] 家庭、情感、健康、经济、人际、地位、成长、心理、自主
+outward: [{id,label,value:1-5}] 平凡、乐天、平静、高效、友善、稳重
+combat: {experience,collaboration,conflict,intelligence,adaptability} 各 0-100
+preferences: [{title,content}] 2-4 条日常喜好，每条 80-180 字
+timeline: [{date:"YYYY-MM-DD",title,description,importance:"normal"|"major"|"critical"}] 0-3 条经历，标题带人名
+
+【外观 appearance】英文 Danbooru tags，逗号分隔，禁止分号和中文。
+nameCN 中文名；nameEN 小写英文调用名
+face / upperSfw / fullSfw / upperNsfw / fullNsfw 各 {front, back}
+- face: 脸、发、瞳、耳、体型要点
+- upper*: 上半身可见的脸+胸+肩
+- full*: 下半身/全身补充（腿、裙、私处等），没有就空字符串
+- nsfw 层只写比 sfw 多出来的裸露部位（nipples, pussy 等），不要重复整段脸
+outfits: 1-4 套 [{id, nameCN, nameEN, upper:{front,back}, full:{front,back}}]
+- id 用英文下划线，如 Char_daily
+- upper=上半身服装，full=下半身/裙摆/鞋
+- 调用名 nameEN 供宏 \${"name":"Name","upperBody":"visible","lowerBody":"visible"}$
+activeOutfitId 填默认那套 id
+prompts: [{label,text}] 至少一条「角色」外观快照（1girl/1boy + 种族 + 发瞳）
+
+【不要生成】
+id, createdAt, updatedAt, avatar, gallery, modules, relationships, play, photoPrompt
+
+【文风】
+story 用第一人称，800-1600 字，只写经历与性格，不要写死结局。中文。外观 tags 必须英文。`,
         enabled: true,
       },
       {
         id: "ai-1",
         role: "assistant",
         name: "AI回复 1",
-        content: "明白啦！好朋友。很高兴和你合作！那么你有参考资料吗？",
+        content: "明白。给我概念、参考或残缺设定，我只输出完整角色卡 JSON。",
         enabled: true,
       },
       {
-        id: "usr-2",
+        id: "usr-schema",
         role: "user",
-        name: "用户消息 2",
-        content:
-          "************<参考资料>**************** 请根据用户后续给出的设定来设计角色。",
+        name: "格式",
+        content: `输出骨架（填满，不要留说明文字）：
+{
+  "name": "",
+  "gender": "女",
+  "age": "",
+  "race": "",
+  "height": "",
+  "weight": "",
+  "affiliation": "",
+  "identity": "",
+  "residence": "",
+  "faction": "",
+  "birthplace": "",
+  "world": "",
+  "sheetRole": "pc",
+  "story": "",
+  "traits": [{"id":"optimistic","leftLabel":"乐观","rightLabel":"悲观","value":50}],
+  "emotions": [{"id":"extrovert","leftLabel":"外向","rightLabel":"内向","value":3}],
+  "happiness": [{"id":"family","label":"家庭","value":3}],
+  "outward": [{"id":"friendly","label":"友善","value":3}],
+  "combat": {"experience":40,"collaboration":50,"conflict":40,"intelligence":50,"adaptability":50},
+  "preferences": [{"title":"","content":""}],
+  "timeline": [],
+  "prompts": [{"label":"角色","text":"1girl, elf, pointy ears, blue eyes, blonde hair, long hair"}],
+  "appearance": {
+    "nameCN": "",
+    "nameEN": "",
+    "negative": "",
+    "face": {"front":"", "back":""},
+    "upperSfw": {"front":"", "back":""},
+    "fullSfw": {"front":"", "back":""},
+    "upperNsfw": {"front":"", "back":""},
+    "fullNsfw": {"front":"", "back":""},
+    "outfits": [
+      {
+        "id": "daily",
+        "nameCN": "日常",
+        "nameEN": "daily",
+        "upper": {"front":"", "back":""},
+        "full": {"front":"", "back":""}
+      }
+    ],
+    "activeOutfitId": "daily"
+  }
+}`,
         enabled: true,
       },
       {
         id: "ai-2",
         role: "assistant",
         name: "AI回复 2",
-        content: "我了解了。真是个精彩的设定。告诉我怎么描述角色的外貌设定吧。",
-        enabled: true,
-      },
-      {
-        id: "usr-3",
-        role: "user",
-        name: "用户消息 3",
-        content:
-          "有道理。**重要原则：角色设计只描述设定与性格，不要写死剧情结局。**",
+        content: "骨架收到。请给角色概念，我将只输出 JSON。",
         enabled: true,
       },
     ],
@@ -145,10 +215,15 @@ export function saveModelParams(p: AiModelParams) {
 export function loadPresets(): ContextPreset[] {
   if (typeof window === "undefined") return [defaultCharacterPreset()];
   const list = safeParse<ContextPreset[]>(localStorage.getItem(PRESETS_KEY), []);
+  const fresh = defaultCharacterPreset();
   if (!list.length) {
-    const d = defaultCharacterPreset();
-    savePresets([d]);
-    return [d];
+    savePresets([fresh]);
+    return [fresh];
+  }
+  if (!list.some((p) => p.id === fresh.id || p.name === fresh.name)) {
+    const next = [fresh, ...list];
+    savePresets(next);
+    return next;
   }
   return list;
 }
@@ -397,7 +472,11 @@ export function parseCharacterJson(
     .replace(/\s*```$/i, "")
     .trim();
   try {
-    return JSON.parse(cleaned);
+    const obj = JSON.parse(cleaned) as Record<string, unknown>;
+    if (obj && typeof obj.character === "object" && obj.character) {
+      return obj.character as Record<string, unknown>;
+    }
+    return obj;
   } catch {
     /* find object */
   }
