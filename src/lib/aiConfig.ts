@@ -220,12 +220,13 @@ export function loadPresets(): ContextPreset[] {
     savePresets([fresh]);
     return [fresh];
   }
-  if (!list.some((p) => p.id === fresh.id || p.name === fresh.name)) {
-    const next = [fresh, ...list];
+  const rest = list.filter((p) => p.id !== fresh.id && p.id !== "default-oc-design" && p.name !== fresh.name);
+  const kept = list.find((p) => p.id === fresh.id || p.name === fresh.name) || fresh;
+  const next = [kept.id === fresh.id ? kept : fresh, ...rest];
+  if (JSON.stringify(next.map((p) => p.id)) !== JSON.stringify(list.map((p) => p.id))) {
     savePresets(next);
-    return next;
   }
-  return list;
+  return next;
 }
 
 export function savePresets(list: ContextPreset[]) {
@@ -234,8 +235,10 @@ export function savePresets(list: ContextPreset[]) {
 }
 
 export function loadActivePresetId(): string {
-  if (typeof window === "undefined") return "default-oc-design";
-  return localStorage.getItem(ACTIVE_PRESET_KEY) || "default-oc-design";
+  if (typeof window === "undefined") return "default-oc-card-v2";
+  const saved = localStorage.getItem(ACTIVE_PRESET_KEY) || "";
+  if (!saved || saved === "default-oc-design") return "default-oc-card-v2";
+  return saved;
 }
 
 export function saveActivePresetId(id: string) {

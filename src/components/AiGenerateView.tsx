@@ -53,6 +53,7 @@ export default function AiGenerateView() {
     if (!list.length) list = [defaultCharacterPreset()];
     let aid = loadActivePresetId();
     if (!list.find((x) => x.id === aid)) aid = list[0].id;
+    saveActivePresetId(aid);
     setCfg(c); setParams(p); setPresets(list); setActiveId(aid); setReady(true);
   }, []);
 
