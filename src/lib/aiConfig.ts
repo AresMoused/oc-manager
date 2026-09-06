@@ -1,6 +1,9 @@
 /** Browser-local AI API config, params, and context presets */
 
 import { pushDebugLog } from "@/lib/debugLog";
+import { parseCharacterJson } from "@/lib/parseCharacterJson";
+
+export { parseCharacterJson };
 
 export interface AiApiConfig {
   baseUrl: string;
@@ -71,7 +74,7 @@ export function defaultCharacterPreset(): ContextPreset {
         name: "System",
         content: `你是 OC Manager 的角色卡写手。用户给概念、参考图或残缺设定，你输出一张可直接导入的角色卡 JSON。
 
-只输出 JSON，不要 markdown 围栏，不要解释，不要思考过程。
+只输出 JSON，不要 markdown 围栏，不要解释，不要思考过程。JSON 必须合法：禁止用 "a"+"b" 拼接字符串，字符串内换行写成 \\n，不要尾逗号。
 
 根对象可以是角色本身，或 { "version": 3, "format": "oc-manager-single-character", "character": { ... } }。
 
@@ -80,7 +83,7 @@ name, gender, age, race, height, weight, affiliation, identity, residence, facti
 
 【性格与模块】中文
 traits: [{id,leftLabel,rightLabel,value:0-100}] 默认轴：乐观/悲观、开放/保守、感性/理性、果断/犹豫、健谈/寡言、冒险/谨慎、随和/挑剔
-emotions: [{id,leftLabel,rightLabel,value:1-5}] 外向/内向、积极/消极、勇敢/胆小、热情/冷漠、勤奋/懒惰、慷慨/吝啬、诚实/虚伪、宽容/苛刻、坚强/脆弱、开朗/忧郁
+emotions: [{id,leftLabel,rightLabel,value:1-5}] 外向/内向、积极/消极、勇敢/胆小、热情/冷漠、勤奋/懒惰、慷慨/吝丑、诚实/虚伪、宽容/苛刻、坚强/脆弱、开朗/忧郁
 happiness: [{id,label,value:1-5}] 家庭、情感、健康、经济、人际、地位、成长、心理、自主
 outward: [{id,label,value:1-5}] 平凡、乐天、平静、高效、友善、稳重
 combat: {experience,collaboration,conflict,intelligence,adaptability} 各 0-100
@@ -97,7 +100,7 @@ face / upperSfw / fullSfw / upperNsfw / fullNsfw 各 {front, back}
 outfits: 1-4 套 [{id, nameCN, nameEN, upper:{front,back}, full:{front,back}}]
 - id 用英文下划线，如 Char_daily
 - upper=上半身服装，full=下半身/裙摆/鞋
-- 调用名 nameEN 供宏 \${"name":"Name","upperBody":"visible","lowerBody":"visible"}$
+- 调用名 nameEN 供宏 \\${"name":"Name","upperBody":"visible","lowerBody":"visible"}$
 activeOutfitId 填默认那套 id
 prompts: [{label,text}] 至少一条「角色」外观快照（1girl/1boy + 种族 + 发瞳）
 
@@ -465,32 +468,4 @@ export async function chatCompletion(opts: {
     logSource: opts.logSource,
     logTitle: opts.logTitle,
   });
-}
-
-export function parseCharacterJson(
-  text: string
-): Record<string, unknown> | null {
-  const cleaned = text
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-  try {
-    const obj = JSON.parse(cleaned) as Record<string, unknown>;
-    if (obj && typeof obj.character === "object" && obj.character) {
-      return obj.character as Record<string, unknown>;
-    }
-    return obj;
-  } catch {
-    /* find object */
-  }
-  const start = cleaned.indexOf("{");
-  const end = cleaned.lastIndexOf("}");
-  if (start >= 0 && end > start) {
-    try {
-      return JSON.parse(cleaned.slice(start, end + 1));
-    } catch {
-      return null;
-    }
-  }
-  return null;
 }
