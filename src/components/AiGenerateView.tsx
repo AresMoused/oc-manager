@@ -45,6 +45,8 @@ export default function AiGenerateView() {
   const [newCharName, setNewCharName] = useState("");
   const [toast, setToast] = useState("");
   const [editingEntry, setEditingEntry] = useState<ContextEntry | null>(null);
+  const [importing, setImporting] = useState(false);
+  const importBusyRef = useRef(false);
 
   useEffect(() => {
     const c = loadApiConfig();
@@ -209,7 +211,9 @@ export default function AiGenerateView() {
   }, [output, newCharName]);
 
   const handleImportCard = async () => {
+    if (importBusyRef.current) return;
     if (!output.trim()) { showToast("没有生成内容"); return; }
+    if (!targetWorldId) { showToast("请先选择世界"); return; }
     const parsed = parseCharacterJson(output);
     if (!parsed) {
       showToast("JSON 无法解析，请先修正生成结果");
@@ -221,11 +225,19 @@ export default function AiGenerateView() {
       showToast("JSON 无法解析，请先修正生成结果");
       return;
     }
+    importBusyRef.current = true;
+    setImporting(true);
+    setImportOpen(false);
+    showToast("正在导入…");
     try {
       await addCharacter({ ...partial, name: newCharName.trim() || partial.name || "AI 角色", world: w?.name || "" });
-      setImportOpen(false); showToast(`已导入「${newCharName.trim() || partial.name || "AI 角色"}」`);
+      showToast(`已导入「${newCharName.trim() || partial.name || "AI 角色"}」到 ${w?.name || "世界"}`);
     } catch (e) {
+      setImportOpen(true);
       showToast(e instanceof Error ? e.message : "导入失败");
+    } finally {
+      importBusyRef.current = false;
+      setImporting(false);
     }
   };
 
@@ -394,10 +406,10 @@ export default function AiGenerateView() {
               <button type="button" disabled={!output.trim() || generating} onClick={async () => {
                 try { await navigator.clipboard.writeText(output); showToast("已复制"); } catch { showToast("复制失败"); }
               }} className="px-4 py-2 rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800 text-sm disabled:opacity-40">复制</button>
-              <button type="button" disabled={!output.trim() || generating} onClick={() => {
+              <button type="button" disabled={!output.trim() || generating || importing} onClick={() => {
                 setNewCharName(String(parseCharacterJson(output)?.name || "") || "");
                 setImportOpen(true);
-              }} className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium disabled:opacity-40">导入成为角色卡</button>
+              }} className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium disabled:opacity-40">{importing ? "导入中…" : "导入成为角色卡"}</button>
             </div>
           </section>
         )}
@@ -543,14 +555,14 @@ export default function AiGenerateView() {
               <input className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" value={newCharName} onChange={(e) => setNewCharName(e.target.value)} placeholder="可留空，使用 AI 输出中的 name" />
             </div>
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setImportOpen(false)} className="px-4 py-2 text-sm text-neutral-400">取消</button>
-              <button type="button" onClick={handleImportCard} disabled={!charsLoaded || !targetWorldId} className="px-4 py-2 text-sm rounded-lg bg-purple-600 text-white disabled:opacity-40">确认导入</button>
+              <button type="button" onClick={() => setImportOpen(false)} disabled={importing} className="px-4 py-2 text-sm text-neutral-400">取消</button>
+              <button type="button" onClick={handleImportCard} disabled={!charsLoaded || !targetWorldId || importing} className="px-4 py-2 text-sm rounded-lg bg-purple-600 text-white disabled:opacity-40">{importing ? "导入中…" : "确认导入"}</button>
             </div>
           </div>
         </div>
       )}
 
-      {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full bg-white text-black text-sm shadow-lg">{toast}</div>}
+      {toast && <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[90] px-4 py-2 rounded-full bg-white text-black text-sm shadow-lg pointer-events-none">{toast}</div>}
     </div>
   );
 }

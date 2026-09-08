@@ -31,11 +31,15 @@ export function useCharacters() {
         createdAt: now,
         updatedAt: now,
       };
-      const next = [...characters, newChar];
+      let next: Character[] = [];
+      setCharacters((prev) => {
+        next = [...prev, newChar];
+        return next;
+      });
       await flush({ characters: next });
       return newChar.id;
     },
-    [characters, flush]
+    [setCharacters, flush]
   );
 
   const updateCharacter = useCallback(
