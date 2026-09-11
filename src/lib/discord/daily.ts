@@ -177,15 +177,21 @@ export async function runMidnightJob(opts?: {
 }
 
 export function firstMedia(msg: {
-  attachments?: { url: string; content_type?: string; filename?: string }[];
+  attachments?: {
+    url: string;
+    proxy_url?: string;
+    content_type?: string;
+    filename?: string;
+  }[];
   embeds?: {
-    image?: { url?: string };
-    thumbnail?: { url?: string };
+    image?: { url?: string; proxy_url?: string };
+    thumbnail?: { url?: string; proxy_url?: string };
     video?: { url?: string };
   }[];
 }): {
   kind: "image" | "video";
   url: string;
+  proxyUrl?: string;
   filename?: string;
   contentType?: string;
 } | null {
@@ -198,6 +204,7 @@ export function firstMedia(msg: {
       return {
         kind: "video",
         url: a.url,
+        proxyUrl: a.proxy_url,
         filename: a.filename,
         contentType: a.content_type,
       };
@@ -206,6 +213,7 @@ export function firstMedia(msg: {
       return {
         kind: "image",
         url: a.url,
+        proxyUrl: a.proxy_url,
         filename: a.filename,
         contentType: a.content_type,
       };
@@ -213,10 +221,22 @@ export function firstMedia(msg: {
   }
   for (const e of msg.embeds || []) {
     if (e.video?.url) return { kind: "video", url: e.video.url };
-    if (e.image?.url) return { kind: "image", url: e.image.url };
-    if (e.thumbnail?.url) return { kind: "image", url: e.thumbnail.url };
+    const img = e.image?.url || e.thumbnail?.url;
+    const proxy = e.image?.proxy_url || e.thumbnail?.proxy_url;
+    if (img) return { kind: "image", url: img, proxyUrl: proxy };
   }
   return null;
+}
+
+function safeFilename(name: string | undefined, kind: "image" | "video", contentType?: string): string {
+  const raw = (name || "").split(/[/\\]/).pop() || "";
+  const cleaned = raw.replace(/[^\w.\-]+/g, "_").slice(0, 80);
+  if (cleaned && /\.[a-z0-9]{2,5}$/i.test(cleaned)) return cleaned;
+  if (kind === "video") return "video.mp4";
+  if ((contentType || "").includes("gif")) return "image.gif";
+  if ((contentType || "").includes("webp")) return "image.webp";
+  if ((contentType || "").includes("jpeg") || (contentType || "").includes("jpg")) return "image.jpg";
+  return "image.png";
 }
 
 async function downloadForAttach(
@@ -224,15 +244,24 @@ async function downloadForAttach(
   filename: string,
   contentType: string
 ): Promise<{ bytes: Uint8Array; filename: string; contentType: string } | null> {
+  const headers: Record<string, string> = {};
+  const token = process.env.DISCORD_BOT_TOKEN || "";
+  if (token) headers.Authorization = `Bot ${token}`;
   try {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN || ""}` },
-    });
-    if (!res.ok) return null;
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      console.error("download media", res.status, url.slice(0, 120));
+      return null;
+    }
     const buf = new Uint8Array(await res.arrayBuffer());
-    if (buf.byteLength === 0 || buf.byteLength > 8 * 1024 * 1024) return null;
-    return { bytes: buf, filename: filename || "video.mp4", contentType };
-  } catch {
+    if (buf.byteLength === 0 || buf.byteLength > 10 * 1024 * 1024) {
+      console.error("download media size", buf.byteLength);
+      return null;
+    }
+    const type = contentType || res.headers.get("content-type") || "application/octet-stream";
+    return { bytes: buf, filename, contentType: type };
+  } catch (e) {
+    console.error("download media error", e);
     return null;
   }
 }
@@ -249,10 +278,15 @@ export async function ingestSubmission(raw: {
     avatar?: string | null;
     bot?: boolean;
   };
-  attachments?: { url: string; content_type?: string; filename?: string }[];
+  attachments?: {
+    url: string;
+    proxy_url?: string;
+    content_type?: string;
+    filename?: string;
+  }[];
   embeds?: {
-    image?: { url?: string };
-    thumbnail?: { url?: string };
+    image?: { url?: string; proxy_url?: string };
+    thumbnail?: { url?: string; proxy_url?: string };
     video?: { url?: string };
   }[];
 }): Promise<{ ok: boolean; reason?: string; boardMessageId?: string }> {
@@ -276,6 +310,7 @@ export async function ingestSubmission(raw: {
   if (!board) return { ok: false, reason: "no-board" };
   const channelName = await getChannelName(raw.channel_id);
   const authorName = raw.author?.global_name || raw.author?.username || "未知";
+  const filename = safeFilename(media.filename, media.kind, media.contentType);
   const payload: Record<string, unknown> = bulletinPayload({
     authorName,
     authorIcon: raw.author
@@ -290,21 +325,29 @@ export async function ingestSubmission(raw: {
       raw.id
     ),
   });
-  let file:
-    | { bytes: Uint8Array; filename: string; contentType: string }
-    | undefined;
-  if (media.kind === "video") {
-    file =
-      (await downloadForAttach(
-        media.url,
-        media.filename || "video.mp4",
-        media.contentType || "video/mp4"
-      )) || undefined;
-    if (!file) {
-      payload.content = media.url;
-    }
+
+  let file =
+    (await downloadForAttach(
+      media.url,
+      filename,
+      media.contentType || (media.kind === "video" ? "video/mp4" : "image/png")
+    )) ||
+    (media.proxyUrl
+      ? await downloadForAttach(
+          media.proxyUrl,
+          filename,
+          media.contentType || (media.kind === "video" ? "video/mp4" : "image/png")
+        )
+      : null);
+
+  if (file && media.kind === "image") {
+    const embeds = (payload.embeds as Record<string, unknown>[]) || [];
+    if (embeds[0]) embeds[0].image = { url: `attachment://${file.filename}` };
+  } else if (media.kind === "video" && !file) {
+    payload.content = media.url;
   }
-  const posted = await postChannelMessage(board, payload, file);
+
+  const posted = await postChannelMessage(board, payload, file || undefined);
   try {
     await addOwnReaction(board, posted.id, await votingEmoji());
   } catch (e) {

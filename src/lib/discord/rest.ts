@@ -60,10 +60,10 @@ export async function postChannelMessage(
   form.append("payload_json", JSON.stringify(payload));
   form.append(
     "files[0]",
-    new Blob([file.bytes as BlobPart], {
+    new Blob([Buffer.from(file.bytes)], {
       type: file.contentType || "application/octet-stream",
     }),
-    file.filename || "video.mp4"
+    file.filename || "upload.bin"
   );
   const res = await fetch(`${API}/channels/${channelId}/messages`, {
     method: "POST",
