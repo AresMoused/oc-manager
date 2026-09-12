@@ -42,9 +42,26 @@ export async function discordJson<T>(
 export type DiscordMessage = {
   id: string;
   channel_id: string;
+  guild_id?: string;
   content?: string;
-  author?: { id: string; username?: string; bot?: boolean };
-  attachments?: { url: string; content_type?: string; filename?: string }[];
+  author?: {
+    id: string;
+    username?: string;
+    global_name?: string;
+    avatar?: string | null;
+    bot?: boolean;
+  };
+  attachments?: {
+    url: string;
+    proxy_url?: string;
+    content_type?: string;
+    filename?: string;
+  }[];
+  embeds?: {
+    image?: { url?: string; proxy_url?: string };
+    thumbnail?: { url?: string; proxy_url?: string };
+    video?: { url?: string };
+  }[];
   reactions?: { emoji: { name: string | null; id: string | null }; count: number }[];
 };
 

@@ -58,6 +58,49 @@ async function run() {
     heartbeatTimer = setInterval(() => send(1, seq), ms);
   };
 
+  const inflight = new Set<string>();
+
+  const postIngest = async (
+    msg: Record<string, unknown> & { id: string },
+    attempt: number
+  ) => {
+    if (attempt === 0 && inflight.has(msg.id)) return;
+    inflight.add(msg.id);
+    try {
+      const res = await fetch(`${INGEST}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SECRET}`,
+        },
+        body: JSON.stringify(msg),
+      });
+      const body = await res.text();
+      log("ingest", res.status, body.slice(0, 200));
+      let reason = "";
+      try {
+        reason = String((JSON.parse(body) as { reason?: string }).reason || "");
+      } catch {
+        reason = "";
+      }
+      if (
+        attempt < 2 &&
+        (reason === "media-not-ready" || reason === "no-media" || res.status >= 500)
+      ) {
+        inflight.delete(msg.id);
+        setTimeout(() => void postIngest(msg, attempt + 1), 2000 * (attempt + 1));
+      }
+    } catch (e) {
+      log("ingest error", e);
+      if (attempt < 2) {
+        inflight.delete(msg.id);
+        setTimeout(() => void postIngest(msg, attempt + 1), 2000 * (attempt + 1));
+      }
+    } finally {
+      inflight.delete(msg.id);
+    }
+  };
+
   const handleMessage = async (raw: Buffer | string) => {
     const p = JSON.parse(String(raw)) as Payload;
     if (p.s != null) seq = p.s;
@@ -89,7 +132,7 @@ async function run() {
       return;
     }
 
-    if (p.t !== "MESSAGE_CREATE" || !p.d) return;
+    if ((p.t !== "MESSAGE_CREATE" && p.t !== "MESSAGE_UPDATE") || !p.d) return;
     const msg = p.d as {
       id: string;
       channel_id: string;
@@ -120,20 +163,8 @@ async function run() {
     if (!hasMedia) return;
     if (!/#OC-[A-Z0-9]+/i.test(msg.content || "")) return;
 
-    log("ingest candidate", msg.id, "ch", msg.channel_id);
-    try {
-      const res = await fetch(`${INGEST}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${SECRET}`,
-        },
-        body: JSON.stringify(msg),
-      });
-      log("ingest", res.status, await res.text().then((t) => t.slice(0, 200)));
-    } catch (e) {
-      log("ingest error", e);
-    }
+    log("ingest candidate", p.t, msg.id, "ch", msg.channel_id);
+    void postIngest(msg, 0);
   };
 
   const connect = async () => {

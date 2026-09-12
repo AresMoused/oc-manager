@@ -3,6 +3,7 @@ import { ingestSubmission } from "@/lib/discord/daily";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 /** Railway sidecar posts MESSAGE_CREATE payloads here. */
 export async function POST(req: NextRequest) {
