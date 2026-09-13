@@ -14,6 +14,8 @@ export interface BuilderSection {
   icon?: string;
   desc?: string;
   items: BuilderItem[];
+  /** Lexicon category this list belongs to (merge-random pools). */
+  categoryId?: string;
 }
 
 export interface BuilderData {

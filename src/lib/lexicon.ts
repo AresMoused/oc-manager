@@ -72,6 +72,17 @@ const CONTENT_CACHE_KEY = "oc-lexicon-content-cache-v2";
 const FILTER_TAGS_KEY = "oc-lexicon-filter-tags-v1";
 const ORDER_KEY = "oc-lexicon-enabled-order-v1";
 const TOKEN_ORDER_KEY = "oc-lexicon-token-order-v1";
+const MERGE_KEY = "oc-lexicon-merge-v1";
+
+export const MERGE_WEIGHT_MIN = 1;
+export const MERGE_WEIGHT_MAX = 5;
+
+/** Per-category: mutually exclusive random among enabled lists. Weight is per list, not per item. */
+export type LexiconMergeCat = {
+  on: boolean;
+  weights: Record<string, number>;
+};
+export type LexiconMergeState = Record<string, LexiconMergeCat>;
 
 /** Wipe legacy whole-package preset keys once */
 export function abandonLegacyPresets() {
@@ -141,6 +152,85 @@ export function syncEnabledOrder(enabledIds: string[]): string[] {
   for (const id of enabledIds) if (!next.includes(id)) next.push(id);
   saveEnabledOrder(next);
   return next;
+}
+
+export function clampMergeWeight(n: number): number {
+  const v = Math.round(Number(n) || MERGE_WEIGHT_MIN);
+  return Math.min(MERGE_WEIGHT_MAX, Math.max(MERGE_WEIGHT_MIN, v));
+}
+
+export function loadMergeState(): LexiconMergeState {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(MERGE_KEY);
+    if (!raw) return {};
+    const obj = JSON.parse(raw) as LexiconMergeState;
+    if (!obj || typeof obj !== "object") return {};
+    const out: LexiconMergeState = {};
+    for (const [cat, v] of Object.entries(obj)) {
+      if (!v || typeof v !== "object") continue;
+      const weights: Record<string, number> = {};
+      for (const [id, w] of Object.entries(v.weights || {})) {
+        weights[id] = clampMergeWeight(w as number);
+      }
+      out[cat] = { on: !!v.on, weights };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function saveMergeState(state: LexiconMergeState) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(MERGE_KEY, JSON.stringify(state));
+}
+
+export function setCategoryMerge(categoryId: string, on: boolean): LexiconMergeState {
+  const state = loadMergeState();
+  const cur = state[categoryId] || { on: false, weights: {} };
+  state[categoryId] = { ...cur, on };
+  saveMergeState(state);
+  return state;
+}
+
+export function cycleListWeight(categoryId: string, listId: string): LexiconMergeState {
+  const state = loadMergeState();
+  const cur = state[categoryId] || { on: false, weights: {} };
+  const curW = clampMergeWeight(cur.weights[listId] ?? MERGE_WEIGHT_MIN);
+  cur.weights[listId] = curW >= MERGE_WEIGHT_MAX ? MERGE_WEIGHT_MIN : curW + 1;
+  state[categoryId] = cur;
+  saveMergeState(state);
+  return state;
+}
+
+export function mergeWeightOf(state: LexiconMergeState, categoryId: string, listId: string): number {
+  return clampMergeWeight(state[categoryId]?.weights?.[listId] ?? MERGE_WEIGHT_MIN);
+}
+
+function pickWeightedId(ids: string[], weights: Record<string, number>): string {
+  const bag = ids.map((id) => ({ id, w: clampMergeWeight(weights[id] ?? MERGE_WEIGHT_MIN) }));
+  const total = bag.reduce((s, x) => s + x.w, 0);
+  let r = Math.random() * (total || bag.length);
+  for (const x of bag) {
+    r -= x.w;
+    if (r < 0) return x.id;
+  }
+  return bag[bag.length - 1]!.id;
+}
+
+/** Enabled lists in a category that currently compete for one prompt slot. */
+export function mergePoolListIds(
+  categoryId: string,
+  enabledIds: string[],
+  cats: { id: string; lists: { id: string }[] }[],
+  merge: LexiconMergeState
+): string[] {
+  if (!merge[categoryId]?.on) return [];
+  const cat = cats.find((c) => c.id === categoryId);
+  if (!cat) return [];
+  const ids = cat.lists.map((l) => l.id).filter((id) => enabledIds.includes(id));
+  return ids.length >= 2 ? ids : [];
 }
 
 export function loadEnabledMap(): Record<string, boolean> | null {
@@ -278,6 +368,17 @@ export async function fetchLexiconList(
 export async function loadEnabledSections(
   enabledIds: string[]
 ): Promise<BuilderSection[]> {
+  const catMap: Record<string, string> = {};
+  try {
+    const { index } = await fetchLexiconCatalog();
+    for (const c of index.categories) {
+      for (const l of c.lists) catMap[l.id] = c.id;
+    }
+  } catch {
+    /* ignore */
+  }
+  for (const l of loadLocalLists()) catMap[l.id] = l.categoryId;
+
   const loaded = await Promise.all(enabledIds.map((id) => fetchLexiconList(id)));
   const sections: BuilderSection[] = [];
   for (const content of loaded) {
@@ -287,6 +388,7 @@ export async function loadEnabledSections(
       label: content.label,
       icon: content.icon,
       desc: content.desc,
+      categoryId: catMap[content.id],
       items: content.items.map(
         (it): BuilderItem => ({
           name: it.name,
@@ -390,13 +492,67 @@ export function pickRandomSelected(
   prev?: Record<string, number>
 ): Record<string, number> {
   const sel: Record<string, number> = { ...(prev || {}) };
+  const merge = loadMergeState();
+  const byCat = new Map<string, BuilderSection[]>();
   for (const s of sections) {
+    const cat = s.categoryId;
+    if (!cat) continue;
+    const arr = byCat.get(cat) || [];
+    arr.push(s);
+    byCat.set(cat, arr);
+  }
+  const pooled = new Set<string>();
+  for (const [cat, members] of byCat) {
+    if (!merge[cat]?.on || members.length < 2) continue;
+    members.forEach((s) => pooled.add(s.key));
+    const lockedWinner = members.find(
+      (s) => locked?.[s.key] && sel[s.key] != null && sel[s.key]! >= 0
+    );
+    if (lockedWinner) {
+      for (const s of members) {
+        if (s.key !== lockedWinner.key) sel[s.key] = -1;
+      }
+      continue;
+    }
+    const winnerId = pickWeightedId(
+      members.map((s) => s.key),
+      merge[cat]?.weights || {}
+    );
+    for (const s of members) {
+      if (s.key === winnerId && s.items.length > 0) {
+        sel[s.key] = Math.floor(Math.random() * s.items.length);
+      } else {
+        sel[s.key] = -1;
+      }
+    }
+  }
+  for (const s of sections) {
+    if (pooled.has(s.key)) continue;
     if (locked?.[s.key]) continue;
     if (s.items.length > 0) {
       sel[s.key] = Math.floor(Math.random() * s.items.length);
     }
   }
   return sel;
+}
+
+/** Selecting an item in a merged category clears sibling lists so only one slot is filled. */
+export function selectInMergePool(
+  sections: BuilderSection[],
+  selected: Record<string, number>,
+  sectionKey: string,
+  itemIndex: number
+): Record<string, number> {
+  const next = { ...selected, [sectionKey]: itemIndex };
+  const sec = sections.find((s) => s.key === sectionKey);
+  const cat = sec?.categoryId;
+  if (!cat) return next;
+  const merge = loadMergeState();
+  if (!merge[cat]?.on) return next;
+  const siblings = sections.filter((s) => s.categoryId === cat && s.key !== sectionKey);
+  if (siblings.length < 1) return next;
+  for (const s of siblings) next[s.key] = -1;
+  return next;
 }
 
 export function composeFromSections(

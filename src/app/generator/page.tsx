@@ -11,11 +11,11 @@ import type { BuilderSection } from "@/lib/promptBuilder";
 import {
   abandonLegacyPresets, buildEnabledBuilderData,
   composeFromTokens, fetchLexiconCatalog, joinFixedParts, loadEnabledMap,
-  loadFilterTags, loadFixed, loadLocalLists, loadLocked, loadSelected, loadTokenOrder,
+  loadFilterTags, loadFixed, loadLocalLists, loadLocked, loadMergeState, loadSelected, loadTokenOrder,
   pickRandomSelected, reconcileTokens, resolveEnabledIds,
   saveEnabledMap, saveFilterTags, saveFixed, saveLocked, saveSelected,
-  saveTokenOrder, setListEnabled, syncEnabledOrder,
-  type LexiconIndex, type LocalLexiconList, type PromptToken,
+  saveTokenOrder, selectInMergePool, setCategoryMerge, setListEnabled, cycleListWeight, syncEnabledOrder,
+  type LexiconIndex, type LexiconMergeState, type LocalLexiconList, type PromptToken,
 } from "@/lib/lexicon";
 import { LexiconCatalogBody, LexiconFilterBar } from "@/components/LexiconCatalog";
 
@@ -52,6 +52,7 @@ export default function GeneratorPage() {
   const [filterTags, setFilterTags] = useState<string[]>([]);
   const [tokens, setTokens] = useState<PromptToken[]>([]);
   const [authReady, setAuthReady] = useState(false);
+  const [merge, setMerge] = useState<LexiconMergeState>({});
 
   const toastMsg = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2200); };
 
@@ -80,6 +81,7 @@ export default function GeneratorPage() {
         const fx = loadFixed(idx.fixed || "1girl, ");
         setFixed(fx); setSelected(loadSelected()); setLocked(loadLocked());
         setFilterTags(loadFilterTags());
+        setMerge(loadMergeState());
         const open: Record<string, boolean> = {};
         idx.categories.forEach((c) => { open[c.id] = true; });
         setOpenCats(open);
@@ -153,6 +155,36 @@ export default function GeneratorPage() {
     map[id] = on; saveEnabledMap(map);
     await reload(ordered, fixed);
     toastMsg(on ? "已启动" : "已关闭");
+  };
+
+  const toggleMerge = (categoryId: string) => {
+    const cur = merge[categoryId]?.on;
+    const next = setCategoryMerge(categoryId, !cur);
+    setMerge({ ...next });
+    if (!cur) {
+      const members = (cats.find((c) => c.id === categoryId)?.lists || [])
+        .map((l) => l.id)
+        .filter((id) => enabledIds.includes(id));
+      if (members.length >= 2) {
+        setSelected((p) => {
+          const n = { ...p };
+          let kept = members.find((id) => locked[id] && (n[id] ?? -1) >= 0);
+          if (!kept) kept = members.find((id) => (n[id] ?? -1) >= 0);
+          for (const id of members) {
+            if (id !== kept) n[id] = -1;
+          }
+          saveSelected(n);
+          return n;
+        });
+      }
+      toastMsg("已开启合并随机：按整本词库加权，每次只抽一本");
+    } else {
+      toastMsg("已关闭合并随机");
+    }
+  };
+
+  const bumpWeight = (categoryId: string, listId: string) => {
+    setMerge({ ...cycleListWeight(categoryId, listId) });
   };
 
   return (
@@ -233,6 +265,9 @@ export default function GeneratorPage() {
                 onToggleCat={(id) => setOpenCats((p) => ({ ...p, [id]: p[id] === false }))}
                 onToggleList={(id) => void toggle(id)}
                 activeFilter={filterTags}
+                merge={merge}
+                onToggleMerge={toggleMerge}
+                onCycleWeight={bumpWeight}
               />
             </div>
           )}
@@ -240,10 +275,22 @@ export default function GeneratorPage() {
 
         {sections.length === 0 ? (
           <p className="text-center text-neutral-500 py-10 text-sm">{loading ? "加载中…" : "请启动列表"}</p>
-        ) : sections.map((sec) => (
+        ) : sections.map((sec) => {
+          const pooled = !!(sec.categoryId && merge[sec.categoryId]?.on
+            && sections.filter((s) => s.categoryId === sec.categoryId).length >= 2);
+          const w = sec.categoryId ? (merge[sec.categoryId]?.weights?.[sec.key] || 1) : 1;
+          return (
           <div key={sec.key} className="bg-[#111] border border-neutral-800 rounded-xl">
-            <div className="px-4 py-2 border-b border-neutral-800 flex justify-between">
-              <span className="text-sm text-white">{sec.label}</span>
+            <div className="px-4 py-2 border-b border-neutral-800 flex justify-between gap-2">
+              <span className="text-sm text-white">
+                {sec.label}
+                {pooled && (
+                  <span className="ml-2 text-[10px] text-amber-400/80">
+                    合并组 ×{w}
+                    {(selected[sec.key] ?? -1) >= 0 ? " · 本轮" : ""}
+                  </span>
+                )}
+              </span>
               <button type="button" className="text-[11px] text-neutral-400" onClick={() => {
                 setLocked((p) => { const n = { ...p, [sec.key]: !p[sec.key] }; saveLocked(n); return n; });
               }}>{locked[sec.key] ? "已锁定" : "锁定"}</button>
@@ -251,12 +298,18 @@ export default function GeneratorPage() {
             <div className="p-3 flex flex-wrap gap-2">
               {sec.items.map((it, i) => (
                 <button key={i} type="button" onClick={() => {
-                  setSelected((p) => { const n = { ...p, [sec.key]: p[sec.key] === i ? -1 : i }; saveSelected(n); return n; });
+                  setSelected((p) => {
+                    const chosen = p[sec.key] === i ? -1 : i;
+                    const n = selectInMergePool(sections, p, sec.key, chosen);
+                    saveSelected(n);
+                    return n;
+                  });
                 }} className={`px-2 py-1 text-xs rounded-lg border ${selected[sec.key] === i ? "border-purple-500 text-purple-200" : "border-neutral-700 text-neutral-300"}`}>{it.name}</button>
               ))}
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {authReady && !isAdmin && (
           <LexiconLocalPanel

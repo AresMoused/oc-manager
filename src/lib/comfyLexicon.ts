@@ -21,7 +21,7 @@ export async function loadLexiconBuilder(): Promise<BuilderData | null> {
     const cached = localStorage.getItem("oc-lexicon-runtime-builder");
     if (cached) {
       const parsed = JSON.parse(cached) as BuilderData;
-      if (parsed?.sections?.length) return parsed;
+      if (parsed?.sections?.length && parsed.sections.every((s) => s.categoryId)) return parsed;
     }
   } catch { /* ignore */ }
   try {

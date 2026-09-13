@@ -10,13 +10,17 @@ import {
   loadFilterTags,
   loadFixed,
   loadLocalLists,
+  loadMergeState,
   resolveEnabledIds,
   saveEnabledMap,
   saveFilterTags,
   setListEnabled,
+  setCategoryMerge,
+  cycleListWeight,
   syncEnabledOrder,
   type LocalLexiconList,
   type LexiconIndex,
+  type LexiconMergeState,
 } from "@/lib/lexicon";
 import { LexiconCatalogBody, LexiconFilterBar, type CatalogCat } from "@/components/LexiconCatalog";
 
@@ -36,6 +40,7 @@ export default function LexiconEnableModal({
   const [filter, setFilter] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [merge, setMerge] = useState<LexiconMergeState>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,6 +60,7 @@ export default function LexiconEnableModal({
       });
       setOpenCats(open);
       setFilter(loadFilterTags());
+      setMerge(loadMergeState());
     } finally {
       setLoading(false);
     }
@@ -121,6 +127,7 @@ export default function LexiconEnableModal({
             <p className="text-[11px] text-neutral-500 mt-0.5">
               勾选后参与随机。已启动 {enabledIds.length} 个
               {busy ? " · 同步中…" : ""}
+              。分类可开「合并随机」：按整本词库加权，每次只抽一本。
             </p>
           </div>
           <button type="button" className="text-neutral-400 text-sm" onClick={onClose}>
@@ -147,6 +154,15 @@ export default function LexiconEnableModal({
             }
             onToggleList={(id) => void toggleList(id)}
             activeFilter={filter}
+            merge={merge}
+            onToggleMerge={(id) => {
+              const on = !merge[id]?.on;
+              setMerge({ ...setCategoryMerge(id, on) });
+              void persistBuilder(enabledIds);
+            }}
+            onCycleWeight={(catId, listId) => {
+              setMerge({ ...cycleListWeight(catId, listId) });
+            }}
           />
         )}
         <div className="flex justify-between items-center pt-1 border-t border-neutral-800">
