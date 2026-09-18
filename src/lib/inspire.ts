@@ -235,10 +235,22 @@ export async function rollInspire(
   };
 }
 
-export async function rollDailyThemes(code?: string): Promise<InspireRoll> {
+export async function rollDailyThemes(
+  code?: string,
+  listIds?: string[]
+): Promise<InspireRoll> {
   const used = code ? normalizeCode(code) : newInspireCode();
-  const character = await rollInspire(used, { role: PERSON_TAG, salt: "char" });
-  const scene = await rollInspire(used, { role: SCENE_TAG, salt: "scene" });
+  const ids = listIds?.length ? listIds : undefined;
+  const character = await rollInspire(used, {
+    role: PERSON_TAG,
+    salt: "char",
+    listIds: ids,
+  });
+  const scene = await rollInspire(used, {
+    role: SCENE_TAG,
+    salt: "scene",
+    listIds: ids,
+  });
   const prompt = [
     "每日人物：",
     character.prompt || "（未启动人物词库）",

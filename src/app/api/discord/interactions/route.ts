@@ -18,7 +18,7 @@ import {
   votingEmoji,
 } from "@/lib/discord/daily";
 import { saveBotConfig, saveRoll, getRoll, enqueueEphemeral } from "@/lib/discord/botStore";
-import { hktDate, rollInspire } from "@/lib/inspire";
+import { hktDate, rollDailyThemes } from "@/lib/inspire";
 import {
   buildInspireModal,
   collectModalSelectValues,
@@ -69,9 +69,10 @@ async function handleInspire(
   token: string,
   opts: { expire: boolean; listIds?: string[] }
 ) {
-  const roll = await rollInspire(undefined, {
-    listIds: opts.listIds?.length ? opts.listIds : undefined,
-  });
+  const roll = await rollDailyThemes(
+    undefined,
+    opts.listIds?.length ? opts.listIds : undefined
+  );
   await saveRoll(roll);
   await fill(token, inspirePayload(roll));
   if (opts.expire) await enqueueEphemeral(token);

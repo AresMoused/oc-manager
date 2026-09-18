@@ -11,6 +11,46 @@ export function allowedMentionsForPing(): Record<string, unknown> {
   return id ? { roles: [id] } : { parse: [] };
 }
 
+function clipPrompt(s: string, n = 1000): string {
+  const t = (s || "").trim() || "（空）";
+  return t.length > n ? t.slice(0, n) + "…" : t;
+}
+
+function codeField(prompt: string): { name: string; value: string } {
+  const body = clipPrompt(prompt).replace(/```/g, "'''");
+  return { name: "提示词（点框复制）", value: "```\n" + body + "\n```" };
+}
+
+function summaryOf(
+  roll: InspireRoll,
+  part?: { prompt: string; picks: InspireRoll["picks"] }
+): string {
+  if (!part) return "";
+  return inspireSummary({ ...roll, picks: part.picks, prompt: part.prompt }, 16);
+}
+
+function themePairEmbeds(
+  roll: InspireRoll,
+  labels: { person: string; scene: string }
+): { title: string; description: string; fields: { name: string; value: string }[]; color: number }[] {
+  const charPrompt = roll.character?.prompt?.trim() || "（未抽到人物词库）";
+  const scenePrompt = roll.scene?.prompt?.trim() || "（未抽到场景词库）";
+  return [
+    {
+      title: `${labels.person}  #${roll.code}`,
+      description: summaryOf(roll, roll.character) || "（无条目）",
+      fields: [codeField(charPrompt)],
+      color: 0x7c5cbf,
+    },
+    {
+      title: `${labels.scene}  #${roll.code}`,
+      description: summaryOf(roll, roll.scene) || "（无条目）",
+      fields: [codeField(scenePrompt)],
+      color: 0x4d8fd6,
+    },
+  ];
+}
+
 export function inspireEmbed(roll: InspireRoll, title = "灵感"): {
   title: string;
   description: string;
@@ -18,93 +58,65 @@ export function inspireEmbed(roll: InspireRoll, title = "灵感"): {
   color: number;
 } {
   if (roll.character || roll.scene) {
-    const charSummary = inspireSummary(
-      {
-        ...roll,
-        picks: roll.character?.picks || [],
-        prompt: roll.character?.prompt || "",
-      },
-      16
-    );
-    const sceneSummary = inspireSummary(
-      {
-        ...roll,
-        picks: roll.scene?.picks || [],
-        prompt: roll.scene?.prompt || "",
-      },
-      16
-    );
-    const charPrompt = roll.character?.prompt?.trim() || "（未启动人物词库）";
-    const scenePrompt = roll.scene?.prompt?.trim() || "（未启动场景词库）";
-    const clip = (s: string) => (s.length > 900 ? s.slice(0, 900) + "…" : s);
-    return {
-      title: `${title}  #${roll.code}`,
-      description: [
-        "每日人物：",
-        charSummary || clip(charPrompt),
-        "",
-        "每日场景：",
-        sceneSummary || clip(scenePrompt),
-        "",
-        "请选择其中一个主题或者两个都使用",
-      ].join("\n"),
-      fields: [
-        { name: "人物提示词", value: "```\n" + clip(charPrompt) + "\n```" },
-        { name: "场景提示词", value: "```\n" + clip(scenePrompt) + "\n```" },
-      ],
-      color: 0x7c5cbf,
-    };
+    return themePairEmbeds(roll, { person: "每日人物", scene: "每日场景" })[0]!;
   }
   const summary = inspireSummary(roll);
-  const prompt =
-    roll.prompt.length > 1800 ? roll.prompt.slice(0, 1800) + "…" : roll.prompt;
   return {
     title: `${title}  #${roll.code}`,
     description: summary || "（词库为空）",
-    fields: [{ name: "提示词", value: "```\n" + prompt + "\n```" }],
+    fields: [codeField(roll.prompt)],
     color: 0x7c5cbf,
   };
 }
 
-export function inspirePayload(roll: InspireRoll, opts?: { shared?: boolean }) {
-  const embed = inspireEmbed(roll);
-  embed.fields.push({
-    name: "可见性",
-    value: opts?.shared
-      ? "已发到频道，所有人可见。"
-      : "仅你可见，5 分钟后自动消失。",
-  });
-  const buttons: Record<string, unknown>[] = [
-    {
-      type: 2,
-      style: 2,
-      label: "再来一条",
-      custom_id: `inspire:reroll:${roll.code}`,
-    },
-  ];
-  if (!opts?.shared) {
-    buttons.push({
-      type: 2,
-      style: 1,
-      label: "所有人可见",
-      custom_id: `inspire:share:${roll.code}`,
+function inspireEmbeds(roll: InspireRoll, kind: "inspire" | "daily") {
+  if (roll.character || roll.scene) {
+    return themePairEmbeds(roll, {
+      person: kind === "daily" ? "每日人物" : "灵感人物",
+      scene: kind === "daily" ? "每日场景" : "灵感场景",
     });
   }
+  return [inspireEmbed(roll, kind === "daily" ? "每日主题" : "灵感")];
+}
+
+export function inspirePayload(roll: InspireRoll, opts?: { shared?: boolean }) {
+  const embeds = inspireEmbeds(roll, "inspire");
   return {
+    content: opts?.shared
+      ? "请选择其中一个主题或者两个都使用"
+      : "仅你可见，5 分钟后自动消失。请选择其中一个主题或者两个都使用",
     flags: 64,
-    embeds: [embed],
-    components: [{ type: 1, components: buttons }],
+    embeds,
+    components: [
+      {
+        type: 1,
+        components: [
+          {
+            type: 2,
+            style: 2,
+            label: "再来一条",
+            custom_id: `inspire:reroll:${roll.code}`,
+          },
+          ...(opts?.shared
+            ? []
+            : [
+                {
+                  type: 2,
+                  style: 1,
+                  label: "所有人可见",
+                  custom_id: `inspire:share:${roll.code}`,
+                },
+              ]),
+        ],
+      },
+    ],
   };
 }
 
 export function inspirePublicPayload(roll: InspireRoll) {
-  const embed = inspireEmbed(roll);
-  embed.fields.push({
-    name: "来源",
-    value: "由 /灵感 分享",
-  });
   return {
-    embeds: [embed],
+    content: "请选择其中一个主题或者两个都使用 · 由 /灵感 分享",
+    embeds: inspireEmbeds(roll, "inspire"),
   };
 }
 
@@ -119,14 +131,16 @@ export function dailyHowTo(code: string, emoji: string): string {
 }
 
 export function dailyViewPayload(roll: InspireRoll, date: string, emoji: string) {
-  const embed = inspireEmbed(roll, `每日主题  ${date}`);
-  embed.fields.push({
-    name: "每日主题",
-    value: dailyHowTo(roll.code, emoji),
+  const embeds = inspireEmbeds(roll, "daily");
+  embeds.push({
+    title: `说明  ${date}`,
+    description: "请选择其中一个主题或者两个都使用\n\n" + dailyHowTo(roll.code, emoji),
+    fields: [],
+    color: 0xe8b86d,
   });
   return {
     content: `今日 \`#${roll.code}\`（投票请点公布栏上的 ${emoji}）`,
-    embeds: [embed],
+    embeds,
     components: [],
   };
 }
@@ -134,15 +148,17 @@ export function dailyViewPayload(roll: InspireRoll, date: string, emoji: string)
 export function dailyPromptPayload(roll: InspireRoll, date: string) {
   const ping = discordPingRoleMention();
   const emoji = discordDailyEmoji();
-  const embed = inspireEmbed(roll, `每日主题  ${date}`);
-  embed.fields.push({
-    name: "每日主题",
-    value: dailyHowTo(roll.code, emoji),
+  const embeds = inspireEmbeds(roll, "daily");
+  embeds.push({
+    title: `说明  ${date}`,
+    description: "请选择其中一个主题或者两个都使用\n\n" + dailyHowTo(roll.code, emoji),
+    fields: [],
+    color: 0xe8b86d,
   });
   return {
     content: ping ? `${ping} 今日主题已更新` : "今日主题已更新",
     allowed_mentions: allowedMentionsForPing(),
-    embeds: [embed],
+    embeds,
   };
 }
 
