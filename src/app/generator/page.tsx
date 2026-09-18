@@ -13,7 +13,7 @@ import {
   composeFromTokens, fetchLexiconCatalog, joinFixedParts, loadEnabledMap,
   loadFilterTags, loadFixed, loadLocalLists, loadLocked, loadMergeState, loadSelected, loadTokenOrder,
   pickRandomSelected, reconcileTokens, resolveEnabledIds,
-  saveEnabledMap, saveFilterTags, saveFixed, saveLocked, saveSelected,
+  saveEnabledMap, saveFilterTags, saveFixed, saveLocked, saveMergeState, saveSelected,
   saveTokenOrder, selectInMergePool, setCategoryMerge, setListEnabled, cycleListWeight, syncEnabledOrder,
   type LexiconIndex, type LexiconMergeState, type LocalLexiconList, type PromptToken,
 } from "@/lib/lexicon";
@@ -66,7 +66,7 @@ export default function GeneratorPage() {
     (async () => {
       abandonLegacyPresets();
       try {
-        const { index: idx, defaultEnabled: def } = await fetchLexiconCatalog();
+        const { index: idx, defaultEnabled: def, merge: serverMerge } = await fetchLexiconCatalog();
         setIndex(idx);
         const locals = loadLocalLists();
         setLocalLists(locals);
@@ -81,7 +81,13 @@ export default function GeneratorPage() {
         const fx = loadFixed(idx.fixed || "1girl, ");
         setFixed(fx); setSelected(loadSelected()); setLocked(loadLocked());
         setFilterTags(loadFilterTags());
-        setMerge(loadMergeState());
+        const localMerge = loadMergeState();
+        if (Object.keys(localMerge).length === 0 && serverMerge && Object.keys(serverMerge).length) {
+          saveMergeState(serverMerge);
+          setMerge(serverMerge);
+        } else {
+          setMerge(localMerge);
+        }
         const open: Record<string, boolean> = {};
         idx.categories.forEach((c) => { open[c.id] = true; });
         setOpenCats(open);
@@ -97,6 +103,14 @@ export default function GeneratorPage() {
           if (j.user?.isAdmin) {
             const pr = await fetch("/api/lexicon/pending");
             if (pr.ok) setPending((await pr.json()).pending || []);
+            const m = loadMergeState();
+            if (Object.keys(m).some((k) => m[k]?.on)) {
+              void fetch("/api/lexicon/manage", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "set-merge", merge: m }),
+              }).catch(() => undefined);
+            }
           }
         }
       } catch (e) {
@@ -157,10 +171,20 @@ export default function GeneratorPage() {
     toastMsg(on ? "已启动" : "已关闭");
   };
 
+  const persistSiteMerge = (mergeState: LexiconMergeState) => {
+    if (!isAdmin) return;
+    void fetch("/api/lexicon/manage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set-merge", merge: mergeState }),
+    }).catch(() => undefined);
+  };
+
   const toggleMerge = (categoryId: string) => {
     const cur = merge[categoryId]?.on;
     const next = setCategoryMerge(categoryId, !cur);
     setMerge({ ...next });
+    persistSiteMerge(next);
     if (!cur) {
       const members = (cats.find((c) => c.id === categoryId)?.lists || [])
         .map((l) => l.id)
@@ -184,7 +208,9 @@ export default function GeneratorPage() {
   };
 
   const bumpWeight = (categoryId: string, listId: string) => {
-    setMerge({ ...cycleListWeight(categoryId, listId) });
+    const next = cycleListWeight(categoryId, listId);
+    setMerge({ ...next });
+    persistSiteMerge(next);
   };
 
   return (
@@ -339,6 +365,7 @@ export default function GeneratorPage() {
             localLists={localLists}
             setLocalLists={setLocalLists}
             toastMsg={toastMsg}
+            merge={merge}
           />
         )}
       </main>

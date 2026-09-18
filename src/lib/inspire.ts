@@ -4,7 +4,9 @@ import {
   getDefaultEnabledIds,
   getLexiconIndex,
   getLexiconList,
+  getMergeState,
   type LexiconItem,
+  type LexiconMergeState,
 } from "@/lib/lexiconServer";
 
 export type InspireSectionPick = {
@@ -63,10 +65,19 @@ type LoadedSection = {
   id: string;
   label: string;
   items: LexiconItem[];
+  categoryId?: string;
 };
 
-let cache: { at: number; fixed: string; sections: LoadedSection[] } | null =
-  null;
+let cache: {
+  at: number;
+  fixed: string;
+  sections: LoadedSection[];
+  enabledKey: string;
+} | null = null;
+
+export function invalidateInspireCache() {
+  cache = null;
+}
 
 export async function loadEnabledLexicon(force = false): Promise<{
   fixed: string;
@@ -74,44 +85,116 @@ export async function loadEnabledLexicon(force = false): Promise<{
   enabledListIds: string[];
 }> {
   const enabledListIds = await getDefaultEnabledIds();
-  if (!force && cache && Date.now() - cache.at < 60_000) {
-    return { ...cache, enabledListIds };
+  const enabledKey = enabledListIds.join("\0");
+  if (!force && cache && Date.now() - cache.at < 60_000 && cache.enabledKey === enabledKey) {
+    return { fixed: cache.fixed, sections: cache.sections, enabledListIds };
   }
   const index = await getLexiconIndex();
+  const catByList: Record<string, string> = {};
+  for (const c of index.categories) {
+    for (const l of c.lists) catByList[l.id] = c.id;
+  }
   const sections: LoadedSection[] = [];
   const lists = await Promise.all(enabledListIds.map((id) => getLexiconList(id)));
   for (let i = 0; i < enabledListIds.length; i++) {
     const content = lists[i];
     if (!content?.items?.length) continue;
+    const id = content.id || enabledListIds[i]!;
     sections.push({
-      id: content.id || enabledListIds[i]!,
-      label: content.label || enabledListIds[i]!,
+      id,
+      label: content.label || id,
       items: content.items,
+      categoryId: catByList[id],
     });
   }
   const fixed = index.fixed || "1girl, ";
-  cache = { at: Date.now(), fixed, sections };
+  cache = { at: Date.now(), fixed, sections, enabledKey };
   return { fixed, sections, enabledListIds };
 }
 
-export async function rollInspire(code?: string): Promise<InspireRoll> {
-  const used = code ? normalizeCode(code) : newInspireCode();
-  const { fixed, sections, enabledListIds } = await loadEnabledLexicon();
-  const rng = mulberry32(await seedFromCode(used));
+function clampMergeWeight(n: number): number {
+  const v = Math.round(Number(n) || 1);
+  return Math.min(5, Math.max(1, v));
+}
+
+function pickWeightedId(
+  ids: string[],
+  weights: Record<string, number>,
+  rng: () => number
+): string {
+  const bag = ids.map((id) => ({ id, w: clampMergeWeight(weights[id] ?? 1) }));
+  const total = bag.reduce((s, x) => s + x.w, 0) || bag.length;
+  let r = rng() * total;
+  for (const x of bag) {
+    r -= x.w;
+    if (r < 0) return x.id;
+  }
+  return bag[bag.length - 1]!.id;
+}
+
+function rollSections(
+  sections: LoadedSection[],
+  merge: LexiconMergeState,
+  rng: () => number
+): InspireSectionPick[] {
+  const byCat = new Map<string, LoadedSection[]>();
+  for (const s of sections) {
+    if (!s.categoryId) continue;
+    const arr = byCat.get(s.categoryId) || [];
+    arr.push(s);
+    byCat.set(s.categoryId, arr);
+  }
+  const winnerByCat = new Map<string, string>();
+  for (const [cat, members] of byCat) {
+    if (!merge[cat]?.on || members.length < 2) continue;
+    winnerByCat.set(
+      cat,
+      pickWeightedId(
+        members.map((s) => s.id),
+        merge[cat]?.weights || {},
+        rng
+      )
+    );
+  }
   const picks: InspireSectionPick[] = [];
-  let prompt = fixed;
+  const seenCat = new Set<string>();
   for (const sec of sections) {
+    const cat = sec.categoryId;
+    if (cat && winnerByCat.has(cat)) {
+      if (seenCat.has(cat)) continue;
+      seenCat.add(cat);
+      const winId = winnerByCat.get(cat);
+      const winner = sections.find((s) => s.id === winId) || sec;
+      if (!winner.items.length) continue;
+      const item = winner.items[Math.floor(rng() * winner.items.length)]!;
+      picks.push({
+        id: winner.id,
+        label: winner.label,
+        name: item.name,
+        tags: item.tags || "",
+      });
+      continue;
+    }
     if (!sec.items.length) continue;
-    const idx = Math.floor(rng() * sec.items.length);
-    const item = sec.items[idx]!;
+    const item = sec.items[Math.floor(rng() * sec.items.length)]!;
     picks.push({
       id: sec.id,
       label: sec.label,
       name: item.name,
       tags: item.tags || "",
     });
-    prompt += item.tags || "";
   }
+  return picks;
+}
+
+export async function rollInspire(code?: string): Promise<InspireRoll> {
+  const used = code ? normalizeCode(code) : newInspireCode();
+  const { fixed, sections, enabledListIds } = await loadEnabledLexicon();
+  const merge = await getMergeState();
+  const rng = mulberry32(await seedFromCode(used));
+  const picks = rollSections(sections, merge, rng);
+  let prompt = fixed;
+  for (const p of picks) prompt += p.tags || "";
   return { code: used, fixed, prompt: prompt.trim(), picks, enabledListIds };
 }
 

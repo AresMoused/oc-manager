@@ -4,13 +4,16 @@ import { isAdminUser } from "@/lib/admin";
 import {
   deletePublicList,
   setDefaultEnabledIds,
+  getDefaultEnabledIds,
   updateListMeta,
   updateListContent,
   reorderCategories,
   renameCategory,
   publishListDirect,
   bulkUpdateFilterTags,
+  normalizeMergeState,
 } from "@/lib/lexiconServer";
+import { invalidateInspireCache } from "@/lib/inspire";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +44,7 @@ export async function POST(req: NextRequest) {
       }
       const result = await deletePublicList(listId);
       if (!result.ok) return NextResponse.json(result, { status: 404 });
+      invalidateInspireCache();
       return NextResponse.json(result);
     }
 
@@ -48,8 +52,21 @@ export async function POST(req: NextRequest) {
       const ids = Array.isArray(body.enabledListIds)
         ? body.enabledListIds.map((x: unknown) => String(x))
         : [];
-      await setDefaultEnabledIds(ids);
-      return NextResponse.json({ ok: true, message: "已更新站点默认启动列表" });
+      const merge =
+        body.merge !== undefined ? normalizeMergeState(body.merge) : undefined;
+      await setDefaultEnabledIds(ids, merge);
+      invalidateInspireCache();
+      return NextResponse.json({
+        ok: true,
+        message: "已更新站点默认启动列表和合并随机（/灵感 /每日 会用）",
+      });
+    }
+
+    if (action === "set-merge") {
+      const ids = await getDefaultEnabledIds();
+      await setDefaultEnabledIds(ids, normalizeMergeState(body.merge || {}));
+      invalidateInspireCache();
+      return NextResponse.json({ ok: true, message: "已更新站点合并随机" });
     }
 
     if (action === "update-meta") {

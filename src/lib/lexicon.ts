@@ -336,6 +336,7 @@ export function invalidateLexiconContentCache(listId?: string) {
 export async function fetchLexiconCatalog(): Promise<{
   index: LexiconIndex;
   defaultEnabled: string[];
+  merge: LexiconMergeState;
 }> {
   const res = await fetch("/api/lexicon", { cache: "no-store" });
   if (!res.ok) throw new Error("无法加载词库目录");
@@ -343,6 +344,9 @@ export async function fetchLexiconCatalog(): Promise<{
   return {
     index: data.index as LexiconIndex,
     defaultEnabled: (data.defaultEnabled as string[]) || [],
+    merge: (data.merge && typeof data.merge === "object"
+      ? (data.merge as LexiconMergeState)
+      : {}) || {},
   };
 }
 

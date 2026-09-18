@@ -8,6 +8,7 @@ import {
   syncEnabledOrder,
   type LexiconIndex,
   type LexiconCategory,
+  type LexiconMergeState,
   type LocalLexiconList,
 } from "@/lib/lexicon";
 import LexiconLocalPanel from "@/components/LexiconLocalPanel";
@@ -35,8 +36,9 @@ export default function GeneratorAdminPanel(props: {
   localLists: LocalLexiconList[];
   setLocalLists: (v: LocalLexiconList[]) => void;
   toastMsg: (m: string) => void;
+  merge?: LexiconMergeState;
 }) {
-  const { index, setIndex, enabledIds, setEnabledIds, fixed, reload, pending, setPending, localLists, setLocalLists, toastMsg } = props;
+  const { index, setIndex, enabledIds, setEnabledIds, fixed, reload, pending, setPending, localLists, setLocalLists, toastMsg, merge } = props;
   const [adminOpen, setAdminOpen] = useState(true);
   const [adminBusy, setAdminBusy] = useState(false);
   const [upLabel, setUpLabel] = useState("");
@@ -254,12 +256,16 @@ export default function GeneratorAdminPanel(props: {
               const res = await fetch("/api/lexicon/manage", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "set-default", enabledListIds: enabledIds.filter((id) => !id.startsWith("local/")) }),
+                body: JSON.stringify({
+                  action: "set-default",
+                  enabledListIds: enabledIds.filter((id) => !id.startsWith("local/")),
+                  merge: merge || {},
+                }),
               });
               const j = await res.json();
               toastMsg(res.ok ? (j.message || "已保存默认") : (j.error || "失败"));
             } finally { setAdminBusy(false); }
-          }}>把当前启动设为站点默认</button>
+          }}>把当前启动和合并随机设为站点默认（/灵感 /每日）</button>
 
           <div>
             <div className="text-xs text-neutral-400 mb-1">待审核 {pending.length} 条</div>

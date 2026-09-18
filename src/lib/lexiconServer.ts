@@ -49,6 +49,16 @@ export interface LexiconListContent {
   source?: "cdn" | "seed" | "pending";
 }
 
+export type LexiconMergeState = Record<
+  string,
+  { on: boolean; weights: Record<string, number> }
+>;
+
+export type DefaultLexiconConfig = {
+  enabledListIds: string[];
+  merge: LexiconMergeState;
+};
+
 export interface PendingSubmission {
   id: string;
   listId: string;
@@ -91,15 +101,57 @@ export async function getLexiconIndex(): Promise<LexiconIndex> {
   return { version: 1, fixed: "1girl, ", categories: [] };
 }
 
-export async function getDefaultEnabledIds(): Promise<string[]> {
-  if (isR2Configured()) {
-    const remote = await r2GetJson<{ enabledListIds?: string[] }>(R2_DEFAULT);
-    if (remote?.enabledListIds) return remote.enabledListIds;
+function clampMergeWeight(n: number): number {
+  const v = Math.round(Number(n) || 1);
+  return Math.min(5, Math.max(1, v));
+}
+
+export function normalizeMergeState(raw: unknown): LexiconMergeState {
+  if (!raw || typeof raw !== "object") return {};
+  const out: LexiconMergeState = {};
+  for (const [cat, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!v || typeof v !== "object") continue;
+    const rec = v as { on?: unknown; weights?: Record<string, unknown> };
+    const weights: Record<string, number> = {};
+    for (const [id, w] of Object.entries(rec.weights || {})) {
+      weights[id] = clampMergeWeight(Number(w));
+    }
+    out[cat] = { on: !!rec.on, weights };
   }
-  const seed = await readSeedJson<{ enabledListIds?: string[] }>(
+  return out;
+}
+
+async function readDefaultFile(): Promise<{
+  enabledListIds?: string[];
+  merge?: unknown;
+} | null> {
+  if (isR2Configured()) {
+    const remote = await r2GetJson<{ enabledListIds?: string[]; merge?: unknown }>(
+      R2_DEFAULT
+    );
+    if (remote) return remote;
+  }
+  return readSeedJson<{ enabledListIds?: string[]; merge?: unknown }>(
     "default-enabled.json"
   );
-  return seed?.enabledListIds || [];
+}
+
+export async function getDefaultConfig(): Promise<DefaultLexiconConfig> {
+  const raw = await readDefaultFile();
+  return {
+    enabledListIds: Array.isArray(raw?.enabledListIds)
+      ? raw!.enabledListIds.map(String)
+      : [],
+    merge: normalizeMergeState(raw?.merge),
+  };
+}
+
+export async function getDefaultEnabledIds(): Promise<string[]> {
+  return (await getDefaultConfig()).enabledListIds;
+}
+
+export async function getMergeState(): Promise<LexiconMergeState> {
+  return (await getDefaultConfig()).merge;
 }
 
 export async function getLexiconList(
@@ -362,8 +414,15 @@ export async function deletePublicList(
   return { ok: true, message: "已从公共词库删除" };
 }
 
-export async function setDefaultEnabledIds(ids: string[]): Promise<void> {
-  const payload = { enabledListIds: ids };
+export async function setDefaultEnabledIds(
+  ids: string[],
+  merge?: LexiconMergeState
+): Promise<void> {
+  const prev = await getDefaultConfig();
+  const payload: DefaultLexiconConfig = {
+    enabledListIds: ids,
+    merge: merge ? normalizeMergeState(merge) : prev.merge,
+  };
   if (isR2Configured()) {
     await r2PutJson(R2_DEFAULT, payload);
     return;

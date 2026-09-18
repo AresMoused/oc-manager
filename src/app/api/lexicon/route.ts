@@ -3,6 +3,7 @@ import {
   bootstrapLexiconToR2IfEmpty,
   getDefaultEnabledIds,
   getLexiconIndex,
+  getMergeState,
 } from "@/lib/lexiconServer";
 
 export const runtime = "nodejs";
@@ -14,7 +15,8 @@ export async function GET() {
     await bootstrapLexiconToR2IfEmpty();
     const index = await getLexiconIndex();
     const defaultEnabled = await getDefaultEnabledIds();
-    return NextResponse.json({ index, defaultEnabled });
+    const merge = await getMergeState();
+    return NextResponse.json({ index, defaultEnabled, merge });
   } catch (e) {
     console.error(e);
     return NextResponse.json(
