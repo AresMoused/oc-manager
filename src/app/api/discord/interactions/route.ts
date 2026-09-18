@@ -1,12 +1,28 @@
 import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 import { isDiscordAdmin } from "@/lib/admin";
-import { dailyViewPayload, inspirePayload } from "@/lib/discord/embeds";
+import {
+  dailyViewPayload,
+  inspirePayload,
+  inspirePublicPayload,
+} from "@/lib/discord/embeds";
 import { verifyDiscordSignature } from "@/lib/discord/verify";
-import { editInteractionOriginal } from "@/lib/discord/rest";
-import { getOrCreateToday, postTodayPrompt, runMidnightJob, votingEmoji } from "@/lib/discord/daily";
-import { saveBotConfig, saveRoll, enqueueEphemeral } from "@/lib/discord/botStore";
+import {
+  editInteractionOriginal,
+  postInteractionFollowup,
+} from "@/lib/discord/rest";
+import {
+  getOrCreateToday,
+  postTodayPrompt,
+  runMidnightJob,
+  votingEmoji,
+} from "@/lib/discord/daily";
+import { saveBotConfig, saveRoll, getRoll, enqueueEphemeral } from "@/lib/discord/botStore";
 import { hktDate, rollInspire } from "@/lib/inspire";
+import {
+  buildInspireModal,
+  collectModalSelectValues,
+} from "@/lib/discord/inspirePicker";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +33,8 @@ type Interaction = {
   data?: {
     name?: string;
     custom_id?: string;
+    components?: unknown[];
+    values?: string[];
     options?: {
       name: string;
       type: number;
@@ -35,6 +53,10 @@ function actor(i: Interaction): { id: string; roles: string[] } {
   };
 }
 
+function isInspireCommand(name?: string) {
+  return name === "inspire" || name === "灵感" || name === "靈感";
+}
+
 async function fill(token: string, payload: Record<string, unknown>) {
   try {
     await editInteractionOriginal(token, payload);
@@ -43,11 +65,42 @@ async function fill(token: string, payload: Record<string, unknown>) {
   }
 }
 
-async function handleInspire(token: string, scheduleExpire: boolean) {
-  const roll = await rollInspire();
+async function handleInspire(
+  token: string,
+  opts: { expire: boolean; listIds?: string[] }
+) {
+  const roll = await rollInspire(undefined, {
+    listIds: opts.listIds?.length ? opts.listIds : undefined,
+  });
   await saveRoll(roll);
   await fill(token, inspirePayload(roll));
-  if (scheduleExpire) await enqueueEphemeral(token);
+  if (opts.expire) await enqueueEphemeral(token);
+}
+
+async function handleInspireReroll(token: string, code?: string) {
+  let listIds: string[] | undefined;
+  if (code) {
+    const prev = await getRoll(code);
+    if (prev?.enabledListIds?.length) listIds = prev.enabledListIds;
+  }
+  await handleInspire(token, { expire: false, listIds });
+}
+
+async function handleInspireShare(token: string, code: string) {
+  const roll = code ? await getRoll(code) : null;
+  if (!roll) {
+    await fill(token, { content: "找不到这条灵感，请再抽一次。" });
+    return;
+  }
+  try {
+    await postInteractionFollowup(token, inspirePublicPayload(roll));
+    await fill(token, inspirePayload(roll, { shared: true }));
+  } catch (e) {
+    console.error("inspire share", e);
+    await fill(token, {
+      content: `公开失败：${e instanceof Error ? e.message : "unknown"}`,
+    });
+  }
 }
 
 async function handleDaily(i: Interaction, token: string) {
@@ -135,27 +188,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ type: 1 });
   }
 
+  const name = i.data?.name;
+  const custom = i.data?.custom_id || "";
+
+  if (i.type === 2 && isInspireCommand(name)) {
+    try {
+      const modal = await buildInspireModal();
+      if (modal?.components?.length) {
+        return NextResponse.json({ type: 9, data: modal });
+      }
+    } catch (e) {
+      console.error("inspire modal", e);
+    }
+    after(() => handleInspire(i.token, { expire: true }));
+    return NextResponse.json({ type: 5, data: { flags: 64 } });
+  }
+
+  if (i.type === 5 && custom.startsWith("inspire:")) {
+    const selected = collectModalSelectValues(i.data);
+    after(() => handleInspire(i.token, { expire: true, listIds: selected }));
+    return NextResponse.json({ type: 5, data: { flags: 64 } });
+  }
+
+  if (i.type === 3 && custom.startsWith("inspire:reroll")) {
+    const code = custom.split(":")[2];
+    after(() => handleInspireReroll(i.token, code));
+    return NextResponse.json({ type: 6 });
+  }
+
+  if (i.type === 3 && custom.startsWith("inspire:share:")) {
+    const code = custom.slice("inspire:share:".length);
+    after(() => handleInspireShare(i.token, code));
+    return NextResponse.json({ type: 6 });
+  }
+
   if (i.type === 2 || i.type === 3) {
-    const name = i.data?.name;
-    const custom = i.data?.custom_id;
-    const isInspire =
-      name === "inspire" ||
-      name === "灵感" ||
-      name === "靈感" ||
-      custom === "inspire:reroll";
     after(() => {
-      if (isInspire) return handleInspire(i.token, custom !== "inspire:reroll");
       if (name === "daily" || name === "每日") return handleDaily(i, i.token);
       if (name === "daily-admin" || name === "每日管理") return handleDaily(i, i.token);
       return fill(i.token, { content: "未知指令。" });
     });
-    if (custom === "inspire:reroll") {
-      return NextResponse.json({ type: 6 });
-    }
-    if (isInspire) {
-      // flags MUST live under data — top-level flags are ignored, message stays public
-      return NextResponse.json({ type: 5, data: { flags: 64 } });
-    }
     return NextResponse.json({ type: 5 });
   }
 

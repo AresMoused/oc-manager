@@ -162,6 +162,22 @@ export async function editInteractionOriginal(
   }
 }
 
+export async function postInteractionFollowup(
+  interactionToken: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  const id = appId();
+  const res = await fetch(`${API}/webhooks/${id}/${interactionToken}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`followup ${res.status}: ${t.slice(0, 400)}`);
+  }
+}
+
 export async function deleteInteractionOriginal(
   interactionToken: string
 ): Promise<void> {

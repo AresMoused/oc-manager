@@ -8,9 +8,9 @@ const COMMANDS = [
   {
     name: "灵感",
     name_localizations: { "zh-TW": "靈感" },
-    description: "从外观生成器词库随机一条角色提示词",
+    description: "选词库随机一条角色提示词（可公开到频道）",
     description_localizations: {
-      "zh-TW": "從外觀產生器詞庫隨機一條角色提示詞",
+      "zh-TW": "選詞庫隨機一條角色提示詞（可公開到頻道）",
     },
   },
   {

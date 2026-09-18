@@ -88,14 +88,19 @@ export function invalidateInspireCache() {
   cache = null;
 }
 
-export async function loadEnabledLexicon(force = false): Promise<{
+export async function loadEnabledLexicon(
+  force = false,
+  overrideIds?: string[]
+): Promise<{
   fixed: string;
   sections: LoadedSection[];
   enabledListIds: string[];
 }> {
-  const enabledListIds = await getDefaultEnabledIds();
+  const enabledListIds = overrideIds?.length
+    ? [...new Set(overrideIds.map(String))]
+    : await getDefaultEnabledIds();
   const enabledKey = enabledListIds.join("\0");
-  if (!force && cache && Date.now() - cache.at < 60_000 && cache.enabledKey === enabledKey) {
+  if (!force && !overrideIds?.length && cache && Date.now() - cache.at < 60_000 && cache.enabledKey === enabledKey) {
     return { fixed: cache.fixed, sections: cache.sections, enabledListIds };
   }
   const index = await getLexiconIndex();
@@ -122,7 +127,9 @@ export async function loadEnabledLexicon(force = false): Promise<{
     });
   }
   const fixed = index.fixed || "1girl, ";
-  cache = { at: Date.now(), fixed, sections, enabledKey };
+  if (!overrideIds?.length) {
+    cache = { at: Date.now(), fixed, sections, enabledKey };
+  }
   return { fixed, sections, enabledListIds };
 }
 
@@ -203,10 +210,13 @@ function rollSections(
 
 export async function rollInspire(
   code?: string,
-  opts?: { role?: LexiconRoleTag; salt?: string }
+  opts?: { role?: LexiconRoleTag; salt?: string; listIds?: string[] }
 ): Promise<InspireRoll> {
   const used = code ? normalizeCode(code) : newInspireCode();
-  const { fixed, sections, enabledListIds } = await loadEnabledLexicon();
+  const { fixed, sections, enabledListIds } = await loadEnabledLexicon(
+    false,
+    opts?.listIds
+  );
   const merge = await getMergeState();
   const filtered = opts?.role
     ? sections.filter((s) => (s.filterTags || []).includes(opts.role!))

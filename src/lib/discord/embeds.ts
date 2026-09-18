@@ -66,28 +66,45 @@ export function inspireEmbed(roll: InspireRoll, title = "灵感"): {
   };
 }
 
-export function inspirePayload(roll: InspireRoll) {
+export function inspirePayload(roll: InspireRoll, opts?: { shared?: boolean }) {
   const embed = inspireEmbed(roll);
   embed.fields.push({
     name: "可见性",
-    value: "仅你可见，5 分钟后自动消失。",
+    value: opts?.shared
+      ? "已发到频道，所有人可见。"
+      : "仅你可见，5 分钟后自动消失。",
   });
+  const buttons: Record<string, unknown>[] = [
+    {
+      type: 2,
+      style: 2,
+      label: "再来一条",
+      custom_id: `inspire:reroll:${roll.code}`,
+    },
+  ];
+  if (!opts?.shared) {
+    buttons.push({
+      type: 2,
+      style: 1,
+      label: "所有人可见",
+      custom_id: `inspire:share:${roll.code}`,
+    });
+  }
   return {
     flags: 64,
     embeds: [embed],
-    components: [
-      {
-        type: 1,
-        components: [
-          {
-            type: 2,
-            style: 2,
-            label: "再来一条",
-            custom_id: "inspire:reroll",
-          },
-        ],
-      },
-    ],
+    components: [{ type: 1, components: buttons }],
+  };
+}
+
+export function inspirePublicPayload(roll: InspireRoll) {
+  const embed = inspireEmbed(roll);
+  embed.fields.push({
+    name: "来源",
+    value: "由 /灵感 分享",
+  });
+  return {
+    embeds: [embed],
   };
 }
 
