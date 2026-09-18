@@ -698,12 +698,14 @@ export function reconcileTokens(
   return next;
 }
 
-export function parseFilterTags(raw: string | string[] | undefined | null): string[] {
-  const parts = Array.isArray(raw)
-    ? raw
-    : String(raw || "").split(/[,，;；|]/);
-  return [...new Set(parts.map((s) => s.trim()).filter(Boolean))];
-}
+export {
+  PERSON_TAG,
+  SCENE_TAG,
+  hasRoleTag,
+  pickRoleTag,
+  withRoleTag,
+  parseTagList,
+} from "@/lib/lexiconTags";
 
 export function collectFilterTags(
   lists: { filterTags?: string[] }[]

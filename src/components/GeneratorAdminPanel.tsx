@@ -11,9 +11,43 @@ import {
   type LexiconMergeState,
   type LocalLexiconList,
 } from "@/lib/lexicon";
+import { PERSON_TAG, SCENE_TAG, parseTagList, pickRoleTag, withRoleTag } from "@/lib/lexiconTags";
 import LexiconLocalPanel from "@/components/LexiconLocalPanel";
 
 type PendingRow = { id: string; label: string; listId: string; submitterName: string };
+
+function RolePicker({
+  tags,
+  onChange,
+}: {
+  tags: string;
+  onChange: (next: string) => void;
+}) {
+  const role = pickRoleTag(parseTagList(tags));
+  const set = (r: typeof PERSON_TAG | typeof SCENE_TAG) =>
+    onChange(withRoleTag(parseTagList(tags), r).join(", "));
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] text-neutral-500">必须选</span>
+      {([PERSON_TAG, SCENE_TAG] as const).map((r) => (
+        <button
+          key={r}
+          type="button"
+          onClick={() => set(r)}
+          className={`px-2 py-0.5 text-[11px] rounded-full border ${
+            role === r
+              ? r === PERSON_TAG
+                ? "border-amber-600 text-amber-200 bg-amber-950/40"
+                : "border-sky-600 text-sky-200 bg-sky-950/40"
+              : "border-neutral-700 text-neutral-500"
+          }`}
+        >
+          {r}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function parseItemsRaw(raw: string) {
   return raw.split(/\r?\n/).filter(Boolean).map((line) => {
@@ -44,6 +78,7 @@ export default function GeneratorAdminPanel(props: {
   const [upLabel, setUpLabel] = useState("");
   const [upCat, setUpCat] = useState("");
   const [upRaw, setUpRaw] = useState("");
+  const [upRoleTags, setUpRoleTags] = useState(PERSON_TAG);
   const [editRaw, setEditRaw] = useState<{ listId: string; label: string; raw: string } | null>(null);
   const [editMeta, setEditMeta] = useState<{ listId: string; label: string; categoryId: string; categoryLabel: string; filterTags: string } | null>(null);
   const [editCat, setEditCat] = useState<{ id: string; label: string } | null>(null);
@@ -219,6 +254,7 @@ export default function GeneratorAdminPanel(props: {
             <div className="text-[10px] text-neutral-500">输入已有分类名会加入该分类；输入新名称会自动创建分类。</div>
             <div className="text-[10px] text-neutral-500 font-mono">格式：名称: tags（每行一条）例：黑色头发: black hair,</div>
             <textarea className="w-full min-h-[90px] bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs font-mono" placeholder={"黑色头发: black hair,\n银色头发: silver hair,"} value={upRaw} onChange={(e) => setUpRaw(e.target.value)} />
+            <RolePicker tags={upRoleTags} onChange={setUpRoleTags} />
             <button type="button" disabled={adminBusy} className="text-[11px] px-2.5 py-1 rounded bg-emerald-900/40 border border-emerald-800 text-emerald-200 disabled:opacity-40" onClick={async () => {
               const items = parseItemsRaw(upRaw);
               if (!upLabel.trim() || !items.length) return toastMsg("请填写名称和词条");
@@ -238,6 +274,7 @@ export default function GeneratorAdminPanel(props: {
                     categoryLabel: catMeta?.label || catName,
                     label: upLabel.trim(),
                     items,
+                    filterTags: parseTagList(upRoleTags),
                   }),
                 });
                 const j = await res.json();
@@ -318,8 +355,10 @@ export default function GeneratorAdminPanel(props: {
                   list="lexicon-filter-tag-suggestions"
                   value={bulkTags}
                   onChange={(e) => setBulkTags(e.target.value)}
-                  placeholder="标签，逗号分隔，例如：基础, NSFW"
+                  placeholder="标签，逗号分隔，例如：人物, 基础"
                 />
+                <RolePicker tags={bulkTags} onChange={setBulkTags} />
+                <p className="text-[10px] text-neutral-500">清空后会自动补回「人物」或「场景」。设为时请至少保留其中一个。</p>
                 <datalist id="lexicon-filter-tag-suggestions">
                   {knownTags.map((t) => (
                     <option key={t} value={t} />
@@ -436,7 +475,11 @@ export default function GeneratorAdminPanel(props: {
               onChange={(e) => setEditMeta({ ...editMeta, filterTags: e.target.value })}
               placeholder="过滤标签，逗号分隔，例如：基础, NSFW"
             />
-            <p className="text-[10px] text-neutral-500">标签用于词库过滤器，可隐藏一部分列表。</p>
+            <RolePicker
+              tags={editMeta.filterTags}
+              onChange={(next) => setEditMeta({ ...editMeta, filterTags: next })}
+            />
+            <p className="text-[10px] text-neutral-500">必须带「人物」或「场景」（每日主题按这个拆）。其他标签仍用于过滤器。</p>
             <div className="flex justify-end gap-2">
               <button type="button" className="text-neutral-400 text-sm" onClick={() => setEditMeta(null)}>取消</button>
               <button type="button" disabled={adminBusy} className="bg-purple-600 text-white text-sm px-3 py-1 rounded" onClick={async () => {

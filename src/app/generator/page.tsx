@@ -15,6 +15,7 @@ import {
   pickRandomSelected, reconcileTokens, resolveEnabledIds,
   saveEnabledMap, saveFilterTags, saveFixed, saveLocked, saveMergeState, saveSelected,
   saveTokenOrder, selectInMergePool, setCategoryMerge, setListEnabled, cycleListWeight, syncEnabledOrder,
+  PERSON_TAG, SCENE_TAG,
   type LexiconIndex, type LexiconMergeState, type LocalLexiconList, type PromptToken,
 } from "@/lib/lexicon";
 import { LexiconCatalogBody, LexiconFilterBar } from "@/components/LexiconCatalog";
@@ -48,6 +49,7 @@ export default function GeneratorPage() {
   const [upCat, setUpCat] = useState("");
   const [upRaw, setUpRaw] = useState("");
   const [upPublish, setUpPublish] = useState(false);
+  const [upRole, setUpRole] = useState(PERSON_TAG);
   const [userName, setUserName] = useState("");
   const [filterTags, setFilterTags] = useState<string[]>([]);
   const [tokens, setTokens] = useState<PromptToken[]>([]);
@@ -244,6 +246,7 @@ export default function GeneratorPage() {
               setUpLabel("");
               setUpRaw("");
               setUpPublish(false);
+              setUpRole(PERSON_TAG);
               setUploadOpen(true);
             }} className="px-3 py-1.5 text-sm rounded-lg border border-sky-800 text-sky-300">上传列表</button>
             </div>
@@ -417,6 +420,27 @@ export default function GeneratorPage() {
                 onChange={(e) => setUpRaw(e.target.value)}
               />
             </div>
+            <div className="space-y-1">
+              <label className="text-[11px] text-neutral-400">类型（每日主题用）</label>
+              <div className="flex gap-1.5">
+                {([PERSON_TAG, SCENE_TAG] as const).map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setUpRole(r)}
+                    className={`px-2.5 py-1 text-xs rounded-lg border ${
+                      upRole === r
+                        ? r === PERSON_TAG
+                          ? "border-amber-600 text-amber-200 bg-amber-950/40"
+                          : "border-sky-600 text-sky-200 bg-sky-950/40"
+                        : "border-neutral-700 text-neutral-500"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
             <label className="text-xs text-neutral-300 flex gap-2 items-center">
               <input type="checkbox" checked={upPublish} onChange={(e) => setUpPublish(e.target.checked)} />
               申请发布到 CDN（需管理员审核后，所有人可见）
@@ -436,6 +460,7 @@ export default function GeneratorPage() {
                   categoryId: upCat,
                   categoryLabel,
                   items,
+                  filterTags: [upRole],
                   local: true as const,
                   createdAt: new Date().toISOString(),
                 };
@@ -458,6 +483,7 @@ export default function GeneratorPage() {
                       categoryLabel,
                       label: upLabel.trim(),
                       items,
+                      filterTags: [upRole],
                     }),
                   });
                   const j = await res.json();

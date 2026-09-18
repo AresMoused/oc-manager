@@ -25,7 +25,7 @@ import {
   type DailyRecord,
   type DailySubmission,
 } from "@/lib/discord/botStore";
-import { hktDate, hktYesterday, rollInspire, type InspireRoll } from "@/lib/inspire";
+import { hktDate, hktYesterday, rollDailyThemes, type InspireRoll } from "@/lib/inspire";
 
 export async function votingEmoji(): Promise<string> {
   const cfg = await getBotConfig();
@@ -48,11 +48,13 @@ export async function getOrCreateToday(force = false): Promise<{
         picks: existing.picks,
         enabledListIds: existing.enabledListIds,
         fixed: "",
+        character: existing.character,
+        scene: existing.scene,
       },
       created: false,
     };
   }
-  const roll = await rollInspire();
+  const roll = await rollDailyThemes();
   await saveRoll(roll);
   const rec: DailyRecord = {
     date,
@@ -60,6 +62,8 @@ export async function getOrCreateToday(force = false): Promise<{
     prompt: roll.prompt,
     picks: roll.picks,
     enabledListIds: roll.enabledListIds,
+    character: roll.character,
+    scene: roll.scene,
     submissions: force ? [] : existing?.submissions || [],
   };
   await saveDaily(rec);

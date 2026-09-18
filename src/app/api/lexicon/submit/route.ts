@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { addPending, type LexiconItem } from "@/lib/lexiconServer";
+import { hasRoleTag, parseTagList, withRoleTag, inferRoleTag } from "@/lib/lexiconTags";
 import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
@@ -49,6 +50,13 @@ export async function POST(req: NextRequest) {
         .slice(0, 48) || randomUUID().slice(0, 8);
     const listId = `${categoryId}/${slug}`;
     const id = randomUUID();
+    let filterTags = parseTagList(body.filterTags);
+    if (!hasRoleTag(filterTags)) {
+      filterTags = withRoleTag(
+        filterTags,
+        inferRoleTag(`${categoryId} ${body.categoryLabel || ""} ${label}`)
+      );
+    }
 
     const sub = await addPending({
       id,
@@ -65,6 +73,7 @@ export async function POST(req: NextRequest) {
       })),
       icon: body.icon ? String(body.icon) : undefined,
       desc: body.desc ? String(body.desc) : undefined,
+      filterTags,
       submitterId: session.user.id,
       submitterName:
         session.user.globalName || session.user.username || session.user.id,

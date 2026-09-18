@@ -8,6 +8,11 @@ import {
   type LexiconItem,
   type LexiconMergeState,
 } from "@/lib/lexiconServer";
+import {
+  PERSON_TAG,
+  SCENE_TAG,
+  type LexiconRoleTag,
+} from "@/lib/lexiconTags";
 
 export type InspireSectionPick = {
   id: string;
@@ -22,6 +27,9 @@ export type InspireRoll = {
   prompt: string;
   picks: InspireSectionPick[];
   enabledListIds: string[];
+  role?: LexiconRoleTag;
+  character?: { prompt: string; picks: InspireSectionPick[] };
+  scene?: { prompt: string; picks: InspireSectionPick[] };
 };
 
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -53,10 +61,10 @@ function mulberry32(seed: number) {
   };
 }
 
-async function seedFromCode(code: string): Promise<number> {
+async function seedFromCode(code: string, salt = ""): Promise<number> {
   const buf = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode("oc-inspire:" + normalizeCode(code))
+    new TextEncoder().encode("oc-inspire:" + (salt ? salt + ":" : "") + normalizeCode(code))
   );
   return new DataView(buf).getUint32(0);
 }
@@ -66,6 +74,7 @@ type LoadedSection = {
   label: string;
   items: LexiconItem[];
   categoryId?: string;
+  filterTags?: string[];
 };
 
 let cache: {
@@ -91,8 +100,12 @@ export async function loadEnabledLexicon(force = false): Promise<{
   }
   const index = await getLexiconIndex();
   const catByList: Record<string, string> = {};
+  const tagsByList: Record<string, string[]> = {};
   for (const c of index.categories) {
-    for (const l of c.lists) catByList[l.id] = c.id;
+    for (const l of c.lists) {
+      catByList[l.id] = c.id;
+      if (l.filterTags?.length) tagsByList[l.id] = l.filterTags;
+    }
   }
   const sections: LoadedSection[] = [];
   const lists = await Promise.all(enabledListIds.map((id) => getLexiconList(id)));
@@ -105,6 +118,7 @@ export async function loadEnabledLexicon(force = false): Promise<{
       label: content.label || id,
       items: content.items,
       categoryId: catByList[id],
+      filterTags: tagsByList[id],
     });
   }
   const fixed = index.fixed || "1girl, ";
@@ -187,15 +201,52 @@ function rollSections(
   return picks;
 }
 
-export async function rollInspire(code?: string): Promise<InspireRoll> {
+export async function rollInspire(
+  code?: string,
+  opts?: { role?: LexiconRoleTag; salt?: string }
+): Promise<InspireRoll> {
   const used = code ? normalizeCode(code) : newInspireCode();
   const { fixed, sections, enabledListIds } = await loadEnabledLexicon();
   const merge = await getMergeState();
-  const rng = mulberry32(await seedFromCode(used));
-  const picks = rollSections(sections, merge, rng);
-  let prompt = fixed;
+  const filtered = opts?.role
+    ? sections.filter((s) => (s.filterTags || []).includes(opts.role!))
+    : sections;
+  const rng = mulberry32(await seedFromCode(used, opts?.salt || opts?.role || ""));
+  const picks = rollSections(filtered, merge, rng);
+  let prompt = opts?.role === SCENE_TAG ? "" : fixed;
   for (const p of picks) prompt += p.tags || "";
-  return { code: used, fixed, prompt: prompt.trim(), picks, enabledListIds };
+  return {
+    code: used,
+    fixed: opts?.role === SCENE_TAG ? "" : fixed,
+    prompt: prompt.trim(),
+    picks,
+    enabledListIds: filtered.map((s) => s.id),
+    role: opts?.role,
+  };
+}
+
+export async function rollDailyThemes(code?: string): Promise<InspireRoll> {
+  const used = code ? normalizeCode(code) : newInspireCode();
+  const character = await rollInspire(used, { role: PERSON_TAG, salt: "char" });
+  const scene = await rollInspire(used, { role: SCENE_TAG, salt: "scene" });
+  const prompt = [
+    "每日人物：",
+    character.prompt || "（未启动人物词库）",
+    "",
+    "每日场景：",
+    scene.prompt || "（未启动场景词库）",
+    "",
+    "请选择其中一个主题或者两个都使用",
+  ].join("\n");
+  return {
+    code: used,
+    fixed: "",
+    prompt,
+    picks: [...character.picks, ...scene.picks],
+    enabledListIds: [...new Set([...character.enabledListIds, ...scene.enabledListIds])],
+    character: { prompt: character.prompt, picks: character.picks },
+    scene: { prompt: scene.prompt, picks: scene.picks },
+  };
 }
 
 export function inspireSummary(roll: InspireRoll, limit = 12): string {

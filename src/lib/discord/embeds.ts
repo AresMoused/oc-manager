@@ -17,6 +17,44 @@ export function inspireEmbed(roll: InspireRoll, title = "灵感"): {
   fields: { name: string; value: string }[];
   color: number;
 } {
+  if (roll.character || roll.scene) {
+    const charSummary = inspireSummary(
+      {
+        ...roll,
+        picks: roll.character?.picks || [],
+        prompt: roll.character?.prompt || "",
+      },
+      16
+    );
+    const sceneSummary = inspireSummary(
+      {
+        ...roll,
+        picks: roll.scene?.picks || [],
+        prompt: roll.scene?.prompt || "",
+      },
+      16
+    );
+    const charPrompt = roll.character?.prompt?.trim() || "（未启动人物词库）";
+    const scenePrompt = roll.scene?.prompt?.trim() || "（未启动场景词库）";
+    const clip = (s: string) => (s.length > 900 ? s.slice(0, 900) + "…" : s);
+    return {
+      title: `${title}  #${roll.code}`,
+      description: [
+        "每日人物：",
+        charSummary || clip(charPrompt),
+        "",
+        "每日场景：",
+        sceneSummary || clip(scenePrompt),
+        "",
+        "请选择其中一个主题或者两个都使用",
+      ].join("\n"),
+      fields: [
+        { name: "人物提示词", value: "```\n" + clip(charPrompt) + "\n```" },
+        { name: "场景提示词", value: "```\n" + clip(scenePrompt) + "\n```" },
+      ],
+      color: 0x7c5cbf,
+    };
+  }
   const summary = inspireSummary(roll);
   const prompt =
     roll.prompt.length > 1800 ? roll.prompt.slice(0, 1800) + "…" : roll.prompt;
@@ -55,7 +93,7 @@ export function inspirePayload(roll: InspireRoll) {
 
 export function dailyHowTo(code: string, emoji: string): string {
   return [
-    "每天 0:00（香港时间）公布一套主题角色。用提示词出图或影片，带着今日代码投稿，给喜欢的作品投票。",
+    "每天 0:00（香港时间）公布人物主题和场景主题。可以只选其中一个，或两个都用。",
     `① 用提示词去外观生成器 / 抽卡姬出图或出片（也可以自己画）`,
     `② 把图或影片发到跑图频道，正文带上 \`#${code}\``,
     `③ 机器人转到本频道后，点 ${emoji} 投票`,
@@ -85,7 +123,7 @@ export function dailyPromptPayload(roll: InspireRoll, date: string) {
     value: dailyHowTo(roll.code, emoji),
   });
   return {
-    content: ping ? `${ping} 今日主题角色已更新` : "今日主题角色已更新",
+    content: ping ? `${ping} 今日主题已更新` : "今日主题已更新",
     allowed_mentions: allowedMentionsForPing(),
     embeds: [embed],
   };

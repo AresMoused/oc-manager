@@ -10,6 +10,11 @@ import {
   r2PutJson,
   r2Delete,
 } from "@/lib/r2";
+import {
+  ensureListRoleTag,
+  hasRoleTag,
+  parseTagList,
+} from "@/lib/lexiconTags";
 
 export interface LexiconItem {
   name: string;
@@ -73,6 +78,7 @@ export interface PendingSubmission {
   submitterName: string;
   createdAt: string;
   status: "pending";
+  filterTags?: string[];
 }
 
 const SEED_DIR = path.join(process.cwd(), "public", "prompts", "lexicon");
@@ -80,6 +86,16 @@ const R2_INDEX = "lexicon/index.json";
 const R2_DEFAULT = "lexicon/default-enabled.json";
 const R2_PENDING_INDEX = "lexicon/pending/index.json";
 const LOCAL_PENDING_DIR = path.join(process.cwd(), "data", "lexicon-pending");
+
+function ensureRoleTagsOnIndex(index: LexiconIndex): boolean {
+  let changed = false;
+  for (const cat of index.categories || []) {
+    for (const list of cat.lists || []) {
+      if (ensureListRoleTag(list, cat)) changed = true;
+    }
+  }
+  return changed;
+}
 
 async function readSeedJson<T>(rel: string): Promise<T | null> {
   try {
@@ -92,13 +108,18 @@ async function readSeedJson<T>(rel: string): Promise<T | null> {
 }
 
 export async function getLexiconIndex(): Promise<LexiconIndex> {
+  let index: LexiconIndex | null = null;
   if (isR2Configured()) {
     const remote = await r2GetJson<LexiconIndex>(R2_INDEX);
-    if (remote?.categories?.length) return remote;
+    if (remote?.categories?.length) index = remote;
   }
-  const seed = await readSeedJson<LexiconIndex>("index.json");
-  if (seed?.categories?.length) return seed;
-  return { version: 1, fixed: "1girl, ", categories: [] };
+  if (!index) {
+    const seed = await readSeedJson<LexiconIndex>("index.json");
+    if (seed?.categories?.length) index = seed;
+  }
+  if (!index) return { version: 1, fixed: "1girl, ", categories: [] };
+  if (ensureRoleTagsOnIndex(index)) await writeIndex(index);
+  return index;
 }
 
 function clampMergeWeight(n: number): number {
@@ -301,36 +322,29 @@ export async function reviewPending(
     path: sub.path,
     icon: sub.icon,
     desc: sub.desc,
+    filterTags: sub.filterTags,
   };
   const existing = cat.lists.findIndex((l) => l.id === sub.listId);
   if (existing >= 0) cat.lists[existing] = meta;
   else cat.lists.push(meta);
 
+  await writeListContent(sub.listId, content);
+  await writeIndex(index);
+
+  list.splice(idx, 1);
+  await writePendingIndex(list);
   if (isR2Configured()) {
-    await r2PutJson(`lexicon/lists/${sub.listId}.json`, content);
-    await r2PutJson(R2_INDEX, index);
     try {
       await r2Delete(`lexicon/pending/${id}.json`);
     } catch {
       /* ignore */
     }
-  } else {
-    const full = path.join(SEED_DIR, "lists", `${sub.listId}.json`);
-    await fs.mkdir(path.dirname(full), { recursive: true });
-    await fs.writeFile(full, JSON.stringify(content, null, 2), "utf8");
-    await fs.writeFile(
-      path.join(SEED_DIR, "index.json"),
-      JSON.stringify(index, null, 2),
-      "utf8"
-    );
   }
-
-  list.splice(idx, 1);
-  await writePendingIndex(list);
   return { ok: true, message: "已发布到词库" };
 }
 
 async function writeIndex(index: LexiconIndex): Promise<void> {
+  ensureRoleTagsOnIndex(index);
   if (isR2Configured()) {
     await r2PutJson(R2_INDEX, index);
     return;
@@ -477,8 +491,11 @@ export async function updateListMeta(opts: {
   if (opts.icon !== undefined) foundMeta.icon = opts.icon;
   if (opts.desc !== undefined) foundMeta.desc = opts.desc;
   if (opts.filterTags !== undefined) {
-    foundMeta.filterTags = [...new Set(opts.filterTags.map((t) => String(t).trim()).filter(Boolean))];
-    if (!foundMeta.filterTags.length) delete foundMeta.filterTags;
+    const tags = parseTagList(opts.filterTags);
+    if (!hasRoleTag(tags)) {
+      return { ok: false, message: "过滤标签必须包含「人物」或「场景」" };
+    }
+    foundMeta.filterTags = tags;
   }
 
   const targetName = opts.categoryId?.trim() || opts.categoryLabel?.trim();
@@ -682,6 +699,7 @@ export async function publishListDirect(opts: {
   icon?: string;
   desc?: string;
   listId?: string;
+  filterTags?: string[];
 }): Promise<{ ok: boolean; message: string; listId?: string; index?: LexiconIndex }> {
   const categoryName = String(opts.categoryLabel || opts.categoryId || "").trim();
   if (!categoryName) return { ok: false, message: "缺少分类名称" };
@@ -726,7 +744,9 @@ export async function publishListDirect(opts: {
     path: `lists/${listId}.json`,
     icon: opts.icon,
     desc: opts.desc,
+    filterTags: parseTagList(opts.filterTags),
   };
+  ensureListRoleTag(meta, cat);
   const existing = cat.lists.findIndex((l) => l.id === listId);
   if (existing >= 0) cat.lists[existing] = meta;
   else cat.lists.push(meta);

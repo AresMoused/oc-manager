@@ -23,6 +23,8 @@ export type DailyRecord = {
   promptMessageId?: string;
   resultMessageId?: string;
   submissions: DailySubmission[];
+  character?: { prompt: string; picks: InspireRoll["picks"] };
+  scene?: { prompt: string; picks: InspireRoll["picks"] };
 };
 
 export type BotConfig = {

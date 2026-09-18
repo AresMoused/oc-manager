@@ -15,8 +15,8 @@ const COMMANDS = [
   },
   {
     name: "每日",
-    description: "查看今日主题角色",
-    description_localizations: { "zh-TW": "查看今日主題角色" },
+    description: "查看今日人物主题和场景主题",
+    description_localizations: { "zh-TW": "查看今日人物主題和場景主題" },
   },
   {
     name: "每日管理",
