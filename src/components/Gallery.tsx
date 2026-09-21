@@ -11,56 +11,6 @@ interface Props {
   editable?: boolean;
 }
 
-/** Scale so longest side ≤ maxSide, encode webp (keeps aspect ratio) */
-async function compressGalleryWebp(
-  file: File,
-  maxSide = 1280,
-  quality = 0.85
-): Promise<File> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      let { width, height } = img;
-      if (width > maxSide || height > maxSide) {
-        if (width >= height) {
-          height = Math.round((height * maxSide) / width);
-          width = maxSide;
-        } else {
-          width = Math.round((width * maxSide) / height);
-          height = maxSide;
-        }
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        reject(new Error("Canvas not supported"));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error("WebP encode failed"));
-            return;
-          }
-          resolve(new File([blob], "gallery.webp", { type: "image/webp" }));
-        },
-        "image/webp",
-        quality
-      );
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Failed to load image"));
-    };
-    img.src = url;
-  });
-}
-
 export default function Gallery({ images, onChange, editable = true }: Props) {
   const [url, setUrl] = useState("");
   const [caption, setCaption] = useState("");
@@ -94,23 +44,11 @@ export default function Gallery({ images, onChange, editable = true }: Props) {
     if (!file) return;
     setUploading(true);
     try {
-      const webp = await compressGalleryWebp(file);
-      try {
-        const cdnUrl = await uploadImage(webp);
-        pushImage(cdnUrl);
-      } catch (uploadErr) {
-        console.warn("CDN upload failed, using data URL", uploadErr);
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ""));
-          reader.onerror = () => reject(new Error("read failed"));
-          reader.readAsDataURL(webp);
-        });
-        pushImage(dataUrl);
-      }
+      const cdnUrl = await uploadImage(file);
+      pushImage(cdnUrl);
     } catch (err) {
       console.error(err);
-      alert("图片处理失败，请换一张或改用 URL。");
+      alert(err instanceof Error ? err.message : "上传失败");
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -131,7 +69,7 @@ export default function Gallery({ images, onChange, editable = true }: Props) {
         {showForm && (
           <div className="mb-3 p-3 bg-[#0a0a0a] border border-purple-800/50 rounded-lg space-y-2">
             <p className="text-[11px] text-neutral-500 leading-relaxed">
-              本地上传会压缩为 webp 并保存到 CDN；CDN 链接会写入角色资料（服务器），分享世界后其他人也能看到。
+              只接受图片，最大 10MB。原图直传 CDN，不压缩、不转 webp。
             </p>
             <div className="flex flex-wrap gap-2">
               <button
@@ -145,7 +83,7 @@ export default function Gallery({ images, onChange, editable = true }: Props) {
               <input
                 ref={fileRef}
                 type="file"
-                accept="image/*"
+                accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,image/avif,.png,.jpg,.jpeg,.gif,.webp,.bmp,.avif"
                 className="hidden"
                 onChange={handleFile}
               />

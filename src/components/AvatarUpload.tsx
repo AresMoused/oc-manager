@@ -11,50 +11,6 @@ interface Props {
   size?: number;
 }
 
-/** Cover-crop to 896×1152 webp for character card avatars (CDN) */
-async function compressAvatarToWebp(file: File): Promise<File> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const targetW = 896;
-      const targetH = 1152;
-      const canvas = document.createElement("canvas");
-      canvas.width = targetW;
-      canvas.height = targetH;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        reject(new Error("Canvas not supported"));
-        return;
-      }
-      // Cover crop centered
-      const scale = Math.max(targetW / img.width, targetH / img.height);
-      const w = img.width * scale;
-      const h = img.height * scale;
-      const x = (targetW - w) / 2;
-      const y = (targetH - h) / 2;
-      ctx.drawImage(img, x, y, w, h);
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error("WebP encode failed"));
-            return;
-          }
-          resolve(new File([blob], "avatar.webp", { type: "image/webp" }));
-        },
-        "image/webp",
-        0.85
-      );
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Failed to load image"));
-    };
-    img.src = url;
-  });
-}
-
 export default function AvatarUpload({
   src,
   name,
@@ -64,34 +20,22 @@ export default function AvatarUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [urlValue, setUrlValue] = useState("");
-  const [compressing, setCompressing] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const height = size;
   const width = Math.round((size * 3) / 4);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !onChange) return;
-    setCompressing(true);
+    setUploading(true);
     try {
-      const webp = await compressAvatarToWebp(file);
-      try {
-        const url = await uploadImage(webp);
-        onChange(url);
-      } catch (uploadErr) {
-        console.warn("Server upload failed, fallback to data URL", uploadErr);
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ""));
-          reader.onerror = () => reject(new Error("read failed"));
-          reader.readAsDataURL(webp);
-        });
-        onChange(dataUrl);
-      }
+      const url = await uploadImage(file);
+      onChange(url);
     } catch (err) {
       console.error(err);
-      alert("Failed to process image. Try a smaller file or use a URL instead.");
+      alert(err instanceof Error ? err.message : "上传失败");
     } finally {
-      setCompressing(false);
+      setUploading(false);
       e.target.value = "";
     }
   };
@@ -137,9 +81,9 @@ export default function AvatarUpload({
             <span className="text-xs mt-2">No avatar</span>
           </div>
         )}
-        {compressing && (
+        {uploading && (
           <div className="absolute inset-0 bg-black/70 flex items-center justify-center text-white text-xs">
-            Compressing…
+            上传中…
           </div>
         )}
       </div>
@@ -154,7 +98,7 @@ export default function AvatarUpload({
               type="button"
               onClick={() => inputRef.current?.click()}
               className="px-2 py-1 text-[11px] bg-neutral-800 hover:bg-neutral-700 rounded text-neutral-300"
-              disabled={compressing}
+              disabled={uploading}
             >
               Upload file
             </button>
@@ -195,7 +139,7 @@ export default function AvatarUpload({
             </div>
           )}
           <p className="text-[10px] text-neutral-500 text-center leading-tight">
-            本地文件会压缩为 896×1152 webp 并上传 CDN。也可粘贴 Discord/Imgur 链接。
+            只接受图片，最大 10MB。原图直传，不压缩、不转 webp。也可粘贴链接。
           </p>
         </div>
       )}
@@ -203,7 +147,7 @@ export default function AvatarUpload({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,image/avif,.png,.jpg,.jpeg,.gif,.webp,.bmp,.avif"
         className="hidden"
         onChange={handleFile}
       />

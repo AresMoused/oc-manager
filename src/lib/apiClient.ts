@@ -61,7 +61,35 @@ export async function migrateLocalToServer(payload: {
   return res.json();
 }
 
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/bmp",
+  "image/avif",
+  "image/heic",
+  "image/heif",
+]);
+
+export function assertImageFile(file: File): void {
+  const type = (file.type || "").toLowerCase();
+  const looksImage =
+    ALLOWED_IMAGE_TYPES.has(type) ||
+    (type.startsWith("image/") && type !== "image/svg+xml");
+  if (!looksImage) {
+    throw new Error("只能上传图片（png / jpg / gif / webp 等）");
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    throw new Error("图片不能超过 10MB");
+  }
+}
+
 export async function uploadImage(file: File): Promise<string> {
+  assertImageFile(file);
   const form = new FormData();
   form.append("file", file);
   const res = await fetch("/api/upload", { method: "POST", body: form });
