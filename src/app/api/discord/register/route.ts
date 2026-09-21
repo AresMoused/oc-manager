@@ -20,8 +20,8 @@ const COMMANDS = [
   },
   {
     name: "每日管理",
-    description: "管理员：重抽、改投票表情、手动结算",
-    description_localizations: { "zh-TW": "管理員：重抽、改投票表情、手動結算" },
+    description: "管理员：重抽、改投票表情、手动结算、扫漏",
+    description_localizations: { "zh-TW": "管理員：重抽、改投票表情、手動結算、掃漏" },
     options: [
       {
         type: 1,
@@ -62,6 +62,14 @@ const COMMANDS = [
             required: false,
           },
         ],
+      },
+      {
+        type: 1,
+        name: "扫漏",
+        description: "扫描监视频道，补转发没进公布栏的图片投稿",
+        description_localizations: {
+          "zh-TW": "掃描監視頻道，補轉發沒進公布欄的圖片投稿",
+        },
       },
     ],
   },

@@ -2,6 +2,7 @@ import {
   discordBulletinChannelId,
   discordDailyChannelId,
   discordDailyEmoji,
+  discordWatchChannelIds,
 } from "@/lib/discord/config";
 import {
   bulletinPayload,
@@ -14,6 +15,7 @@ import {
   addOwnReaction,
   getChannelMessage,
   getChannelName,
+  listChannelMessages,
   listReactionUsers,
   postChannelMessage,
 } from "@/lib/discord/rest";
@@ -285,7 +287,7 @@ async function downloadOnce(
       return null;
     }
     const buf = new Uint8Array(await res.arrayBuffer());
-    if (buf.byteLength === 0 || buf.byteLength > 10 * 1024 * 1024) {
+    if (buf.byteLength === 0 || buf.byteLength > 25 * 1024 * 1024) {
       console.error("download media size", buf.byteLength);
       return null;
     }
@@ -451,4 +453,110 @@ async function ingestOnce(raw: {
   });
   await saveDaily(latest);
   return { ok: true, boardMessageId: posted.id };
+}
+
+function snowflakeMs(id: string): number {
+  const n = Number(id);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n / 4194304) + 1_420_070_400_000;
+}
+
+export type ScanMissedResult = {
+  scanned: number;
+  candidates: number;
+  forwarded: number;
+  already: number;
+  skipped: { id: string; reason: string }[];
+  errors: string[];
+};
+
+/** REST-scan watch channels for posts that have today's (or yesterday's) code + media but were never forwarded. */
+export async function scanMissedSubmissions(): Promise<ScanMissedResult> {
+  const today = hktDate();
+  const rec = await getDaily(today);
+  const yrec = await getDaily(hktYesterday(today));
+  const result: ScanMissedResult = {
+    scanned: 0,
+    candidates: 0,
+    forwarded: 0,
+    already: 0,
+    skipped: [],
+    errors: [],
+  };
+  if (!rec && !yrec) {
+    result.errors.push("no-daily");
+    return result;
+  }
+  const known = new Set(
+    [...(rec?.submissions || []), ...(yrec?.submissions || [])].map(
+      (s) => s.sourceMessageId
+    )
+  );
+  const channels = [
+    ...new Set(
+      [
+        ...discordWatchChannelIds(),
+        discordDailyChannelId(),
+        discordBulletinChannelId(),
+      ].filter(Boolean)
+    ),
+  ];
+  const cutoff = Date.now() - 40 * 3600 * 1000;
+  const seen = new Set<string>();
+
+  for (const channelId of channels) {
+    let before: string | undefined;
+    try {
+      for (let page = 0; page < 3; page++) {
+        const rows = await listChannelMessages(channelId, { limit: 100, before });
+        if (!rows.length) break;
+        before = rows[rows.length - 1]?.id;
+        let older = false;
+        for (const row of rows) {
+          if (snowflakeMs(row.id) < cutoff) {
+            older = true;
+            continue;
+          }
+          if (seen.has(row.id)) continue;
+          seen.add(row.id);
+          result.scanned += 1;
+          if (row.author?.bot) continue;
+          const media = firstMedia(row);
+          const text = row.content || "";
+          const matchToday = rec && codeMatches(text, rec.code);
+          const matchY = yrec && codeMatches(text, yrec.code);
+          if (!media || (!matchToday && !matchY)) continue;
+          result.candidates += 1;
+          if (known.has(row.id)) {
+            result.already += 1;
+            continue;
+          }
+          const got = await ingestSubmission({
+            id: row.id,
+            channel_id: row.channel_id || channelId,
+            guild_id: row.guild_id,
+            content: row.content,
+            author: row.author,
+            attachments: row.attachments,
+            embeds: row.embeds,
+          });
+          if (got.ok) {
+            result.forwarded += 1;
+            known.add(row.id);
+          } else {
+            result.skipped.push({
+              id: row.id,
+              reason: got.reason || "unknown",
+            });
+          }
+        }
+        if (older || rows.length < 100) break;
+      }
+    } catch (e) {
+      result.errors.push(
+        `${channelId}: ${e instanceof Error ? e.message : "error"}`
+      );
+    }
+  }
+  return result;
 }

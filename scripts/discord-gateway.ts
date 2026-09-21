@@ -32,7 +32,7 @@ async function gatewayUrl(): Promise<string> {
 
 type Payload = {
   op: number;
-  d: Record<string, unknown> | null;
+  d: unknown;
   s: number | null;
   t: string | null;
 };
@@ -59,6 +59,8 @@ async function run() {
   };
 
   const inflight = new Set<string>();
+  const pending = new Map<string, ReturnType<typeof setTimeout>>();
+  let resume = false;
 
   const postIngest = async (
     msg: Record<string, unknown> & { id: string },
@@ -84,21 +86,33 @@ async function run() {
         reason = "";
       }
       if (
-        attempt < 2 &&
+        attempt < 3 &&
         (reason === "media-not-ready" || reason === "no-media" || res.status >= 500)
       ) {
         inflight.delete(msg.id);
-        setTimeout(() => void postIngest(msg, attempt + 1), 2000 * (attempt + 1));
+        setTimeout(() => void postIngest(msg, attempt + 1), 2500 * (attempt + 1));
       }
     } catch (e) {
       log("ingest error", e);
-      if (attempt < 2) {
+      if (attempt < 3) {
         inflight.delete(msg.id);
-        setTimeout(() => void postIngest(msg, attempt + 1), 2000 * (attempt + 1));
+        setTimeout(() => void postIngest(msg, attempt + 1), 2500 * (attempt + 1));
       }
     } finally {
       inflight.delete(msg.id);
     }
+  };
+
+  const scheduleIngest = (msg: Record<string, unknown> & { id: string }) => {
+    const prev = pending.get(msg.id);
+    if (prev) clearTimeout(prev);
+    pending.set(
+      msg.id,
+      setTimeout(() => {
+        pending.delete(msg.id);
+        void postIngest(msg, 0);
+      }, 1500)
+    );
   };
 
   const handleMessage = async (raw: Buffer | string) => {
@@ -108,18 +122,36 @@ async function run() {
     if (p.op === 10) {
       const interval = Number((p.d as { heartbeat_interval: number }).heartbeat_interval);
       heartbeat(interval);
-      send(2, {
-        token: TOKEN,
-        intents: INTENTS,
-        properties: { os: "linux", browser: "oc-manager", device: "railway" },
-      });
-      log("IDENTIFY intents=", INTENTS);
+      if (resume && sessionId && seq != null) {
+        send(6, { token: TOKEN, session_id: sessionId, seq });
+        log("RESUME session", sessionId, "seq", seq);
+      } else {
+        send(2, {
+          token: TOKEN,
+          intents: INTENTS,
+          properties: { os: "linux", browser: "oc-manager", device: "railway" },
+        });
+        log("IDENTIFY intents=", INTENTS);
+      }
+      resume = false;
       return;
     }
 
     if (p.op === 11) return;
-    if (p.op === 7 || p.op === 9) {
-      log("reconnect op", p.op);
+    if (p.op === 7) {
+      log("reconnect op 7");
+      resume = true;
+      ws?.close();
+      return;
+    }
+    if (p.op === 9) {
+      const canResume = p.d === true;
+      log("invalid session, resumable=", canResume);
+      resume = canResume;
+      if (!canResume) {
+        sessionId = null;
+        seq = null;
+      }
       ws?.close();
       return;
     }
@@ -129,6 +161,11 @@ async function run() {
       sessionId = String((p.d as { session_id?: string })?.session_id || "");
       const user = (p.d as { user?: { username?: string } })?.user;
       log("gateway ready as", user?.username, "session", sessionId);
+      return;
+    }
+    if (p.t === "RESUMED") {
+      identified = true;
+      log("gateway resumed session", sessionId);
       return;
     }
 
@@ -160,11 +197,16 @@ async function run() {
           e.thumbnail?.url ||
           (e as { video?: { url?: string } }).video?.url
       );
-    if (!hasMedia) return;
-    if (!/#OC-[A-Z0-9]+/i.test(msg.content || "")) return;
+    const hasCode = /#?OC-[0-9A-HJ-NP-TV-Z]{6}/i.test(msg.content || "");
+    // CREATE often has the code before attachments finish; UPDATE may omit content.
+    if (!hasCode && !(p.t === "MESSAGE_UPDATE" && hasMedia)) return;
+    if (!hasMedia && !hasCode) return;
 
-    log("ingest candidate", p.t, msg.id, "ch", msg.channel_id);
-    void postIngest(msg, 0);
+    log("ingest candidate", p.t, msg.id, "ch", msg.channel_id, {
+      hasCode,
+      hasMedia,
+    });
+    scheduleIngest(msg);
   };
 
   const connect = async () => {
@@ -178,6 +220,7 @@ async function run() {
       log("ws close", code, String(reason));
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       identified = false;
+      if (sessionId && seq != null) resume = true;
       setTimeout(() => void connect(), 2500);
     });
     ws.on("error", (err) => log("ws error", err));

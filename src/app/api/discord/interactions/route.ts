@@ -15,6 +15,7 @@ import {
   getOrCreateToday,
   postTodayPrompt,
   runMidnightJob,
+  scanMissedSubmissions,
   votingEmoji,
 } from "@/lib/discord/daily";
 import { saveBotConfig, saveRoll, getRoll, enqueueEphemeral } from "@/lib/discord/botStore";
@@ -26,6 +27,7 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type Interaction = {
   type: number;
@@ -164,6 +166,37 @@ async function handleDaily(i: Interaction, token: string) {
     } catch (e) {
       await fill(token, {
         content: `结算失败：${e instanceof Error ? e.message : "unknown"}`,
+      });
+    }
+    return;
+  }
+  if (sub === "扫漏") {
+    if (!isDiscordAdmin(who.id, who.roles)) {
+      await fill(token, { content: "只有管理员可以扫漏。" });
+      return;
+    }
+    try {
+      const r = await scanMissedSubmissions();
+      const skip = r.skipped
+        .slice(0, 8)
+        .map((s) => `\`${s.id}\` ${s.reason}`)
+        .join("\n");
+      const lines = [
+        "已扫描监视频道（今日 + 昨日代码）。",
+        `看过 \`${r.scanned}\` 条，候选 \`${r.candidates}\`，新转发 \`${r.forwarded}\`，已经在公布栏 \`${r.already}\`。`,
+      ];
+      if (r.skipped.length) {
+        lines.push(`跳过 ${r.skipped.length}：`);
+        if (skip) lines.push(skip);
+      }
+      if (r.errors.length) lines.push(`错误：${r.errors.join("；")}`);
+      if (!r.forwarded && !r.candidates) {
+        lines.push("没有找到带今日/昨日代码和图片的漏网消息。");
+      }
+      await fill(token, { content: lines.join("\n") });
+    } catch (e) {
+      await fill(token, {
+        content: `扫漏失败：${e instanceof Error ? e.message : "unknown"}`,
       });
     }
     return;

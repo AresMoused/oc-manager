@@ -101,6 +101,20 @@ export async function getChannelMessage(
   return discordJson("GET", `/channels/${channelId}/messages/${messageId}`);
 }
 
+export async function listChannelMessages(
+  channelId: string,
+  opts?: { limit?: number; before?: string }
+): Promise<DiscordMessage[]> {
+  const limit = Math.min(Math.max(opts?.limit || 100, 1), 100);
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (opts?.before) q.set("before", opts.before);
+  const rows = await discordJson<DiscordMessage[]>(
+    "GET",
+    `/channels/${channelId}/messages?${q}`
+  );
+  return Array.isArray(rows) ? rows : [];
+}
+
 export async function getChannelName(channelId: string): Promise<string> {
   try {
     const ch = await discordJson<{ name?: string }>("GET", `/channels/${channelId}`);
