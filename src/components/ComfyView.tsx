@@ -91,6 +91,8 @@ export default function ComfyView() {
   const [ckptModels, setCkptModels] = useState<string[]>([]);
   const [sizePresets, setSizePresets] = useState(RESOLUTION_BUILTIN);
   const [modelMsg, setModelMsg] = useState("");
+  const [modelDetail, setModelDetail] = useState("");
+  const [modelReload, setModelReload] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importError, setImportError] = useState("");
@@ -150,16 +152,17 @@ export default function ComfyView() {
         setUnetModels(models.unet);
         setCkptModels(models.checkpoints);
         setSizePresets(presets);
+        setModelDetail(models.detail);
         const list = isKreaDefault ? models.unet : models.checkpoints;
         setModelMsg(list.length ? "" : isKreaDefault
-          ? "没有读到 UNet。请确认 ComfyUI 已开，模型在 diffusion_models 或 unet 目录。"
+          ? "UNet 列表是空的。自定义工作流用的是 Checkpoint，不是这个目录。"
           : "没有读到 Checkpoint。");
       } catch (e) {
         if (!cancel) setModelMsg(e instanceof Error ? e.message : "读取模型失败");
       }
     })();
     return () => { cancel = true; };
-  }, [settings.baseUrl, isKreaDefault]);
+  }, [settings.baseUrl, isKreaDefault, modelReload]);
   const importChar = useMemo(
     () => characters.find((x) => x.id === importCharId),
     [characters, importCharId]
@@ -702,6 +705,13 @@ export default function ComfyView() {
                       placeholder={isKreaDefault ? "连接 ComfyUI 后列出 UNet" : "model.safetensors"} />
                   )}
                   {modelMsg && <p className="text-[10px] text-amber-300/80 mt-1">{modelMsg}</p>}
+                  {isKreaDefault && modelDetail && (
+                    <p className="text-[10px] text-neutral-600 mt-1 break-all">{modelDetail}</p>
+                  )}
+                  {isKreaDefault && (
+                    <button type="button" onClick={() => setModelReload((n) => n + 1)}
+                      className="mt-1 text-[11px] text-sky-300/80 hover:text-sky-200">重新读取模型</button>
+                  )}
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-neutral-500 block mb-1">VAE</label>

@@ -492,57 +492,73 @@ export async function comfyCheckConnection(baseUrl: string): Promise<string> {
   return String(data?.system?.comfyui_version || data?.system?.python_version || "ok");
 }
 
-function asNameList(data: unknown): string[] {
-  if (!Array.isArray(data)) return [];
-  return data.map((item) => String(item)).filter(Boolean);
+function namesFromCombo(value: unknown): string[] {
+  if (!Array.isArray(value) || !value.length) return [];
+  const first = value[0];
+  if (Array.isArray(first)) return first.map((item) => String(item)).filter(Boolean);
+  if (typeof first === "string" && first !== "COMBO" && first !== "STRING") {
+    return value.filter((item) => typeof item === "string") as string[];
+  }
+  const options = value[1] && typeof value[1] === "object"
+    ? (value[1] as { options?: unknown }).options
+    : null;
+  return Array.isArray(options) ? options.map((item) => String(item)).filter(Boolean) : [];
 }
 
 function unetNamesFromObjectInfo(data: unknown): string[] {
   if (!data || typeof data !== "object") return [];
   const names: string[] = [];
-  for (const node of Object.values(data as Record<string, unknown>)) {
+  const visit = (node: unknown) => {
     const required = (node as { input?: { required?: Record<string, unknown> } })?.input?.required;
-    const unet = required?.unet_name;
-    const list = Array.isArray(unet) ? unet[0] : null;
-    if (!Array.isArray(list)) continue;
-    for (const item of list) if (typeof item === "string" && item) names.push(item);
-  }
-  return names;
+    if (!required) return;
+    names.push(...namesFromCombo(required.unet_name));
+  };
+  visit(data);
+  for (const node of Object.values(data as Record<string, unknown>)) visit(node);
+  return [...new Set(names)];
 }
 
-export async function fetchComfyModelLists(baseUrl: string): Promise<{ unet: string[]; checkpoints: string[] }> {
+async function readModelFolder(root: string, folder: string): Promise<{ names: string[]; status: string }> {
+  try {
+    const res = await fetch(`${root}/models/${folder}`);
+    if (!res.ok) return { names: [], status: `${folder} ${res.status}` };
+    const data = await res.json();
+    const names = Array.isArray(data) ? data.map((item) => String(item)).filter(Boolean) : [];
+    return { names, status: `${folder} ${names.length}` };
+  } catch (e) {
+    return { names: [], status: `${folder} ${e instanceof Error ? e.message : "失败"}` };
+  }
+}
+
+export async function fetchComfyModelLists(baseUrl: string): Promise<{ unet: string[]; checkpoints: string[]; detail: string }> {
   const root = baseUrl.replace(/\/+$/, "");
-  const readFolder = async (folder: string) => {
-    try {
-      const res = await fetch(`${root}/models/${encodeURIComponent(folder)}`);
-      if (!res.ok) return [];
-      return asNameList(await res.json());
-    } catch {
-      return [];
-    }
-  };
   const [unetFolder, diffusionFolder, checkpoints] = await Promise.all([
-    readFolder("unet"),
-    readFolder("diffusion_models"),
-    readFolder("checkpoints"),
+    readModelFolder(root, "unet"),
+    readModelFolder(root, "diffusion_models"),
+    readModelFolder(root, "checkpoints"),
   ]);
-  let unet = [...new Set([...unetFolder, ...diffusionFolder])];
+  const parts = [unetFolder.status, diffusionFolder.status, checkpoints.status];
+  let unet = [...new Set([...unetFolder.names, ...diffusionFolder.names])];
   if (!unet.length) {
     for (const node of ["UNet loader with Name (Image Saver)", "UNETLoader"]) {
       try {
         const res = await fetch(`${root}/object_info/${encodeURIComponent(node)}`);
-        if (!res.ok) continue;
+        if (!res.ok) {
+          parts.push(`${node} ${res.status}`);
+          continue;
+        }
         const found = unetNamesFromObjectInfo(await res.json());
+        parts.push(`${node} ${found.length}`);
         if (found.length) {
           unet = found;
           break;
         }
-      } catch {
-        /* try the next node */
+      } catch (e) {
+        parts.push(`${node} ${e instanceof Error ? e.message : "失败"}`);
       }
     }
   }
-  return { unet, checkpoints };
+  return { unet, checkpoints: checkpoints.names, detail: parts.join(" · ") };
 }
 
 /** Queue the currently saved workflow with optional prompt overrides. */
