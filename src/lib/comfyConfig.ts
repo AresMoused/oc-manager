@@ -52,6 +52,7 @@ const PRESETS_KEY = "oc-comfy-prompt-presets-v1";
 export const PLACEHOLDERS = [
   "seed", "steps", "cfg_scale", "sampler_name", "width", "height",
   "prompt", "negative_prompt", "MODEL_NAME", "scheduler", "vae",
+  "prompt_prefix", "prompt_character", "prompt_suffix",
 ] as const;
 
 export type PlaceholderKey = (typeof PLACEHOLDERS)[number];
@@ -303,6 +304,8 @@ export function applyPlaceholders(workflowRaw: string, params: ComfyParams): Rec
     sampler_name: params.sampler_name, width: params.width, height: params.height,
     prompt: fullPrompt, negative_prompt: params.negative_prompt,
     MODEL_NAME: params.MODEL_NAME, scheduler: params.scheduler, vae: params.vae,
+    prompt_prefix: params.prompt_prefix, prompt_character: params.prompt_character,
+    prompt_suffix: params.prompt_suffix,
   };
   let s = workflowRaw;
   for (const key of PLACEHOLDERS) {
@@ -353,13 +356,50 @@ export interface ComfyHistoryImage {
   type: string;
 }
 
+export function imageSaverNodeIds(graph: Record<string, unknown>): string[] {
+  const ids: string[] = [];
+  for (const [id, node] of Object.entries(graph)) {
+    const ct = (node as { class_type?: string } | null)?.class_type || "";
+    if (
+      ct === "Image Saver" ||
+      ct === "Image Saver Simple" ||
+      ct === "Image Saver (From Pipe)"
+    ) {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
+function collectHistoryImages(
+  outputs: Record<string, { images?: { filename?: string; subfolder?: string; type?: string }[] }>,
+  only?: string[]
+): ComfyHistoryImage[] {
+  const ids = only?.length ? only : Object.keys(outputs);
+  const images: ComfyHistoryImage[] = [];
+  for (const nodeId of ids) {
+    const out = outputs[nodeId];
+    if (!out?.images || !Array.isArray(out.images)) continue;
+    for (const img of out.images) {
+      if (!img?.filename) continue;
+      images.push({
+        filename: img.filename,
+        subfolder: img.subfolder || "",
+        type: img.type || "output",
+      });
+    }
+  }
+  return images;
+}
+
 export async function comfyWaitForImages(
   baseUrl: string, promptId: string,
-  opts?: { timeoutMs?: number; pollMs?: number; signal?: AbortSignal }
+  opts?: { timeoutMs?: number; pollMs?: number; signal?: AbortSignal; preferNodeIds?: string[] }
 ): Promise<ComfyHistoryImage[]> {
   const root = baseUrl.replace(/\/+$/, "");
-  const timeout = opts?.timeoutMs ?? 300_000;
+  const timeout = opts?.timeoutMs ?? 600_000;
   const poll = opts?.pollMs ?? 1200;
+  const prefer = (opts?.preferNodeIds || []).filter(Boolean);
   const start = Date.now();
   while (Date.now() - start < timeout) {
     if (opts?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -367,17 +407,24 @@ export async function comfyWaitForImages(
     if (res.ok) {
       const data = await res.json();
       const entry = data[promptId];
-      if (entry?.outputs) {
-        const images: ComfyHistoryImage[] = [];
-        for (const nodeId of Object.keys(entry.outputs)) {
-          const out = entry.outputs[nodeId];
-          if (out?.images && Array.isArray(out.images)) {
-            for (const img of out.images) {
-              images.push({ filename: img.filename, subfolder: img.subfolder || "", type: img.type || "output" });
-            }
-          }
+      const outputs = entry?.outputs as
+        | Record<string, { images?: { filename?: string; subfolder?: string; type?: string }[] }>
+        | undefined;
+      const status = entry?.status?.status_str as string | undefined;
+      const done = !!entry?.status?.completed || status === "error" || status === "success";
+      if (outputs) {
+        if (prefer.length) {
+          const saved = collectHistoryImages(outputs, prefer);
+          if (saved.length) return saved;
         }
-        if (images.length > 0 || entry.status?.completed) return images;
+        const all = collectHistoryImages(outputs);
+        if (done) {
+          if (status === "error" && !all.length) throw new Error("ComfyUI 执行失败，没有图片输出");
+          return all;
+        }
+        if (!prefer.length && all.length) return all;
+      } else if (done && status === "error") {
+        throw new Error("ComfyUI 执行失败，没有图片输出");
       }
     }
     await new Promise((r) => setTimeout(r, poll));
@@ -416,7 +463,10 @@ export async function runSavedComfyJob(
   const loraPatch = patchWorkflowLoras(promptGraph, loadSelectedLoras());
   const { prompt_id } = await comfyQueuePrompt(settings.baseUrl, promptGraph);
   if (!prompt_id) throw new Error("ComfyUI 没有返回 prompt_id");
-  const outs = await comfyWaitForImages(settings.baseUrl, String(prompt_id), { signal });
+  const outs = await comfyWaitForImages(settings.baseUrl, String(prompt_id), {
+    signal,
+    preferNodeIds: imageSaverNodeIds(promptGraph),
+  });
   if (!outs.length) throw new Error("ComfyUI 没有输出图片");
   const prompt = composePositivePrompt(params);
   pushDebugLog({

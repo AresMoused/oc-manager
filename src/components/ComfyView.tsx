@@ -10,7 +10,7 @@ import {
   DEFAULT_SAMPLERS, DEFAULT_SCHEDULERS, PLACEHOLDERS,
   applyPlaceholders, comfyCheckConnection, comfyImageUrl, comfyQueuePrompt,
   comfyWaitForImages, composePositivePrompt, defaultParams, defaultSettings,
-  detectPlaceholders, loadParams, loadPromptPresets, loadSettings, loadWorkflows,
+  detectPlaceholders, imageSaverNodeIds, loadParams, loadPromptPresets, loadSettings, loadWorkflows,
   normalizeWorkflowUpload, saveParams, savePromptPresets, saveSettings, saveWorkflows,
   validateWorkflowTemplate,
 } from "@/lib/comfyConfig";
@@ -232,7 +232,10 @@ export default function ComfyView() {
     const promptGraph = applyPlaceholders(activeWf.workflow, { ...p, seed: seedUsed });
     const loraPatch = patchWorkflowLoras(promptGraph, loras);
     const { prompt_id } = await comfyQueuePrompt(settings.baseUrl, promptGraph);
-    const outs = await comfyWaitForImages(settings.baseUrl, prompt_id, { signal });
+    const outs = await comfyWaitForImages(settings.baseUrl, prompt_id, {
+      signal,
+      preferNodeIds: imageSaverNodeIds(promptGraph),
+    });
     const urls = outs.map((img) => comfyImageUrl(settings.baseUrl, img));
     pushDebugLog({
       source: "抽卡姬",
@@ -620,7 +623,7 @@ export default function ComfyView() {
                     </div>
                   )}
                   <p className="text-[11px] text-neutral-600 leading-relaxed">
-                    支持：%seed% %steps% %cfg_scale% %sampler_name% %width% %height% %prompt% %negative_prompt% %MODEL_NAME% %scheduler% %vae%
+                    支持：%seed% %steps% %cfg_scale% %width% %height% %negative_prompt% %prompt_prefix% %prompt_character% %prompt_suffix% %prompt% %MODEL_NAME% %scheduler% %vae% %sampler_name%
                   </p>
                 </div>
               )}

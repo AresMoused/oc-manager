@@ -1,0 +1,846 @@
+{
+  "75": {
+    "inputs": {
+      "string": "%negative_prompt%"
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "负面提示词"
+    }
+  },
+  "77": {
+    "inputs": {
+      "__lm_autocomplete_meta_text": {
+        "version": 1,
+        "textWidgetName": "text"
+      },
+      "text": "<lora:light_c1-st2000:0.40> <lora:soronikrea2_c2-st6000:0.40> <lora:Ps_impasto_style_v1-000024:0.30> <lora:harustyle_v1.6:0.30> <lora:snofs_krea_v1_4:0.60>",
+      "loras": {
+        "__value__": [
+          {
+            "name": "light_c1-st2000",
+            "strength": 0.4,
+            "active": true,
+            "expanded": false,
+            "clipStrength": 0.4,
+            "selected": false,
+            "locked": false
+          },
+          {
+            "name": "soronikrea2_c2-st6000",
+            "strength": 0.4,
+            "active": true,
+            "expanded": false,
+            "clipStrength": 0.4,
+            "selected": false,
+            "locked": false
+          },
+          {
+            "name": "Ps_impasto_style_v1-000024",
+            "strength": 0.3,
+            "active": true,
+            "expanded": false,
+            "clipStrength": 0.3,
+            "selected": false,
+            "locked": false
+          },
+          {
+            "name": "harustyle_v1.6",
+            "strength": 0.3,
+            "active": true,
+            "expanded": false,
+            "clipStrength": 0.3,
+            "selected": false,
+            "locked": false
+          },
+          {
+            "name": "snofs_krea_v1_4",
+            "strength": 0.6,
+            "active": true,
+            "expanded": false,
+            "clipStrength": 0.6,
+            "selected": false,
+            "locked": false
+          }
+        ]
+      },
+      "model": [
+        "135:307",
+        0
+      ],
+      "clip": [
+        "135:66",
+        0
+      ]
+    },
+    "class_type": "Lora Loader (LoraManager)",
+    "_meta": {
+      "title": "Krea2 Lora"
+    }
+  },
+  "80": {
+    "inputs": {
+      "action": "append",
+      "tidy_tags": "no",
+      "text_a": [
+        "314",
+        0
+      ],
+      "text_b": [
+        "182",
+        0
+      ],
+      "text_c": ""
+    },
+    "class_type": "StringFunction|pysssss",
+    "_meta": {
+      "title": "正面提示词合并"
+    }
+  },
+  "84": {
+    "inputs": {
+      "seed": %seed%
+    },
+    "class_type": "Seed (rgthree)",
+    "_meta": {
+      "title": "Seed (rgthree)"
+    }
+  },
+  "110": {
+    "inputs": {
+      "action": "append",
+      "tidy_tags": "no",
+      "text_a": [
+        "80",
+        0
+      ],
+      "text_b": [
+        "184",
+        3
+      ],
+      "text_c": [
+        "220",
+        0
+      ]
+    },
+    "class_type": "StringFunction|pysssss",
+    "_meta": {
+      "title": "正面提示词合并"
+    }
+  },
+  "140": {
+    "inputs": {
+      "action": "append",
+      "tidy_tags": "yes",
+      "text_a": [
+        "143",
+        0
+      ],
+      "text_b": [
+        "220",
+        0
+      ],
+      "text_c": ""
+    },
+    "class_type": "StringFunction|pysssss",
+    "_meta": {
+      "title": "String Function 🐍"
+    }
+  },
+  "143": {
+    "inputs": {
+      "action": "append",
+      "tidy_tags": "yes",
+      "text_a": [
+        "270",
+        0
+      ],
+      "text_b": [
+        "182",
+        0
+      ],
+      "text_c": [
+        "184",
+        3
+      ]
+    },
+    "class_type": "StringFunction|pysssss",
+    "_meta": {
+      "title": "String Function 🐍"
+    }
+  },
+  "150": {
+    "inputs": {
+      "width": %width%,
+      "height": %height%
+    },
+    "class_type": "ResolutionMasterSimplify",
+    "_meta": {
+      "title": "分辨率大师简化版 (Resolution Master Simplify)"
+    }
+  },
+  "182": {
+    "inputs": {
+      "string": "%prompt_prefix%"
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "风格"
+    }
+  },
+  "184": {
+    "inputs": {
+      "wildcard_text": "%prompt_character%\n%prompt_suffix%",
+      "populated_text": "%prompt_character%\n%prompt_suffix%",
+      "mode": "populate",
+      "Select to add LoRA": "Select the LoRA to add to the text",
+      "Select to add Wildcard": "Select the Wildcard to add to the text",
+      "seed": [
+        "84",
+        0
+      ],
+      "model": [
+        "77",
+        0
+      ],
+      "clip": [
+        "77",
+        1
+      ]
+    },
+    "class_type": "ImpactWildcardEncode",
+    "_meta": {
+      "title": "画面构图及角色姿势"
+    }
+  },
+  "204": {
+    "inputs": {
+      "filename": [
+        "324",
+        0
+      ],
+      "path": "Krea2",
+      "extension": "png",
+      "steps": [
+        "135:101",
+        0
+      ],
+      "cfg": [
+        "135:100",
+        0
+      ],
+      "modelname": [
+        "135:111",
+        1
+      ],
+      "sampler_name": "er_sde",
+      "scheduler_name": "normal",
+      "positive": [
+        "110",
+        0
+      ],
+      "negative": [
+        "75",
+        0
+      ],
+      "seed_value": [
+        "84",
+        0
+      ],
+      "width": [
+        "150",
+        0
+      ],
+      "height": [
+        "150",
+        1
+      ],
+      "lossless_webp": true,
+      "quality_jpeg_or_webp": 100,
+      "optimize_png": false,
+      "counter": 0,
+      "denoise": 1,
+      "clip_skip": 0,
+      "time_format": "%Y-%m-%d-%H%M%S",
+      "save_workflow_as_json": false,
+      "embed_workflow": true,
+      "additional_hashes": [
+        "310",
+        0
+      ],
+      "download_civitai_data": true,
+      "easy_remix": true,
+      "show_preview": true,
+      "custom": [
+        "310",
+        3
+      ],
+      "images": [
+        "152:267",
+        0
+      ]
+    },
+    "class_type": "Image Saver",
+    "_meta": {
+      "title": "Image Saver"
+    }
+  },
+  "220": {
+    "inputs": {
+      "string": [
+        "281",
+        0
+      ]
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "后缀"
+    }
+  },
+  "270": {
+    "inputs": {
+      "group_mode": true,
+      "default_active": true,
+      "allow_strength_adjustment": false,
+      "toggle_trigger_words": {
+        "__value__": [
+          {
+            "text": "all rendered in a clean semi-realistic 2.8D fashion editorial illustration style with refined Korean/East Asian beauty aesthetic, crisp delicate linework, fine thin lines, clear facial feature definition, lifelike anatomical structure, natural skin texture, soft realistic shading, physically plausible lighting, polished digital illustration quality, realistic body proportions, clean non-photorealistic finish, elegant modern high-end fashion editorial mood, flat colors, and glossy",
+            "active": true,
+            "highlighted": false,
+            "strength": null,
+            "items": [
+              {
+                "text": "all rendered in a clean semi-realistic 2.8D fashion editorial illustration style with refined Korean/East Asian beauty aesthetic",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "crisp delicate linework",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "fine thin lines",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "clear facial feature definition",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "lifelike anatomical structure",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "natural skin texture",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "soft realistic shading",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "physically plausible lighting",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "polished digital illustration quality",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "realistic body proportions",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "clean non-photorealistic finish",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "elegant modern high-end fashion editorial mood",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "flat colors",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              },
+              {
+                "text": "and glossy",
+                "active": true,
+                "highlighted": false,
+                "strength": null
+              }
+            ]
+          }
+        ]
+      },
+      "orinalMessage": "all rendered in a clean semi-realistic 2.8D fashion editorial illustration style with refined Korean/East Asian beauty aesthetic, crisp delicate linework, fine thin lines, clear facial feature definition, lifelike anatomical structure, natural skin texture, soft realistic shading, physically plausible lighting, polished digital illustration quality, realistic body proportions, clean non-photorealistic finish, elegant modern high-end fashion editorial mood, flat colors, and glossy",
+      "trigger_words": [
+        "77",
+        2
+      ]
+    },
+    "class_type": "TriggerWord Toggle (LoraManager)",
+    "_meta": {
+      "title": "TriggerWord Toggle (LoraManager)"
+    }
+  },
+  "280": {
+    "inputs": {
+      "format": "%Y.%m.%d"
+    },
+    "class_type": "JWDatetimeString",
+    "_meta": {
+      "title": "Datetime String"
+    }
+  },
+  "281": {
+    "inputs": {
+      "action": "append",
+      "tidy_tags": "no",
+      "text_a": "along the bottom left, a signature is written horizontally in a faded red felt-tip pen—a scrawled yet fluid English-language hand-signature.\"AresM ",
+      "text_b": [
+        "280",
+        0
+      ],
+      "text_c": "\""
+    },
+    "class_type": "StringFunction|pysssss",
+    "_meta": {
+      "title": "签名"
+    }
+  },
+  "310": {
+    "inputs": {
+      "loaded_loras": [
+        "77",
+        3
+      ]
+    },
+    "class_type": "LoraTagsToHashMetadata",
+    "_meta": {
+      "title": "LoRA Tags To Hash Metadata"
+    }
+  },
+  "314": {
+    "inputs": {
+      "action": "append",
+      "tidy_tags": "no",
+      "text_a": "",
+      "text_b": [
+        "270",
+        0
+      ],
+      "text_c": ""
+    },
+    "class_type": "StringFunction|pysssss",
+    "_meta": {
+      "title": "正面提示词合并"
+    }
+  },
+  "315": {
+    "inputs": {
+      "model_name": "ViT_v3",
+      "image": [
+        "148:139",
+        0
+      ]
+    },
+    "class_type": "GetRatingNode",
+    "_meta": {
+      "title": "Get Rating Class"
+    }
+  },
+  "321": {
+    "inputs": {
+      "String": "%time_%basemodelname_%seed_SFW"
+    },
+    "class_type": "String",
+    "_meta": {
+      "title": "SFW"
+    }
+  },
+  "322": {
+    "inputs": {
+      "String": "%time_%basemodelname_%seed_NSFW"
+    },
+    "class_type": "String",
+    "_meta": {
+      "title": "NSFW"
+    }
+  },
+  "324": {
+    "inputs": {
+      "Operation": "A = B",
+      "CompareValue_A": [
+        "315",
+        0
+      ],
+      "CompareValue_B": [
+        "325",
+        0
+      ],
+      "OnTrue": [
+        "322",
+        0
+      ],
+      "OnFalse": [
+        "321",
+        0
+      ]
+    },
+    "class_type": "DF_Logic_node",
+    "_meta": {
+      "title": "Logic node"
+    }
+  },
+  "325": {
+    "inputs": {
+      "String": "explicit"
+    },
+    "class_type": "String",
+    "_meta": {
+      "title": "explicit"
+    }
+  },
+  "135:104": {
+    "inputs": {
+      "float": %cfg_scale%
+    },
+    "class_type": "Cfg Literal",
+    "_meta": {
+      "title": "Cfg Literal"
+    }
+  },
+  "135:103": {
+    "inputs": {
+      "int": %steps%
+    },
+    "class_type": "Int Literal",
+    "_meta": {
+      "title": "Int Literal"
+    }
+  },
+  "135:100": {
+    "inputs": {
+      "any_02": [
+        "135:104",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "CFG Switch"
+    }
+  },
+  "135:101": {
+    "inputs": {
+      "any_02": [
+        "135:103",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "Step Switch"
+    }
+  },
+  "135:307": {
+    "inputs": {
+      "sage_attention": "auto",
+      "allow_compile": false,
+      "model": [
+        "135:111",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
+    }
+  },
+  "135:65": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "135:66": {
+    "inputs": {
+      "clip_name": "qwen3-vl-4b-heretic.safetensors",
+      "type": "krea2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "135:111": {
+    "inputs": {
+      "unet_name": "Krea 2\\porn\\pornmasterKrea2_v25Turbo.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNet loader with Name (Image Saver)",
+    "_meta": {
+      "title": "UNet loader with Name (Image Saver)"
+    }
+  },
+  "148:142": {
+    "inputs": {
+      "width": [
+        "150",
+        0
+      ],
+      "height": [
+        "150",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空Latent"
+    }
+  },
+  "148:139": {
+    "inputs": {
+      "samples": [
+        "148:146",
+        1
+      ],
+      "vae": [
+        "148:146",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "148:221": {
+    "inputs": {
+      "text": [
+        "140",
+        0
+      ],
+      "clip": [
+        "184",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "148:141": {
+    "inputs": {
+      "model": [
+        "184",
+        0
+      ],
+      "clip": [
+        "184",
+        1
+      ],
+      "vae": [
+        "135:65",
+        0
+      ],
+      "positive": [
+        "148:221",
+        0
+      ],
+      "negative": [
+        "148:222",
+        0
+      ]
+    },
+    "class_type": "ToBasicPipe",
+    "_meta": {
+      "title": "ToBasicPipe"
+    }
+  },
+  "148:222": {
+    "inputs": {
+      "text": [
+        "75",
+        0
+      ],
+      "clip": [
+        "184",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "148:146": {
+    "inputs": {
+      "seed": [
+        "84",
+        0
+      ],
+      "steps": [
+        "135:101",
+        0
+      ],
+      "cfg": [
+        "135:100",
+        0
+      ],
+      "sampler_name": "er_sde",
+      "scheduler": "normal",
+      "denoise": 1,
+      "basic_pipe": [
+        "148:141",
+        0
+      ],
+      "latent_image": [
+        "148:142",
+        0
+      ]
+    },
+    "class_type": "ImpactKSamplerBasicPipe",
+    "_meta": {
+      "title": "KSampler (pipe)"
+    }
+  },
+  "152:207": {
+    "inputs": {
+      "seed": 2110120971,
+      "resolution": 1920,
+      "max_resolution": 4096,
+      "batch_size": 1,
+      "uniform_batch_size": false,
+      "color_correction": "lab",
+      "temporal_overlap": 0,
+      "prepend_frames": 0,
+      "input_noise_scale": 0,
+      "latent_noise_scale": 0,
+      "offload_device": "none",
+      "enable_debug": false,
+      "image": [
+        "152:299",
+        0
+      ],
+      "dit": [
+        "152:306",
+        0
+      ],
+      "vae": [
+        "152:209",
+        0
+      ]
+    },
+    "class_type": "SeedVR2VideoUpscaler",
+    "_meta": {
+      "title": "SeedVR2 Video Upscaler (v2.5.24)"
+    }
+  },
+  "152:267": {
+    "inputs": {
+      "any_01": [
+        "152:308",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "Image Switch"
+    }
+  },
+  "152:209": {
+    "inputs": {
+      "model": "ema_vae_fp16.safetensors",
+      "device": "cuda:0",
+      "encode_tiled": true,
+      "encode_tile_size": 1024,
+      "encode_tile_overlap": 128,
+      "decode_tiled": true,
+      "decode_tile_size": 1024,
+      "decode_tile_overlap": 128,
+      "tile_debug": "false",
+      "offload_device": "cpu",
+      "cache_model": true
+    },
+    "class_type": "SeedVR2LoadVAEModel",
+    "_meta": {
+      "title": "SeedVR2 (Down)Load VAE Model"
+    }
+  },
+  "152:299": {
+    "inputs": {
+      "purge_cache": true,
+      "purge_models": true,
+      "anything": [
+        "148:139",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: PurgeVRAM V2",
+    "_meta": {
+      "title": "LayerUtility: Purge VRAM V2"
+    }
+  },
+  "152:308": {
+    "inputs": {
+      "purge_cache": true,
+      "purge_models": true,
+      "anything": [
+        "152:207",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: PurgeVRAM V2",
+    "_meta": {
+      "title": "LayerUtility: Purge VRAM V2"
+    }
+  },
+  "152:306": {
+    "inputs": {
+      "model": "seedvr2_ema_7b_sharp_fp8_e4m3fn_mixed_block35_fp16.safetensors",
+      "device": "cuda:0",
+      "blocks_to_swap": 10,
+      "swap_io_components": false,
+      "offload_device": "cpu",
+      "cache_model": true,
+      "attention_mode": "sageattn_2"
+    },
+    "class_type": "SeedVR2LoadDiTModel",
+    "_meta": {
+      "title": "SeedVR2 (Down)Load DiT Model"
+    }
+  }
+}
