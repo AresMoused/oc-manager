@@ -502,20 +502,25 @@ export default function ComfyView() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           <div className="lg:col-span-5 space-y-3">
-            <section className={card}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
+            <section
+              className={`${card}${folded("ares") ? "" : " cursor-pointer"}`}
+              onClick={() => { if (!folded("ares")) toggleFold("ares"); }}
+            >
+              <div
+                className={`flex flex-wrap items-center justify-between gap-2 ${folded("ares") ? "cursor-pointer" : ""}`}
+                onClick={() => { if (folded("ares")) toggleFold("ares"); }}
+              >
                 <div className="flex items-center gap-2 min-w-0">
-                  <button type="button" onClick={() => toggleFold("ares")} className="flex items-center gap-2 text-left">
-                    <span className="text-neutral-500 w-3">{folded("ares") ? "▾" : "▸"}</span>
-                    <h3 className="text-sm font-medium text-neutral-200">做Ares同款</h3>
-                  </button>
+                  <span className="text-neutral-500 w-3">{folded("ares") ? "▾" : "▸"}</span>
+                  <h3 className="text-sm font-medium text-neutral-200">做Ares同款</h3>
                   <a href="https://aresmoused.com/works" target="_blank" rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
                     className="text-xs text-sky-300 hover:underline">
                     aresmoused.com/works
                   </a>
                 </div>
                 {folded("ares") && (
-                  <button type="button" onClick={() => void readClipboardImport()}
+                  <button type="button" onClick={(e) => { e.stopPropagation(); void readClipboardImport(); }}
                     className="text-xs px-2.5 py-1 rounded-lg border border-sky-700/60 text-sky-300 hover:bg-sky-950/30">
                     读取剪贴板
                   </button>
@@ -540,18 +545,25 @@ export default function ComfyView() {
               </button>
               </>)}
             </section>
-            <section className={card}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <button type="button" onClick={() => toggleFold("positive")} className="flex items-center gap-2 text-left">
+            <section
+              className={`${card}${folded("positive") ? "" : " cursor-pointer"}`}
+              onClick={() => { if (!folded("positive")) toggleFold("positive"); }}
+            >
+              <div
+                className={`flex flex-wrap items-center justify-between gap-2 ${folded("positive") ? "cursor-pointer" : ""}`}
+                onClick={() => { if (folded("positive")) toggleFold("positive"); }}
+              >
+                <span className="flex items-center gap-2 text-left">
                   <span className="text-neutral-500 w-3">{folded("positive") ? "▾" : "▸"}</span>
                   <h3 className="text-sm font-medium text-neutral-200">正面提示词</h3>
-                </button>
+                </span>
                 <div className="flex flex-wrap gap-1.5">
-                  <button type="button" onClick={() => setPresetOpen(true)}
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setPresetOpen(true); }}
                     className="text-xs px-2.5 py-1 rounded-lg border border-neutral-600 text-neutral-300 hover:bg-neutral-800">
                     预设 ({presets.length})
                   </button>
-                  <button type="button" onClick={() => {
+                  <button type="button" onClick={(e) => {
+                    e.stopPropagation();
                     if (characters[0] && !importCharId) setImportCharId(characters[0].id);
                     setImportCharOpen(true);
                   }} className="text-xs px-2.5 py-1 rounded-lg border border-purple-700/60 text-purple-300 hover:bg-purple-950/30">
@@ -630,8 +642,11 @@ export default function ComfyView() {
               </>)}
             </section>
 
-            <section className="bg-[#141414] border border-neutral-800 rounded-xl p-4 space-y-2">
-              <button type="button" onClick={() => toggleFold("negative")} className="flex items-center gap-2 text-left">
+            <section
+              className={`bg-[#141414] border border-neutral-800 rounded-xl p-4 space-y-2${folded("negative") ? "" : " cursor-pointer"}`}
+              onClick={() => { if (!folded("negative")) toggleFold("negative"); }}
+            >
+              <button type="button" onClick={(e) => { e.stopPropagation(); toggleFold("negative"); }} className="flex w-full items-center gap-2 text-left">
                 <span className="text-neutral-500 w-3">{folded("negative") ? "▾" : "▸"}</span>
                 <span className="text-sm font-medium text-neutral-200">负面提示词</span>
               </button>
@@ -654,8 +669,11 @@ export default function ComfyView() {
               onToggle={() => toggleFold("lora")}
             />
 
-            <section className={card}>
-              <button type="button" onClick={() => toggleFold("sample")} className="flex items-center gap-2 text-left">
+            <section
+              className={`${card}${folded("sample") ? "" : " cursor-pointer"}`}
+              onClick={() => { if (!folded("sample")) toggleFold("sample"); }}
+            >
+              <button type="button" onClick={(e) => { e.stopPropagation(); toggleFold("sample"); }} className="flex w-full items-center gap-2 text-left">
                 <span className="text-neutral-500 w-3">{folded("sample") ? "▾" : "▸"}</span>
                 <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">采样</h3>
               </button>
@@ -725,8 +743,11 @@ export default function ComfyView() {
               </>)}
             </section>
 
-            <section className={card}>
-              <button type="button" onClick={() => toggleFold("size")} className="flex items-center gap-2 text-left">
+            <section
+              className={`${card}${folded("size") ? "" : " cursor-pointer"}`}
+              onClick={() => { if (!folded("size")) toggleFold("size"); }}
+            >
+              <button type="button" onClick={(e) => { e.stopPropagation(); toggleFold("size"); }} className="flex w-full items-center gap-2 text-left">
                 <span className="text-neutral-500 w-3">{folded("size") ? "▾" : "▸"}</span>
                 <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">尺寸 / 模型</h3>
               </button>

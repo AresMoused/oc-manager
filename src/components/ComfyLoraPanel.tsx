@@ -103,12 +103,18 @@ export default function ComfyLoraPanel({
   };
 
   return (
-    <section className="bg-[#141414] border border-neutral-800 rounded-xl p-4 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <button type="button" onClick={onToggle} className="flex items-center gap-2 text-left">
+    <section
+      className={`bg-[#141414] border border-neutral-800 rounded-xl p-4 space-y-3${open ? "" : " cursor-pointer"}`}
+      onClick={() => { if (!open) onToggle(); }}
+    >
+      <div
+        className={`flex flex-wrap items-center justify-between gap-2 ${open ? "cursor-pointer" : ""}`}
+        onClick={() => { if (open) onToggle(); }}
+      >
+        <span className="flex items-center gap-2 text-left">
           <span className="text-neutral-500 w-3">{open ? "▾" : "▸"}</span>
           <h3 className="text-sm font-medium text-neutral-200">LoRA</h3>
-        </button>
+        </span>
         <span className="text-[10px] text-neutral-600">{selected.length} 张</span>
       </div>
       {open && (<>
