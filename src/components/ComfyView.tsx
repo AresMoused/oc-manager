@@ -804,11 +804,6 @@ export default function ComfyView() {
 
           <div className="lg:col-span-7 space-y-3">
             <section className="bg-[#141414] border border-purple-900/40 rounded-xl p-4 space-y-3">
-              <button type="button" onClick={() => toggleFold("generate")} className="flex items-center gap-2 text-left">
-                <span className="text-neutral-500 w-3">{folded("generate") ? "▾" : "▸"}</span>
-                <span className="text-sm font-medium text-neutral-200">生成</span>
-              </button>
-              {folded("generate") && (<>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="w-24">
                   <label className="text-xs text-neutral-500 block mb-1">批量次数</label>
@@ -840,20 +835,15 @@ export default function ComfyView() {
                 {status && <span className="text-neutral-400">{status}</span>}
                 {error && <span className="text-rose-400 break-all">{error}</span>}
               </div>
-              </>)}
             </section>
 
             <section className={card}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <button type="button" onClick={() => toggleFold("workflow")} className="flex items-center gap-2 text-left">
-                  <span className="text-neutral-500 w-3">{folded("workflow") ? "▾" : "▸"}</span>
-                  <h3 className="text-sm font-semibold text-neutral-200">工作流</h3>
-                </button>
+                <h3 className="text-sm font-semibold text-neutral-200">工作流</h3>
                 <button type="button" onClick={() => fileRef.current?.click()}
                   className="px-3 py-1.5 text-xs rounded-lg border border-purple-700/60 text-purple-300 hover:bg-purple-950/30">上传工作流 JSON</button>
                 <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={handleUploadWorkflow} />
               </div>
-              {folded("workflow") && (<>
               {workflows.length === 0 ? (
                 <p className="text-sm text-neutral-500 py-4 text-center">
                   尚未上传工作流。请从 ComfyUI 导出 API 格式 JSON，并把需要替换的值改成占位符（如 <code className="text-purple-300">%prompt%</code>）。
@@ -891,33 +881,27 @@ export default function ComfyView() {
                   </p>
                 </div>
               )}
-              </>)}
             </section>
 
-            <section className="bg-[#141414] border border-neutral-800 rounded-xl p-4">
-              <div className="flex items-center justify-between">
-                <button type="button" onClick={() => toggleFold("output")} className="flex items-center gap-2 text-left">
-                  <span className="text-neutral-500 w-3">{folded("output") ? "▾" : "▸"}</span>
-                  <h3 className="text-sm font-semibold text-neutral-200">输出</h3>
-                </button>
-                {folded("output") && images.length > 0 && (
+            <section className="bg-[#141414] border border-neutral-800 rounded-xl p-4 min-h-[320px]">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-neutral-200">输出</h3>
+                {images.length > 0 && (
                   <button type="button" onClick={() => setImages([])} className="text-xs text-neutral-500 hover:text-white">清空</button>
                 )}
               </div>
-              {folded("output") && (
-                images.length === 0 ? (
-                  <div className="mt-3 h-64 flex items-center justify-center border border-dashed border-neutral-800 rounded-xl text-neutral-600 text-sm">生成结果将显示在这里</div>
-                ) : (
-                  <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {images.map((url, i) => (
-                      <a key={`${url}-${i}`} href={url} target="_blank" rel="noopener noreferrer"
-                        className="block aspect-[3/4] rounded-lg overflow-hidden border border-neutral-800 bg-black group relative">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={url} alt={`out-${i}`} className="w-full h-full object-cover group-hover:scale-105 transition" />
-                      </a>
-                    ))}
-                  </div>
-                )
+              {images.length === 0 ? (
+                <div className="h-64 flex items-center justify-center border border-dashed border-neutral-800 rounded-xl text-neutral-600 text-sm">生成结果将显示在这里</div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {images.map((url, i) => (
+                    <a key={`${url}-${i}`} href={url} target="_blank" rel="noopener noreferrer"
+                      className="block aspect-[3/4] rounded-lg overflow-hidden border border-neutral-800 bg-black group relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt={`out-${i}`} className="w-full h-full object-cover group-hover:scale-105 transition" />
+                    </a>
+                  ))}
+                </div>
               )}
             </section>
           </div>
