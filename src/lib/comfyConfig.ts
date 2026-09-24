@@ -1,6 +1,7 @@
 /** ComfyUI connection, workflow templates, and generation params (browser local) */
 
 import { pushDebugLog } from "@/lib/debugLog";
+import { loadSelectedLoras, patchWorkflowLoras } from "@/lib/comfyLora";
 
 export interface ComfyWorkflowTemplate {
   id: string;
@@ -104,7 +105,7 @@ export function composePositivePrompt(p: {
 }
 
 export function defaultSettings(): ComfySettings {
-  return { baseUrl: "http://127.0.0.1:8188", activeWorkflowId: "" };
+  return { baseUrl: "http://127.0.0.1:8964", activeWorkflowId: "" };
 }
 
 function safeParse<T>(raw: string | null, fallback: T): T {
@@ -412,6 +413,7 @@ export async function runSavedComfyJob(
   const params = { ...loadParams(), ...overrides };
   const seedUsed = params.seed < 0 ? Math.floor(Math.random() * 2 ** 32) : Math.floor(params.seed);
   const promptGraph = applyPlaceholders(wf.workflow, { ...params, seed: seedUsed });
+  const loraPatch = patchWorkflowLoras(promptGraph, loadSelectedLoras());
   const { prompt_id } = await comfyQueuePrompt(settings.baseUrl, promptGraph);
   if (!prompt_id) throw new Error("ComfyUI 没有返回 prompt_id");
   const outs = await comfyWaitForImages(settings.baseUrl, String(prompt_id), { signal });
@@ -427,6 +429,7 @@ export async function runSavedComfyJob(
       prompt,
       negative: params.negative_prompt,
       size: `${params.width}x${params.height}`,
+      loraNodes: loraPatch,
       urls: outs.map((img) => comfyImageUrl(settings.baseUrl, img)),
     },
   });

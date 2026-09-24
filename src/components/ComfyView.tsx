@@ -17,6 +17,7 @@ import {
 import type { BuilderData } from "@/lib/promptBuilder";
 import { loadLexiconBuilder, rollRandomCharacter as rollLexicon } from "@/lib/comfyLexicon";
 import LexiconEnableModal from "@/components/LexiconEnableModal";
+import ComfyLoraPanel from "@/components/ComfyLoraPanel";
 import { pushDebugLog } from "@/lib/debugLog";
 import {
   APPEARANCE_PARTS,
@@ -24,6 +25,12 @@ import {
   composeSelectedParts,
   type AppearancePartId,
 } from "@/lib/appearance";
+import {
+  loadSelectedLoras,
+  patchWorkflowLoras,
+  saveSelectedLoras,
+  type SelectedLora,
+} from "@/lib/comfyLora";
 
 function newId() { return crypto.randomUUID(); }
 
@@ -64,6 +71,7 @@ export default function ComfyView() {
   const [randomEnabled, setRandomEnabled] = useState(true);
   const [randomLocked, setRandomLocked] = useState(false);
   const [lexiconModalOpen, setLexiconModalOpen] = useState(false);
+  const [loras, setLoras] = useState<SelectedLora[]>([]);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -75,6 +83,7 @@ export default function ComfyView() {
     setWorkflows(w);
     setParams(loadParams());
     setPresets(loadPromptPresets());
+    setLoras(loadSelectedLoras());
     if (!s.activeWorkflowId && w[0]) {
       const next = { ...s, activeWorkflowId: w[0].id };
       setSettings(next);
@@ -221,6 +230,7 @@ export default function ComfyView() {
     const seedUsed = p.seed < 0 ? Math.floor(Math.random() * 2 ** 32) : Math.floor(p.seed);
     setLastSeed(seedUsed);
     const promptGraph = applyPlaceholders(activeWf.workflow, { ...p, seed: seedUsed });
+    const loraPatch = patchWorkflowLoras(promptGraph, loras);
     const { prompt_id } = await comfyQueuePrompt(settings.baseUrl, promptGraph);
     const outs = await comfyWaitForImages(settings.baseUrl, prompt_id, { signal });
     const urls = outs.map((img) => comfyImageUrl(settings.baseUrl, img));
@@ -234,6 +244,8 @@ export default function ComfyView() {
         prompt: composePositivePrompt(p),
         negative: p.negative_prompt,
         size: `${p.width}x${p.height}`,
+        loras: loras.filter((l) => l.active).map((l) => l.modelName),
+        loraNodes: loraPatch,
         urls,
       },
     });
@@ -351,7 +363,7 @@ export default function ComfyView() {
           <div className="flex flex-wrap items-center gap-2">
             <input className="bg-[#1a1a1a] border border-neutral-700 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-purple-500 min-w-[200px]"
               value={settings.baseUrl} onChange={(e) => persistSettings({ ...settings, baseUrl: e.target.value })}
-              placeholder="http://127.0.0.1:8188" />
+              placeholder="http://127.0.0.1:8964" />
             <button type="button" onClick={handleConnect} disabled={connecting}
               className="px-3 py-2 text-sm rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800 disabled:opacity-50">
               {connecting ? "连接中…" : "测试连接"}
@@ -449,6 +461,17 @@ export default function ComfyView() {
               <textarea className={`${inp} min-h-[80px] resize-y`} value={params.negative_prompt}
                 onChange={(e) => persistParams({ ...params, negative_prompt: e.target.value })} />
             </section>
+
+            <ComfyLoraPanel
+              baseUrl={settings.baseUrl}
+              selected={loras}
+              onChange={(next) => {
+                setLoras(next);
+                saveSelectedLoras(next);
+              }}
+              hasLoader={!!activeWf?.workflow.includes("Lora Loader (LoraManager)")}
+              hasToggle={!!activeWf?.workflow.includes("TriggerWord Toggle (LoraManager)")}
+            />
 
             <section className={card}>
               <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">采样</h3>
