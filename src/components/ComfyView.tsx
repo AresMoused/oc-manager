@@ -30,8 +30,16 @@ import {
   loadSelectedLoras,
   patchWorkflowLoras,
   saveSelectedLoras,
+  fetchLoraTriggerWords,
   type SelectedLora,
 } from "@/lib/comfyLora";
+import {
+  applyImportParams,
+  importLoraToSelected,
+  parseComfyImport,
+  splitTriggerGroups,
+  triggersFromImport,
+} from "@/lib/comfyImport";
 import {
   fetchResolutionPresets,
   KREA_DEFAULT_ID,
@@ -83,6 +91,10 @@ export default function ComfyView() {
   const [ckptModels, setCkptModels] = useState<string[]>([]);
   const [sizePresets, setSizePresets] = useState(RESOLUTION_BUILTIN);
   const [modelMsg, setModelMsg] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importing, setImporting] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -167,6 +179,54 @@ export default function ComfyView() {
   const persistParams = (p: ComfyParams) => { setParams(p); saveParams(p); };
   const persistWorkflows = (list: ComfyWorkflowTemplate[]) => { setWorkflows(list); saveWorkflows(list); };
   const persistPresets = (list: ComfyPromptPreset[]) => { setPresets(list); savePromptPresets(list); };
+
+  const matchModelName = (name: string) => {
+    const list = isKreaDefault ? unetModels : ckptModels;
+    if (!name || !list.length) return name;
+    if (list.includes(name)) return name;
+    const lower = name.toLowerCase();
+    const hit = list.find((item) => item.toLowerCase() === lower)
+      || list.find((item) => item.toLowerCase().endsWith(lower) || lower.endsWith(item.toLowerCase()))
+      || list.find((item) => item.toLowerCase().includes(lower.replace(/\\/g, "/").split("/").pop() || lower));
+    return hit || name;
+  };
+
+  const applyWorkImport = async (raw: string) => {
+    const payload = parseComfyImport(raw);
+    const next = applyImportParams(params, payload, { lockSampling: isKreaDefault });
+    if (payload.model) next.MODEL_NAME = matchModelName(payload.model);
+    persistParams(next);
+    const incoming = Array.isArray(payload.loras) ? payload.loras : [];
+    const selected: SelectedLora[] = [];
+    for (const lora of incoming) {
+      const groups = splitTriggerGroups(lora.trigger || "");
+      let latest: string[] = [];
+      if (settings.baseUrl.trim() && lora.name) {
+        try { latest = await fetchLoraTriggerWords(settings.baseUrl, lora.name); } catch { /* use copied groups */ }
+      }
+      const row = importLoraToSelected(lora, triggersFromImport(groups, latest));
+      if (row) selected.push(row);
+    }
+    if (incoming.length) {
+      setLoras(selected);
+      saveSelectedLoras(selected);
+    }
+    setImportOpen(false);
+    setImportText("");
+    setImportError("");
+    const locked = isKreaDefault ? "。步数 / CFG / 采样器 / VAE 仍按 Krea2 固定" : "";
+    showToast(`已导入${payload.title ? `「${payload.title}」` : "作品参数"}${selected.length ? ` · ${selected.length} 个 LoRA` : ""}${locked}`);
+  };
+
+  const readClipboardImport = async () => {
+    setImportError("");
+    try {
+      const text = await navigator.clipboard.readText();
+      setImportText(text);
+    } catch {
+      setImportError("读不到剪贴板，请手动粘贴。");
+    }
+  };
 
   const setBatch = (n: number) => {
     const v = Math.min(20, Math.max(1, Math.floor(n) || 1));
@@ -428,6 +488,10 @@ export default function ComfyView() {
                     setImportCharOpen(true);
                   }} className="text-xs px-2.5 py-1 rounded-lg border border-purple-700/60 text-purple-300 hover:bg-purple-950/30">
                     导入角色卡提示词
+                  </button>
+                  <button type="button" onClick={() => { setImportError(""); setImportOpen(true); }}
+                    className="text-xs px-2.5 py-1 rounded-lg border border-sky-700/60 text-sky-300 hover:bg-sky-950/30">
+                    导入作品参数
                   </button>
                 </div>
               </div>
@@ -757,6 +821,38 @@ export default function ComfyView() {
         </div>
       </main>
       <Footer />
+
+      {importOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-[#111] border border-neutral-700 rounded-xl p-5 space-y-3">
+            <h2 className="text-lg font-semibold text-white">导入作品参数</h2>
+            <p className="text-xs text-neutral-500 leading-relaxed">
+              在 aresmoused.com/works 点「复制到抽卡姬」，再粘贴到这里。风格进前置，动作与构图进角色提示词。
+              LoRA 会写进 Lora Loader，触发词按 TriggerWord Toggle 逐条开关（库里有、作品没写的词默认关掉）。
+            </p>
+            <textarea className="w-full min-h-[180px] bg-[#0c0c0c] border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono text-neutral-200 outline-none focus:border-purple-500"
+              value={importText} onChange={(e) => setImportText(e.target.value)} placeholder='{"kind":"oc-comfy-import", ...}' />
+            {importError && <p className="text-xs text-rose-400">{importError}</p>}
+            <div className="flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => { setImportOpen(false); setImportError(""); }}
+                className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300">取消</button>
+              <button type="button" onClick={() => void readClipboardImport()}
+                className="px-3 py-1.5 text-sm rounded-lg border border-sky-700/60 text-sky-300">读取剪贴板</button>
+              <button type="button" disabled={importing || !importText.trim()}
+                onClick={() => {
+                  setImporting(true);
+                  setImportError("");
+                  void applyWorkImport(importText)
+                    .catch((e) => setImportError(e instanceof Error ? e.message : "导入失败"))
+                    .finally(() => setImporting(false));
+                }}
+                className="px-3 py-1.5 text-sm rounded-lg bg-purple-600 text-white disabled:opacity-40">
+                {importing ? "导入中…" : "导入"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {importCharOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
