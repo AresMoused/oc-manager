@@ -47,6 +47,7 @@ import {
   RESOLUTION_BUILTIN,
 } from "@/lib/kreaDefaultWorkflow";
 
+const FOLD_KEY = "oc-comfy-folds";
 function newId() { return crypto.randomUUID(); }
 
 const RANDOM_LOCK_KEY = "oc-comfy-random-char-lock";
@@ -96,6 +97,7 @@ export default function ComfyView() {
   const [importText, setImportText] = useState("");
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
+  const [folds, setFolds] = useState<Record<string, boolean>>({});
 
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -116,6 +118,10 @@ export default function ComfyView() {
       if (b >= 1 && b <= 20) setBatchCount(b);
     } catch { /* ignore */ }
     setRandomLocked(localStorage.getItem(RANDOM_LOCK_KEY) === "1");
+    try {
+      const raw = localStorage.getItem(FOLD_KEY);
+      if (raw) setFolds(JSON.parse(raw));
+    } catch { /* ignore */ }
 
     loadLexiconBuilder().then((s) => setBuilder(s)).finally(() => setReady(true));
     const reloadBuilder = () => { void loadLexiconBuilder().then((s) => { if (s) setBuilder(s); }); };
@@ -180,6 +186,14 @@ export default function ComfyView() {
   const persistParams = (p: ComfyParams) => { setParams(p); saveParams(p); };
   const persistWorkflows = (list: ComfyWorkflowTemplate[]) => { setWorkflows(list); saveWorkflows(list); };
   const persistPresets = (list: ComfyPromptPreset[]) => { setPresets(list); savePromptPresets(list); };
+  const folded = (id: string) => folds[id] === true;
+  const toggleFold = (id: string) => {
+    setFolds((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      localStorage.setItem(FOLD_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
 
   const matchModelName = (name: string) => {
     const list = isKreaDefault ? unetModels : ckptModels;
@@ -477,12 +491,24 @@ export default function ComfyView() {
           <div className="lg:col-span-5 space-y-3">
             <section className={card}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-medium text-neutral-200">读取「复制到抽卡姬」</h3>
-                <button type="button" onClick={() => void readClipboardImport()}
-                  className="text-xs px-2.5 py-1 rounded-lg border border-sky-700/60 text-sky-300 hover:bg-sky-950/30">
-                  读取剪贴板
-                </button>
+                <div className="flex items-center gap-2 min-w-0">
+                  <button type="button" onClick={() => toggleFold("ares")} className="flex items-center gap-2 text-left">
+                    <span className="text-neutral-500 w-3">{folded("ares") ? "▾" : "▸"}</span>
+                    <h3 className="text-sm font-medium text-neutral-200">做Ares同款</h3>
+                  </button>
+                  <a href="https://aresmoused.com/works" target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-sky-300 hover:underline">
+                    aresmoused.com/works
+                  </a>
+                </div>
+                {folded("ares") && (
+                  <button type="button" onClick={() => void readClipboardImport()}
+                    className="text-xs px-2.5 py-1 rounded-lg border border-sky-700/60 text-sky-300 hover:bg-sky-950/30">
+                    读取剪贴板
+                  </button>
+                )}
               </div>
+              {folded("ares") && (<>
               <textarea className={`${inp} min-h-[88px] resize-y font-mono text-xs`}
                 value={importText} onChange={(e) => setImportText(e.target.value)}
                 placeholder='在作品页点「复制到抽卡姬」，再粘贴到这里' />
@@ -499,10 +525,14 @@ export default function ComfyView() {
                 className="w-full py-2 rounded-lg bg-sky-700 hover:bg-sky-600 text-white text-sm disabled:opacity-40">
                 {importing ? "读取中…" : "填入参数"}
               </button>
+              </>)}
             </section>
             <section className={card}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-medium text-neutral-200">正面提示词</h3>
+                <button type="button" onClick={() => toggleFold("positive")} className="flex items-center gap-2 text-left">
+                  <span className="text-neutral-500 w-3">{folded("positive") ? "▾" : "▸"}</span>
+                  <h3 className="text-sm font-medium text-neutral-200">正面提示词</h3>
+                </button>
                 <div className="flex flex-wrap gap-1.5">
                   <button type="button" onClick={() => setPresetOpen(true)}
                     className="text-xs px-2.5 py-1 rounded-lg border border-neutral-600 text-neutral-300 hover:bg-neutral-800">
@@ -516,6 +546,7 @@ export default function ComfyView() {
                   </button>
                 </div>
               </div>
+              {folded("positive") && (<>
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">前置正面提示词</label>
                 <textarea className={`${inp} min-h-[56px] resize-y`} value={params.prompt_prefix}
@@ -580,12 +611,18 @@ export default function ComfyView() {
                   <p className="text-[11px] text-neutral-500 font-mono leading-relaxed break-all line-clamp-3">{combinedPreview}</p>
                 </div>
               )}
+              </>)}
             </section>
 
             <section className="bg-[#141414] border border-neutral-800 rounded-xl p-4 space-y-2">
-              <label className="text-sm font-medium text-neutral-200">负面提示词</label>
-              <textarea className={`${inp} min-h-[80px] resize-y`} value={params.negative_prompt}
-                onChange={(e) => persistParams({ ...params, negative_prompt: e.target.value })} />
+              <button type="button" onClick={() => toggleFold("negative")} className="flex items-center gap-2 text-left">
+                <span className="text-neutral-500 w-3">{folded("negative") ? "▾" : "▸"}</span>
+                <span className="text-sm font-medium text-neutral-200">负面提示词</span>
+              </button>
+              {folded("negative") && (
+                <textarea className={`${inp} min-h-[80px] resize-y`} value={params.negative_prompt}
+                  onChange={(e) => persistParams({ ...params, negative_prompt: e.target.value })} />
+              )}
             </section>
 
             <ComfyLoraPanel
@@ -597,10 +634,16 @@ export default function ComfyView() {
               }}
               hasLoader={!!activeWf?.workflow.includes("Lora Loader (LoraManager)")}
               hasToggle={!!activeWf?.workflow.includes("TriggerWord Toggle (LoraManager)")}
+              open={folded("lora")}
+              onToggle={() => toggleFold("lora")}
             />
 
             <section className={card}>
-              <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">采样</h3>
+              <button type="button" onClick={() => toggleFold("sample")} className="flex items-center gap-2 text-left">
+                <span className="text-neutral-500 w-3">{folded("sample") ? "▾" : "▸"}</span>
+                <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">采样</h3>
+              </button>
+              {folded("sample") && (<>
               {isKreaDefault && (
                 <p className="text-[10px] text-neutral-500">默认 Krea2：步数、CFG、采样器、调度器按工作流固定，不能改。</p>
               )}
@@ -663,10 +706,15 @@ export default function ComfyView() {
                   </div>
                 </div>
               </div>
+              </>)}
             </section>
 
             <section className={card}>
-              <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">尺寸 / 模型</h3>
+              <button type="button" onClick={() => toggleFold("size")} className="flex items-center gap-2 text-left">
+                <span className="text-neutral-500 w-3">{folded("size") ? "▾" : "▸"}</span>
+                <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">尺寸 / 模型</h3>
+              </button>
+              {folded("size") && (
               <div className="grid grid-cols-2 gap-3">
                 {isKreaDefault ? (
                   <div className="col-span-2">
@@ -750,11 +798,17 @@ export default function ComfyView() {
                   )}
                 </div>
               </div>
+              )}
             </section>
           </div>
 
           <div className="lg:col-span-7 space-y-3">
             <section className="bg-[#141414] border border-purple-900/40 rounded-xl p-4 space-y-3">
+              <button type="button" onClick={() => toggleFold("generate")} className="flex items-center gap-2 text-left">
+                <span className="text-neutral-500 w-3">{folded("generate") ? "▾" : "▸"}</span>
+                <span className="text-sm font-medium text-neutral-200">生成</span>
+              </button>
+              {folded("generate") && (<>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="w-24">
                   <label className="text-xs text-neutral-500 block mb-1">批量次数</label>
@@ -786,15 +840,20 @@ export default function ComfyView() {
                 {status && <span className="text-neutral-400">{status}</span>}
                 {error && <span className="text-rose-400 break-all">{error}</span>}
               </div>
+              </>)}
             </section>
 
             <section className={card}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-neutral-200">工作流</h3>
+                <button type="button" onClick={() => toggleFold("workflow")} className="flex items-center gap-2 text-left">
+                  <span className="text-neutral-500 w-3">{folded("workflow") ? "▾" : "▸"}</span>
+                  <h3 className="text-sm font-semibold text-neutral-200">工作流</h3>
+                </button>
                 <button type="button" onClick={() => fileRef.current?.click()}
                   className="px-3 py-1.5 text-xs rounded-lg border border-purple-700/60 text-purple-300 hover:bg-purple-950/30">上传工作流 JSON</button>
                 <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={handleUploadWorkflow} />
               </div>
+              {folded("workflow") && (<>
               {workflows.length === 0 ? (
                 <p className="text-sm text-neutral-500 py-4 text-center">
                   尚未上传工作流。请从 ComfyUI 导出 API 格式 JSON，并把需要替换的值改成占位符（如 <code className="text-purple-300">%prompt%</code>）。
@@ -832,27 +891,33 @@ export default function ComfyView() {
                   </p>
                 </div>
               )}
+              </>)}
             </section>
 
-            <section className="bg-[#141414] border border-neutral-800 rounded-xl p-4 min-h-[320px]">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-neutral-200">输出</h3>
-                {images.length > 0 && (
+            <section className="bg-[#141414] border border-neutral-800 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <button type="button" onClick={() => toggleFold("output")} className="flex items-center gap-2 text-left">
+                  <span className="text-neutral-500 w-3">{folded("output") ? "▾" : "▸"}</span>
+                  <h3 className="text-sm font-semibold text-neutral-200">输出</h3>
+                </button>
+                {folded("output") && images.length > 0 && (
                   <button type="button" onClick={() => setImages([])} className="text-xs text-neutral-500 hover:text-white">清空</button>
                 )}
               </div>
-              {images.length === 0 ? (
-                <div className="h-64 flex items-center justify-center border border-dashed border-neutral-800 rounded-xl text-neutral-600 text-sm">生成结果将显示在这里</div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {images.map((url, i) => (
-                    <a key={`${url}-${i}`} href={url} target="_blank" rel="noopener noreferrer"
-                      className="block aspect-[3/4] rounded-lg overflow-hidden border border-neutral-800 bg-black group relative">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={url} alt={`out-${i}`} className="w-full h-full object-cover group-hover:scale-105 transition" />
-                    </a>
-                  ))}
-                </div>
+              {folded("output") && (
+                images.length === 0 ? (
+                  <div className="mt-3 h-64 flex items-center justify-center border border-dashed border-neutral-800 rounded-xl text-neutral-600 text-sm">生成结果将显示在这里</div>
+                ) : (
+                  <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {images.map((url, i) => (
+                      <a key={`${url}-${i}`} href={url} target="_blank" rel="noopener noreferrer"
+                        className="block aspect-[3/4] rounded-lg overflow-hidden border border-neutral-800 bg-black group relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt={`out-${i}`} className="w-full h-full object-cover group-hover:scale-105 transition" />
+                      </a>
+                    ))}
+                  </div>
+                )
               )}
             </section>
           </div>
@@ -1035,19 +1100,24 @@ export default function ComfyView() {
               {presets.length === 0 ? (
                 <p className="text-sm text-neutral-500 text-center py-4">暂无预设</p>
               ) : presets.map((pr) => (
-                <div key={pr.id} className="p-3 rounded-lg border border-neutral-700 bg-[#0c0c0c] space-y-2">
-                  <div className="flex items-center justify-between gap-2">
+                <details key={pr.id} className="rounded-lg border border-neutral-700 bg-[#0c0c0c]">
+                  <summary className="cursor-pointer px-3 py-2 flex items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
                     <span className="text-sm text-white font-medium">{pr.name}</span>
-                    <button type="button" onClick={() => deletePreset(pr.id)} className="text-xs text-rose-400 hover:text-rose-300">删除</button>
+                    <span className="text-[10px] text-neutral-500">展开</span>
+                  </summary>
+                  <div className="px-3 pb-3 space-y-2">
+                    <div className="flex justify-end">
+                      <button type="button" onClick={() => deletePreset(pr.id)} className="text-xs text-rose-400 hover:text-rose-300">删除</button>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 font-mono break-all">{composePositivePrompt(pr)}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => applyPreset(pr, false)}
+                        className="text-xs px-2.5 py-1 rounded-lg border border-purple-700/50 text-purple-300 hover:bg-purple-950/30">应用正面</button>
+                      <button type="button" onClick={() => applyPreset(pr, true)}
+                        className="text-xs px-2.5 py-1 rounded-lg border border-neutral-600 text-neutral-300 hover:bg-neutral-800">应用正面+负面</button>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-neutral-500 font-mono line-clamp-2 break-all">{composePositivePrompt(pr)}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => applyPreset(pr, false)}
-                      className="text-xs px-2.5 py-1 rounded-lg border border-purple-700/50 text-purple-300 hover:bg-purple-950/30">应用正面</button>
-                    <button type="button" onClick={() => applyPreset(pr, true)}
-                      className="text-xs px-2.5 py-1 rounded-lg border border-neutral-600 text-neutral-300 hover:bg-neutral-800">应用正面+负面</button>
-                  </div>
-                </div>
+                </details>
               ))}
             </div>
             <div className="flex justify-end">

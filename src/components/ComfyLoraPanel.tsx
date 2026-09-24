@@ -16,12 +16,16 @@ export default function ComfyLoraPanel({
   onChange,
   hasLoader,
   hasToggle,
+  open,
+  onToggle,
 }: {
   baseUrl: string;
   selected: SelectedLora[];
   onChange: (next: SelectedLora[]) => void;
   hasLoader: boolean;
   hasToggle: boolean;
+  open: boolean;
+  onToggle: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [items, setItems] = useState<LoraLibraryItem[]>([]);
@@ -101,9 +105,13 @@ export default function ComfyLoraPanel({
   return (
     <section className="bg-[#141414] border border-neutral-800 rounded-xl p-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-medium text-neutral-200">LoRA</h3>
-        <span className="text-[10px] text-neutral-600">来自 Lora Manager 库，不是工作流快照</span>
+        <button type="button" onClick={onToggle} className="flex items-center gap-2 text-left">
+          <span className="text-neutral-500 w-3">{open ? "▾" : "▸"}</span>
+          <h3 className="text-sm font-medium text-neutral-200">LoRA</h3>
+        </button>
+        <span className="text-[10px] text-neutral-600">{selected.length} 张</span>
       </div>
+      {open && (<>
       <p className="text-[10px] text-neutral-600 leading-relaxed">
         用上面的 ComfyUI 地址读 <span className="font-mono">/api/lm/loras</span>
         （网页 <span className="font-mono">/loras</span> 只是管理界面）。
@@ -271,6 +279,7 @@ export default function ComfyLoraPanel({
           再加载（{items.length}/{total}）
         </button>
       )}
+      </>)}
     </section>
   );
 }
