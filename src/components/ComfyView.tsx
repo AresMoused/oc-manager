@@ -93,7 +93,6 @@ export default function ComfyView() {
   const [modelMsg, setModelMsg] = useState("");
   const [modelDetail, setModelDetail] = useState("");
   const [modelReload, setModelReload] = useState(0);
-  const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
@@ -213,7 +212,6 @@ export default function ComfyView() {
       setLoras(selected);
       saveSelectedLoras(selected);
     }
-    setImportOpen(false);
     setImportText("");
     setImportError("");
     const locked = isKreaDefault ? "。步数 / CFG / 采样器 / VAE 仍按 Krea2 固定" : "";
@@ -479,6 +477,31 @@ export default function ComfyView() {
           <div className="lg:col-span-5 space-y-3">
             <section className={card}>
               <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-medium text-neutral-200">读取「复制到抽卡姬」</h3>
+                <button type="button" onClick={() => void readClipboardImport()}
+                  className="text-xs px-2.5 py-1 rounded-lg border border-sky-700/60 text-sky-300 hover:bg-sky-950/30">
+                  读取剪贴板
+                </button>
+              </div>
+              <textarea className={`${inp} min-h-[88px] resize-y font-mono text-xs`}
+                value={importText} onChange={(e) => setImportText(e.target.value)}
+                placeholder='在作品页点「复制到抽卡姬」，再粘贴到这里' />
+              <p className="text-[10px] text-neutral-600">风格进前置，动作与构图进角色提示词，LoRA 和触发词开关一并写入。</p>
+              {importError && <p className="text-xs text-rose-400">{importError}</p>}
+              <button type="button" disabled={importing || !importText.trim()}
+                onClick={() => {
+                  setImporting(true);
+                  setImportError("");
+                  void applyWorkImport(importText)
+                    .catch((e) => setImportError(e instanceof Error ? e.message : "导入失败"))
+                    .finally(() => setImporting(false));
+                }}
+                className="w-full py-2 rounded-lg bg-sky-700 hover:bg-sky-600 text-white text-sm disabled:opacity-40">
+                {importing ? "读取中…" : "填入参数"}
+              </button>
+            </section>
+            <section className={card}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-medium text-neutral-200">正面提示词</h3>
                 <div className="flex flex-wrap gap-1.5">
                   <button type="button" onClick={() => setPresetOpen(true)}
@@ -490,10 +513,6 @@ export default function ComfyView() {
                     setImportCharOpen(true);
                   }} className="text-xs px-2.5 py-1 rounded-lg border border-purple-700/60 text-purple-300 hover:bg-purple-950/30">
                     导入角色卡提示词
-                  </button>
-                  <button type="button" onClick={() => { setImportError(""); setImportOpen(true); }}
-                    className="text-xs px-2.5 py-1 rounded-lg border border-sky-700/60 text-sky-300 hover:bg-sky-950/30">
-                    导入作品参数
                   </button>
                 </div>
               </div>
@@ -833,38 +852,6 @@ export default function ComfyView() {
         </div>
       </main>
       <Footer />
-
-      {importOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-[#111] border border-neutral-700 rounded-xl p-5 space-y-3">
-            <h2 className="text-lg font-semibold text-white">导入作品参数</h2>
-            <p className="text-xs text-neutral-500 leading-relaxed">
-              在 aresmoused.com/works 点「复制到抽卡姬」，再粘贴到这里。风格进前置，动作与构图进角色提示词。
-              LoRA 会写进 Lora Loader，触发词按 TriggerWord Toggle 逐条开关（库里有、作品没写的词默认关掉）。
-            </p>
-            <textarea className="w-full min-h-[180px] bg-[#0c0c0c] border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono text-neutral-200 outline-none focus:border-purple-500"
-              value={importText} onChange={(e) => setImportText(e.target.value)} placeholder='{"kind":"oc-comfy-import", ...}' />
-            {importError && <p className="text-xs text-rose-400">{importError}</p>}
-            <div className="flex flex-wrap justify-end gap-2">
-              <button type="button" onClick={() => { setImportOpen(false); setImportError(""); }}
-                className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-300">取消</button>
-              <button type="button" onClick={() => void readClipboardImport()}
-                className="px-3 py-1.5 text-sm rounded-lg border border-sky-700/60 text-sky-300">读取剪贴板</button>
-              <button type="button" disabled={importing || !importText.trim()}
-                onClick={() => {
-                  setImporting(true);
-                  setImportError("");
-                  void applyWorkImport(importText)
-                    .catch((e) => setImportError(e instanceof Error ? e.message : "导入失败"))
-                    .finally(() => setImporting(false));
-                }}
-                className="px-3 py-1.5 text-sm rounded-lg bg-purple-600 text-white disabled:opacity-40">
-                {importing ? "导入中…" : "导入"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {importCharOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
