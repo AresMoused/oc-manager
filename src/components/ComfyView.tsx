@@ -688,17 +688,24 @@ export default function ComfyView() {
                     </select>
                   </div>
                 ) : null}
-                <div>
-                  <label className="text-xs text-neutral-500 block mb-1">Width</label>
-                  <input type="number" step={8} min={64} max={8192} className={inp} disabled={isKreaDefault}
-                    value={params.width}
-                    onChange={(e) => persistParams({ ...params, width: Number(e.target.value) || 512 })} />
-                </div>
-                <div>
-                  <label className="text-xs text-neutral-500 block mb-1">Height</label>
-                  <input type="number" step={8} min={64} max={8192} className={inp} disabled={isKreaDefault}
-                    value={params.height}
-                    onChange={(e) => persistParams({ ...params, height: Number(e.target.value) || 768 })} />
+                <div className="col-span-2 grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
+                  <div>
+                    <label className="text-xs text-neutral-500 block mb-1">Width</label>
+                    <input type="number" step={8} min={64} max={8192} className={inp}
+                      value={params.width}
+                      onChange={(e) => persistParams({ ...params, width: Number(e.target.value) || 64 })} />
+                  </div>
+                  <button type="button" title="左右互换宽高"
+                    onClick={() => persistParams({ ...params, width: params.height, height: params.width })}
+                    className="h-[38px] px-2.5 rounded-lg border border-neutral-700 text-sm text-neutral-300 hover:bg-neutral-800">
+                    ⇄
+                  </button>
+                  <div>
+                    <label className="text-xs text-neutral-500 block mb-1">Height</label>
+                    <input type="number" step={8} min={64} max={8192} className={inp}
+                      value={params.height}
+                      onChange={(e) => persistParams({ ...params, height: Number(e.target.value) || 64 })} />
+                  </div>
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-neutral-500 block mb-1">
