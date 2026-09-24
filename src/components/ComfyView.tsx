@@ -150,17 +150,16 @@ export default function ComfyView() {
         setUnetModels(models.unet);
         setCkptModels(models.checkpoints);
         setSizePresets(presets);
-        setModelMsg(
-          models.unet.length || models.checkpoints.length
-            ? ""
-            : "ComfyUI 没有返回模型列表"
-        );
+        const list = isKreaDefault ? models.unet : models.checkpoints;
+        setModelMsg(list.length ? "" : isKreaDefault
+          ? "没有读到 UNet。请确认 ComfyUI 已开，模型在 diffusion_models 或 unet 目录。"
+          : "没有读到 Checkpoint。");
       } catch (e) {
         if (!cancel) setModelMsg(e instanceof Error ? e.message : "读取模型失败");
       }
     })();
     return () => { cancel = true; };
-  }, [settings.baseUrl]);
+  }, [settings.baseUrl, isKreaDefault]);
   const importChar = useMemo(
     () => characters.find((x) => x.id === importCharId),
     [characters, importCharId]
@@ -682,6 +681,9 @@ export default function ComfyView() {
                 <div className="col-span-2">
                   <label className="text-xs text-neutral-500 block mb-1">
                     {isKreaDefault ? "模型（ComfyUI UNet）" : "Checkpoint（ComfyUI）"}
+                    {(isKreaDefault ? unetModels : ckptModels).length > 0 && (
+                      <span className="ml-2 text-neutral-600">{(isKreaDefault ? unetModels : ckptModels).length} 个</span>
+                    )}
                   </label>
                   {((isKreaDefault ? unetModels : ckptModels).length > 0) ? (
                     <select className={`${inp} font-mono`} value={params.MODEL_NAME}

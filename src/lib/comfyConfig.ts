@@ -492,15 +492,56 @@ export async function comfyCheckConnection(baseUrl: string): Promise<string> {
   return String(data?.system?.comfyui_version || data?.system?.python_version || "ok");
 }
 
+function asNameList(data: unknown): string[] {
+  if (!Array.isArray(data)) return [];
+  return data.map((item) => String(item)).filter(Boolean);
+}
+
+function unetNamesFromObjectInfo(data: unknown): string[] {
+  if (!data || typeof data !== "object") return [];
+  const names: string[] = [];
+  for (const node of Object.values(data as Record<string, unknown>)) {
+    const required = (node as { input?: { required?: Record<string, unknown> } })?.input?.required;
+    const unet = required?.unet_name;
+    const list = Array.isArray(unet) ? unet[0] : null;
+    if (!Array.isArray(list)) continue;
+    for (const item of list) if (typeof item === "string" && item) names.push(item);
+  }
+  return names;
+}
+
 export async function fetchComfyModelLists(baseUrl: string): Promise<{ unet: string[]; checkpoints: string[] }> {
   const root = baseUrl.replace(/\/+$/, "");
-  const read = async (folder: string) => {
-    const res = await fetch(`${root}/models/${folder}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data.map((x) => String(x)).filter(Boolean) : [];
+  const readFolder = async (folder: string) => {
+    try {
+      const res = await fetch(`${root}/models/${encodeURIComponent(folder)}`);
+      if (!res.ok) return [];
+      return asNameList(await res.json());
+    } catch {
+      return [];
+    }
   };
-  const [unet, checkpoints] = await Promise.all([read("unet"), read("checkpoints")]);
+  const [unetFolder, diffusionFolder, checkpoints] = await Promise.all([
+    readFolder("unet"),
+    readFolder("diffusion_models"),
+    readFolder("checkpoints"),
+  ]);
+  let unet = [...new Set([...unetFolder, ...diffusionFolder])];
+  if (!unet.length) {
+    for (const node of ["UNet loader with Name (Image Saver)", "UNETLoader"]) {
+      try {
+        const res = await fetch(`${root}/object_info/${encodeURIComponent(node)}`);
+        if (!res.ok) continue;
+        const found = unetNamesFromObjectInfo(await res.json());
+        if (found.length) {
+          unet = found;
+          break;
+        }
+      } catch {
+        /* try the next node */
+      }
+    }
+  }
   return { unet, checkpoints };
 }
 
