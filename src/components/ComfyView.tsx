@@ -402,7 +402,7 @@ export default function ComfyView() {
 
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                  <label className="text-xs text-purple-300/90">角色提示词</label>
+                  <label className="text-xs text-purple-300/90">角色提示词（构图、姿势、场景）</label>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <label className="flex items-center gap-1 text-[11px] text-neutral-400 cursor-pointer select-none">
                       <input type="checkbox" checked={randomEnabled}
@@ -436,7 +436,7 @@ export default function ComfyView() {
                 </div>
                 <textarea className={`${inp} min-h-[88px] resize-y border-purple-800/40`} value={params.prompt_character}
                   onChange={(e) => persistParams({ ...params, prompt_character: e.target.value })}
-                  placeholder="从角色卡导入，或开启随机角色 / 立即随机…" />
+                  placeholder="构图、姿势、场景…" />
                 <p className="text-[10px] text-neutral-600 mt-1">
                   使用「角色外观生成器」已启用的 CDN 词库
                   {sectionCount > 0 ? `（${sectionCount} 个分区）` : "（尚未加载，请先打开生成器并同步）"}。
@@ -446,10 +446,10 @@ export default function ComfyView() {
               </div>
 
               <div>
-                <label className="text-xs text-neutral-500 block mb-1">后置正面提示词</label>
+                <label className="text-xs text-neutral-500 block mb-1">后置正面提示词（紧接在角色提示词后面）</label>
                 <textarea className={`${inp} min-h-[56px] resize-y`} value={params.prompt_suffix}
                   onChange={(e) => persistParams({ ...params, prompt_suffix: e.target.value })}
-                  placeholder="optional quality tags, style…" />
+                  placeholder="画质、光影等，直接接在上一段后面" />
               </div>
               {combinedPreview && (
                 <div className="pt-1 border-t border-neutral-800">

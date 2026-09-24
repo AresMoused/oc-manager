@@ -111,17 +111,11 @@
       "action": "append",
       "tidy_tags": "no",
       "text_a": [
-        "80",
+        "140",
         0
       ],
-      "text_b": [
-        "184",
-        3
-      ],
-      "text_c": [
-        "220",
-        0
-      ]
+      "text_b": "",
+      "text_c": ""
     },
     "class_type": "StringFunction|pysssss",
     "_meta": {
@@ -137,10 +131,13 @@
         0
       ],
       "text_b": [
-        "220",
+        "328",
         0
       ],
-      "text_c": ""
+      "text_c": [
+        "220",
+        0
+      ]
     },
     "class_type": "StringFunction|pysssss",
     "_meta": {
@@ -188,10 +185,19 @@
       "title": "风格"
     }
   },
+  "328": {
+    "inputs": {
+      "string": "%prompt_suffix%"
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "后置正面提示词"
+    }
+  },
   "184": {
     "inputs": {
-      "wildcard_text": "%prompt_character%\n%prompt_suffix%",
-      "populated_text": "%prompt_character%\n%prompt_suffix%",
+      "wildcard_text": "%prompt_character%",
+      "populated_text": "%prompt_character%",
       "mode": "populate",
       "Select to add LoRA": "Select the LoRA to add to the text",
       "Select to add Wildcard": "Select the Wildcard to add to the text",
@@ -210,7 +216,7 @@
     },
     "class_type": "ImpactWildcardEncode",
     "_meta": {
-      "title": "画面构图及角色姿势"
+      "title": "构图、姿势、场景"
     }
   },
   "204": {
