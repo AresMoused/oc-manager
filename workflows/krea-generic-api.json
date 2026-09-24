@@ -535,7 +535,7 @@
   },
   "135:104": {
     "inputs": {
-      "float": %cfg_scale%
+      "float": 1
     },
     "class_type": "Cfg Literal",
     "_meta": {
@@ -544,7 +544,7 @@
   },
   "135:103": {
     "inputs": {
-      "int": %steps%
+      "int": 10
     },
     "class_type": "Int Literal",
     "_meta": {

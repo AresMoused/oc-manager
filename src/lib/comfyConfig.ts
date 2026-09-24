@@ -2,6 +2,7 @@
 
 import { pushDebugLog } from "@/lib/debugLog";
 import { loadSelectedLoras, patchWorkflowLoras } from "@/lib/comfyLora";
+import { KREA_DEFAULT_ID, KREA_DEFAULT_WORKFLOW } from "@/lib/kreaDefaultWorkflow";
 
 export interface ComfyWorkflowTemplate {
   id: string;
@@ -9,6 +10,8 @@ export interface ComfyWorkflowTemplate {
   workflow: string;
   createdAt: string;
   updatedAt: string;
+  /** Shipped with the app. Sampling, scheduler and VAE stay as authored. */
+  builtin?: boolean;
 }
 
 export interface ComfyParams {
@@ -129,6 +132,49 @@ export function loadWorkflows(): ComfyWorkflowTemplate[] {
 export function saveWorkflows(list: ComfyWorkflowTemplate[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(list));
+}
+
+/** Install or replace the bundled Krea2 workflow and keep it selected when the old one was active. */
+export function ensureDefaultWorkflow(
+  list: ComfyWorkflowTemplate[],
+  activeId: string
+): { list: ComfyWorkflowTemplate[]; activeId: string } {
+  const now = new Date().toISOString();
+  const removed = list.filter(
+    (w) => w.id === KREA_DEFAULT_ID || /^krea2$/i.test(w.name.trim())
+  );
+  const rest = list.filter((w) => !removed.includes(w));
+  const prev = removed.find((w) => w.id === KREA_DEFAULT_ID);
+  const tpl: ComfyWorkflowTemplate = {
+    id: KREA_DEFAULT_ID,
+    name: "Krea2",
+    workflow: KREA_DEFAULT_WORKFLOW,
+    builtin: true,
+    createdAt: prev?.createdAt || now,
+    updatedAt: now,
+  };
+  const next = [tpl, ...rest];
+  const removedIds = new Set(removed.map((w) => w.id));
+  const active = !activeId || removedIds.has(activeId) ? KREA_DEFAULT_ID : activeId;
+  return { list: next, activeId: active };
+}
+
+/** Point the graph's UNet (or, if it has none, checkpoint) at the model picked in 抽卡姬. */
+export function patchSelectedModel(graph: Record<string, unknown>, modelName: string) {
+  const name = modelName.trim();
+  if (!name) return;
+  const nodes = Object.values(graph).filter(
+    (node): node is { inputs?: Record<string, unknown> } =>
+      !!node && typeof node === "object"
+  );
+  const unets = nodes.filter((node) => node.inputs && "unet_name" in node.inputs);
+  if (unets.length) {
+    for (const node of unets) node.inputs!.unet_name = name;
+    return;
+  }
+  for (const node of nodes) {
+    if (node.inputs && "ckpt_name" in node.inputs) node.inputs.ckpt_name = name;
+  }
 }
 export function loadParams(): ComfyParams {
   if (typeof window === "undefined") return defaultParams();
@@ -446,6 +492,18 @@ export async function comfyCheckConnection(baseUrl: string): Promise<string> {
   return String(data?.system?.comfyui_version || data?.system?.python_version || "ok");
 }
 
+export async function fetchComfyModelLists(baseUrl: string): Promise<{ unet: string[]; checkpoints: string[] }> {
+  const root = baseUrl.replace(/\/+$/, "");
+  const read = async (folder: string) => {
+    const res = await fetch(`${root}/models/${folder}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data.map((x) => String(x)).filter(Boolean) : [];
+  };
+  const [unet, checkpoints] = await Promise.all([read("unet"), read("checkpoints")]);
+  return { unet, checkpoints };
+}
+
 /** Queue the currently saved workflow with optional prompt overrides. */
 export async function runSavedComfyJob(
   overrides: Partial<Pick<ComfyParams, "prompt_character" | "prompt_prefix" | "prompt_suffix" | "negative_prompt" | "prompt">> = {},
@@ -460,6 +518,7 @@ export async function runSavedComfyJob(
   const params = { ...loadParams(), ...overrides };
   const seedUsed = params.seed < 0 ? Math.floor(Math.random() * 2 ** 32) : Math.floor(params.seed);
   const promptGraph = applyPlaceholders(wf.workflow, { ...params, seed: seedUsed });
+  patchSelectedModel(promptGraph, params.MODEL_NAME);
   const loraPatch = patchWorkflowLoras(promptGraph, loadSelectedLoras());
   const { prompt_id } = await comfyQueuePrompt(settings.baseUrl, promptGraph);
   if (!prompt_id) throw new Error("ComfyUI 没有返回 prompt_id");

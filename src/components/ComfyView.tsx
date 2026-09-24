@@ -10,8 +10,9 @@ import {
   DEFAULT_SAMPLERS, DEFAULT_SCHEDULERS, PLACEHOLDERS,
   applyPlaceholders, comfyCheckConnection, comfyImageUrl, comfyQueuePrompt,
   comfyWaitForImages, composePositivePrompt, defaultParams, defaultSettings,
-  detectPlaceholders, imageSaverNodeIds, loadParams, loadPromptPresets, loadSettings, loadWorkflows,
-  normalizeWorkflowUpload, saveParams, savePromptPresets, saveSettings, saveWorkflows,
+  detectPlaceholders, ensureDefaultWorkflow, fetchComfyModelLists, imageSaverNodeIds,
+  loadParams, loadPromptPresets, loadSettings, loadWorkflows,
+  normalizeWorkflowUpload, patchSelectedModel, saveParams, savePromptPresets, saveSettings, saveWorkflows,
   validateWorkflowTemplate,
 } from "@/lib/comfyConfig";
 import type { BuilderData } from "@/lib/promptBuilder";
@@ -31,6 +32,12 @@ import {
   saveSelectedLoras,
   type SelectedLora,
 } from "@/lib/comfyLora";
+import {
+  fetchResolutionPresets,
+  KREA_DEFAULT_ID,
+  KREA_DEFAULT_LOCKS,
+  RESOLUTION_BUILTIN,
+} from "@/lib/kreaDefaultWorkflow";
 
 function newId() { return crypto.randomUUID(); }
 
@@ -72,23 +79,25 @@ export default function ComfyView() {
   const [randomLocked, setRandomLocked] = useState(false);
   const [lexiconModalOpen, setLexiconModalOpen] = useState(false);
   const [loras, setLoras] = useState<SelectedLora[]>([]);
+  const [unetModels, setUnetModels] = useState<string[]>([]);
+  const [ckptModels, setCkptModels] = useState<string[]>([]);
+  const [sizePresets, setSizePresets] = useState(RESOLUTION_BUILTIN);
+  const [modelMsg, setModelMsg] = useState("");
 
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const s = loadSettings();
-    const w = loadWorkflows();
-    setSettings(s);
-    setWorkflows(w);
+    const ensured = ensureDefaultWorkflow(loadWorkflows(), s.activeWorkflowId);
+    const nextSettings = { ...s, activeWorkflowId: ensured.activeId };
+    setSettings(nextSettings);
+    setWorkflows(ensured.list);
+    saveWorkflows(ensured.list);
+    saveSettings(nextSettings);
+    setLoras(loadSelectedLoras());
     setParams(loadParams());
     setPresets(loadPromptPresets());
-    setLoras(loadSelectedLoras());
-    if (!s.activeWorkflowId && w[0]) {
-      const next = { ...s, activeWorkflowId: w[0].id };
-      setSettings(next);
-      saveSettings(next);
-    }
     try {
       const b = Number(localStorage.getItem(BATCH_KEY) || "1");
       if (b >= 1 && b <= 20) setBatchCount(b);
@@ -114,6 +123,32 @@ export default function ComfyView() {
     () => (activeWf ? detectPlaceholders(activeWf.workflow) : []),
     [activeWf]
   );
+  const isKreaDefault = activeWf?.id === KREA_DEFAULT_ID || activeWf?.builtin === true;
+
+  useEffect(() => {
+    if (!settings.baseUrl.trim()) return;
+    let cancel = false;
+    void (async () => {
+      try {
+        const [models, presets] = await Promise.all([
+          fetchComfyModelLists(settings.baseUrl),
+          fetchResolutionPresets(settings.baseUrl),
+        ]);
+        if (cancel) return;
+        setUnetModels(models.unet);
+        setCkptModels(models.checkpoints);
+        setSizePresets(presets);
+        setModelMsg(
+          models.unet.length || models.checkpoints.length
+            ? ""
+            : "ComfyUI 没有返回模型列表"
+        );
+      } catch (e) {
+        if (!cancel) setModelMsg(e instanceof Error ? e.message : "读取模型失败");
+      }
+    })();
+    return () => { cancel = true; };
+  }, [settings.baseUrl]);
   const importChar = useMemo(
     () => characters.find((x) => x.id === importCharId),
     [characters, importCharId]
@@ -214,6 +249,8 @@ export default function ComfyView() {
   };
 
   const deleteWorkflow = (id: string) => {
+    const target = workflows.find((w) => w.id === id);
+    if (target?.builtin || target?.id === KREA_DEFAULT_ID) return;
     if (!confirm("删除此工作流？")) return;
     const next = workflows.filter((w) => w.id !== id);
     persistWorkflows(next);
@@ -230,6 +267,7 @@ export default function ComfyView() {
     const seedUsed = p.seed < 0 ? Math.floor(Math.random() * 2 ** 32) : Math.floor(p.seed);
     setLastSeed(seedUsed);
     const promptGraph = applyPlaceholders(activeWf.workflow, { ...p, seed: seedUsed });
+    patchSelectedModel(promptGraph, p.MODEL_NAME);
     const loraPatch = patchWorkflowLoras(promptGraph, loras);
     const { prompt_id } = await comfyQueuePrompt(settings.baseUrl, promptGraph);
     const outs = await comfyWaitForImages(settings.baseUrl, prompt_id, {
@@ -478,31 +516,50 @@ export default function ComfyView() {
 
             <section className={card}>
               <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">采样</h3>
+              {isKreaDefault && (
+                <p className="text-[10px] text-neutral-500">默认 Krea2：步数、CFG、采样器、调度器按工作流固定，不能改。</p>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-neutral-500 block mb-1">Sampling Steps</label>
-                  <input type="number" min={1} max={150} className={inp} value={params.steps}
+                  <input type="number" min={1} max={150} className={inp} disabled={isKreaDefault}
+                    value={isKreaDefault ? KREA_DEFAULT_LOCKS.steps : params.steps}
                     onChange={(e) => persistParams({ ...params, steps: Number(e.target.value) || 1 })} />
                 </div>
                 <div>
                   <label className="text-xs text-neutral-500 block mb-1">CFG Scale</label>
-                  <input type="number" min={1} max={30} step={0.5} className={inp} value={params.cfg_scale}
+                  <input type="number" min={1} max={30} step={0.5} className={inp} disabled={isKreaDefault}
+                    value={isKreaDefault ? KREA_DEFAULT_LOCKS.cfg_scale : params.cfg_scale}
                     onChange={(e) => persistParams({ ...params, cfg_scale: Number(e.target.value) || 1 })} />
                 </div>
                 <div>
                   <label className="text-xs text-neutral-500 block mb-1">Sampler</label>
-                  <select className={inp} value={params.sampler_name}
+                  <select className={inp} disabled={isKreaDefault}
+                    value={isKreaDefault ? KREA_DEFAULT_LOCKS.sampler_name : params.sampler_name}
                     onChange={(e) => persistParams({ ...params, sampler_name: e.target.value })}>
-                    {!DEFAULT_SAMPLERS.includes(params.sampler_name) && <option value={params.sampler_name}>{params.sampler_name}</option>}
-                    {DEFAULT_SAMPLERS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {isKreaDefault ? (
+                      <option value={KREA_DEFAULT_LOCKS.sampler_name}>{KREA_DEFAULT_LOCKS.sampler_name}</option>
+                    ) : (
+                      <>
+                        {!DEFAULT_SAMPLERS.includes(params.sampler_name) && <option value={params.sampler_name}>{params.sampler_name}</option>}
+                        {DEFAULT_SAMPLERS.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </>
+                    )}
                   </select>
                 </div>
                 <div>
                   <label className="text-xs text-neutral-500 block mb-1">Scheduler</label>
-                  <select className={inp} value={params.scheduler}
+                  <select className={inp} disabled={isKreaDefault}
+                    value={isKreaDefault ? KREA_DEFAULT_LOCKS.scheduler : params.scheduler}
                     onChange={(e) => persistParams({ ...params, scheduler: e.target.value })}>
-                    {!DEFAULT_SCHEDULERS.includes(params.scheduler) && <option value={params.scheduler}>{params.scheduler}</option>}
-                    {DEFAULT_SCHEDULERS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {isKreaDefault ? (
+                      <option value={KREA_DEFAULT_LOCKS.scheduler}>{KREA_DEFAULT_LOCKS.scheduler}</option>
+                    ) : (
+                      <>
+                        {!DEFAULT_SCHEDULERS.includes(params.scheduler) && <option value={params.scheduler}>{params.scheduler}</option>}
+                        {DEFAULT_SCHEDULERS.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </>
+                    )}
                   </select>
                 </div>
                 <div className="col-span-2">
@@ -526,25 +583,69 @@ export default function ComfyView() {
             <section className={card}>
               <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">尺寸 / 模型</h3>
               <div className="grid grid-cols-2 gap-3">
+                {isKreaDefault ? (
+                  <div className="col-span-2">
+                    <label className="text-xs text-neutral-500 block mb-1">分辨率预设（分辨率大师简化版）</label>
+                    <select className={inp}
+                      value={sizePresets.find((p) => p.width === params.width && p.height === params.height)?.name || ""}
+                      onChange={(e) => {
+                        const picked = sizePresets.find((p) => p.name === e.target.value);
+                        if (picked) persistParams({ ...params, width: picked.width, height: picked.height });
+                      }}>
+                      {!sizePresets.some((p) => p.width === params.width && p.height === params.height) && (
+                        <option value="">{params.width}×{params.height}（当前）</option>
+                      )}
+                      {sizePresets.map((p) => (
+                        <option key={`${p.name}-${p.width}x${p.height}`} value={p.name}>
+                          {p.name}{p.name.includes("×") ? "" : ` · ${p.width}×${p.height}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
                 <div>
                   <label className="text-xs text-neutral-500 block mb-1">Width</label>
-                  <input type="number" step={8} min={64} max={4096} className={inp} value={params.width}
+                  <input type="number" step={8} min={64} max={8192} className={inp} disabled={isKreaDefault}
+                    value={params.width}
                     onChange={(e) => persistParams({ ...params, width: Number(e.target.value) || 512 })} />
                 </div>
                 <div>
                   <label className="text-xs text-neutral-500 block mb-1">Height</label>
-                  <input type="number" step={8} min={64} max={4096} className={inp} value={params.height}
+                  <input type="number" step={8} min={64} max={8192} className={inp} disabled={isKreaDefault}
+                    value={params.height}
                     onChange={(e) => persistParams({ ...params, height: Number(e.target.value) || 768 })} />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-neutral-500 block mb-1">Checkpoint (%MODEL_NAME%)</label>
-                  <input className={`${inp} font-mono`} value={params.MODEL_NAME}
-                    onChange={(e) => persistParams({ ...params, MODEL_NAME: e.target.value })} placeholder="model.safetensors" />
+                  <label className="text-xs text-neutral-500 block mb-1">
+                    {isKreaDefault ? "模型（ComfyUI UNet）" : "Checkpoint（ComfyUI）"}
+                  </label>
+                  {((isKreaDefault ? unetModels : ckptModels).length > 0) ? (
+                    <select className={`${inp} font-mono`} value={params.MODEL_NAME}
+                      onChange={(e) => persistParams({ ...params, MODEL_NAME: e.target.value })}>
+                      <option value="">选择模型</option>
+                      {params.MODEL_NAME && !(isKreaDefault ? unetModels : ckptModels).includes(params.MODEL_NAME) && (
+                        <option value={params.MODEL_NAME}>{params.MODEL_NAME}</option>
+                      )}
+                      {(isKreaDefault ? unetModels : ckptModels).map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input className={`${inp} font-mono`} value={params.MODEL_NAME}
+                      onChange={(e) => persistParams({ ...params, MODEL_NAME: e.target.value })}
+                      placeholder={isKreaDefault ? "连接 ComfyUI 后列出 UNet" : "model.safetensors"} />
+                  )}
+                  {modelMsg && <p className="text-[10px] text-amber-300/80 mt-1">{modelMsg}</p>}
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-neutral-500 block mb-1">VAE (%vae%)</label>
-                  <input className={`${inp} font-mono`} value={params.vae}
-                    onChange={(e) => persistParams({ ...params, vae: e.target.value })} placeholder="可选" />
+                  <label className="text-xs text-neutral-500 block mb-1">VAE</label>
+                  <input className={`${inp} font-mono`} disabled={isKreaDefault}
+                    value={isKreaDefault ? KREA_DEFAULT_LOCKS.vae : params.vae}
+                    onChange={(e) => persistParams({ ...params, vae: e.target.value })}
+                    placeholder="可选" />
+                  {isKreaDefault && (
+                    <p className="text-[10px] text-neutral-600 mt-1">默认 Krea2 的 VAE 固定为工作流里的这一项。</p>
+                  )}
                 </div>
               </div>
             </section>
@@ -607,8 +708,10 @@ export default function ComfyView() {
                       if (!activeWf) return;
                       setWfEditingId(activeWf.id); setWfName(activeWf.name); setWfRaw(activeWf.workflow); setWfEditorOpen(true);
                     }} className="px-2.5 py-1 text-xs border border-neutral-700 rounded-lg text-neutral-300">编辑</button>
-                    <button type="button" onClick={() => activeWf && deleteWorkflow(activeWf.id)}
-                      className="px-2.5 py-1 text-xs border border-rose-900/40 rounded-lg text-rose-400">删除</button>
+                    {activeWf?.builtin ? null : (
+                      <button type="button" onClick={() => activeWf && deleteWorkflow(activeWf.id)}
+                        className="px-2.5 py-1 text-xs border border-rose-900/40 rounded-lg text-rose-400">删除</button>
+                    )}
                   </div>
                   {detected.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pt-1">
