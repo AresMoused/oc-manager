@@ -187,11 +187,11 @@
   },
   "328": {
     "inputs": {
-      "string": "%prompt_suffix%"
+      "string": ""
     },
     "class_type": "String Literal",
     "_meta": {
-      "title": "后置正面提示词"
+      "title": "后置（留空）"
     }
   },
   "184": {
@@ -428,7 +428,7 @@
     "inputs": {
       "action": "append",
       "tidy_tags": "no",
-      "text_a": "along the bottom left, a signature is written horizontally in a faded red felt-tip pen—a scrawled yet fluid English-language hand-signature.\"AresM ",
+      "text_a": "%prompt_suffix%",
       "text_b": [
         "280",
         0

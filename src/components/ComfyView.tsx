@@ -44,6 +44,7 @@ import {
   fetchResolutionPresets,
   KREA_DEFAULT_ID,
   KREA_DEFAULT_LOCKS,
+  KREA_DEFAULT_SIGNATURE,
   RESOLUTION_BUILTIN,
 } from "@/lib/kreaDefaultWorkflow";
 
@@ -143,6 +144,18 @@ export default function ComfyView() {
     [activeWf]
   );
   const isKreaDefault = activeWf?.id === KREA_DEFAULT_ID || activeWf?.builtin === true;
+
+  useEffect(() => {
+    if (!isKreaDefault) return;
+    if (localStorage.getItem("oc-krea-signature-v1")) return;
+    localStorage.setItem("oc-krea-signature-v1", "1");
+    setParams((prev) => {
+      if (prev.prompt_suffix.trim()) return prev;
+      const next = { ...prev, prompt_suffix: KREA_DEFAULT_SIGNATURE };
+      saveParams(next);
+      return next;
+    });
+  }, [isKreaDefault]);
 
   useEffect(() => {
     if (!settings.baseUrl.trim()) return;
@@ -600,10 +613,13 @@ export default function ComfyView() {
               </div>
 
               <div>
-                <label className="text-xs text-neutral-500 block mb-1">后置正面提示词（紧接在角色提示词后面）</label>
-                <textarea className={`${inp} min-h-[56px] resize-y`} value={params.prompt_suffix}
+                <label className="text-xs text-neutral-500 block mb-1">后置签名</label>
+                <textarea className={`${inp} min-h-[72px] resize-y`} value={params.prompt_suffix}
                   onChange={(e) => persistParams({ ...params, prompt_suffix: e.target.value })}
-                  placeholder="画质、光影等，直接接在上一段后面" />
+                  placeholder="签名文字。日期会自动加在后面。" />
+                {isKreaDefault && (
+                  <p className="text-[10px] text-amber-200/80 mt-1">请把AresM替换成你的名字</p>
+                )}
               </div>
               {combinedPreview && (
                 <div className="pt-1 border-t border-neutral-800">

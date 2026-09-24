@@ -66,7 +66,7 @@ export function applyImportParams(
   const next = { ...current };
   if (typeof payload.prompt_prefix === "string") next.prompt_prefix = payload.prompt_prefix;
   if (typeof payload.prompt_character === "string") next.prompt_character = payload.prompt_character;
-  if (typeof payload.prompt_suffix === "string") next.prompt_suffix = payload.prompt_suffix;
+  if (typeof payload.prompt_suffix === "string" && payload.prompt_suffix.trim()) next.prompt_suffix = payload.prompt_suffix;
   if (typeof payload.negative_prompt === "string") next.negative_prompt = payload.negative_prompt;
   if (typeof payload.seed === "number" && Number.isFinite(payload.seed)) next.seed = Math.floor(payload.seed);
   if (typeof payload.width === "number" && payload.width > 0) next.width = Math.round(payload.width);
