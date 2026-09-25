@@ -12,7 +12,7 @@ import {
   comfyWaitForImages, composePositivePrompt, defaultParams, defaultSettings,
   detectPlaceholders, ensureDefaultWorkflow, fetchComfyModelLists, imageSaverNodeIds,
   loadParams, loadPromptPresets, loadSettings, loadWorkflows,
-  normalizeWorkflowUpload, patchSelectedModel, saveParams, savePromptPresets, saveSettings, saveWorkflows,
+  normalizeWorkflowUpload, patchSelectedModel, resolveListedModel, saveParams, savePromptPresets, saveSettings, saveWorkflows,
   validateWorkflowTemplate,
 } from "@/lib/comfyConfig";
 import type { BuilderData } from "@/lib/promptBuilder";
@@ -172,6 +172,14 @@ export default function ComfyView() {
         setSizePresets(presets);
         setModelDetail(models.detail);
         const list = isKreaDefault ? models.unet : models.checkpoints;
+        setParams((prev) => {
+          if (!prev.MODEL_NAME.trim() || !list.length || list.includes(prev.MODEL_NAME)) return prev;
+          const resolved = resolveListedModel(prev.MODEL_NAME, list);
+          if (!resolved || resolved === prev.MODEL_NAME) return prev;
+          const next = { ...prev, MODEL_NAME: resolved };
+          saveParams(next);
+          return next;
+        });
         setModelMsg(list.length ? "" : isKreaDefault
           ? "UNet 列表是空的。自定义工作流用的是 Checkpoint，不是这个目录。"
           : "没有读到 Checkpoint。");
@@ -210,13 +218,7 @@ export default function ComfyView() {
 
   const matchModelName = (name: string) => {
     const list = isKreaDefault ? unetModels : ckptModels;
-    if (!name || !list.length) return name;
-    if (list.includes(name)) return name;
-    const lower = name.toLowerCase();
-    const hit = list.find((item) => item.toLowerCase() === lower)
-      || list.find((item) => item.toLowerCase().endsWith(lower) || lower.endsWith(item.toLowerCase()))
-      || list.find((item) => item.toLowerCase().includes(lower.replace(/\\/g, "/").split("/").pop() || lower));
-    return hit || name;
+    return resolveListedModel(name, list) || name;
   };
 
   const applyWorkImport = async (raw: string) => {
@@ -354,7 +356,8 @@ export default function ComfyView() {
     const seedUsed = p.seed < 0 ? Math.floor(Math.random() * 2 ** 32) : Math.floor(p.seed);
     setLastSeed(seedUsed);
     const promptGraph = applyPlaceholders(activeWf.workflow, { ...p, seed: seedUsed });
-    patchSelectedModel(promptGraph, p.MODEL_NAME);
+    const modelList = isKreaDefault ? unetModels : ckptModels;
+    patchSelectedModel(promptGraph, resolveListedModel(p.MODEL_NAME, modelList));
     const loraPatch = patchWorkflowLoras(promptGraph, loras);
     const { prompt_id } = await comfyQueuePrompt(settings.baseUrl, promptGraph);
     const outs = await comfyWaitForImages(settings.baseUrl, prompt_id, {

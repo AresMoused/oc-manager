@@ -159,6 +159,23 @@ export function ensureDefaultWorkflow(
   return { list: next, activeId: active };
 }
 
+/** Match a short or display name to a ComfyUI file list entry. Empty means "don't override". */
+export function resolveListedModel(wanted: string, list: string[]): string {
+  const name = wanted.trim();
+  if (!name) return "";
+  const base = (value: string) =>
+    value.replace(/\\/g, "/").split("/").pop()!.replace(/\.[^.]+$/, "").toLowerCase();
+  if (!list.length) {
+    return /[\\/]/.test(name) || /\.(safetensors|ckpt|pt|pth|gguf)$/i.test(name) ? name : "";
+  }
+  if (list.includes(name)) return name;
+  const wantedBase = base(name);
+  return list.find((item) => item.toLowerCase() === name.toLowerCase())
+    || list.find((item) => base(item) === wantedBase)
+    || list.find((item) => item.toLowerCase().includes(wantedBase))
+    || "";
+}
+
 /** Point the graph's UNet (or, if it has none, checkpoint) at the model picked in 抽卡姬. */
 export function patchSelectedModel(graph: Record<string, unknown>, modelName: string) {
   const name = modelName.trim();
@@ -575,7 +592,7 @@ export async function runSavedComfyJob(
   const params = { ...loadParams(), ...overrides };
   const seedUsed = params.seed < 0 ? Math.floor(Math.random() * 2 ** 32) : Math.floor(params.seed);
   const promptGraph = applyPlaceholders(wf.workflow, { ...params, seed: seedUsed });
-  patchSelectedModel(promptGraph, params.MODEL_NAME);
+  patchSelectedModel(promptGraph, resolveListedModel(params.MODEL_NAME, []));
   const loraPatch = patchWorkflowLoras(promptGraph, loadSelectedLoras());
   const { prompt_id } = await comfyQueuePrompt(settings.baseUrl, promptGraph);
   if (!prompt_id) throw new Error("ComfyUI 没有返回 prompt_id");
