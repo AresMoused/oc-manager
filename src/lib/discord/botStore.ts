@@ -77,6 +77,18 @@ export async function saveBotConfig(cfg: BotConfig): Promise<void> {
   await putJson("bot/config.json", cfg);
 }
 
+/** One runner per HKT date. The later write wins; callers must re-read. */
+export async function claimMidnight(date: string, ttlMs = 2 * 60 * 1000): Promise<boolean> {
+  const key = "bot/midnight-claim.json";
+  const cur = await getJson<{ date: string; at: number }>(key);
+  if (cur?.date === date && Date.now() - cur.at < ttlMs) return false;
+  const at = Date.now();
+  await putJson(key, { date, at });
+  await new Promise((r) => setTimeout(r, 500));
+  const again = await getJson<{ date: string; at: number }>(key);
+  return again?.date === date && again.at === at;
+}
+
 export type EphemeralJob = {
   token: string;
   expireAt: number;

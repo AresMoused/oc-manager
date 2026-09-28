@@ -96,7 +96,23 @@ export async function announceResults(date: string): Promise<void> {
   const rec = await getDaily(date);
   const channelId = discordDailyChannelId();
   if (!channelId) return;
-  if (!rec || !rec.submissions.length) {
+  if (!rec) {
+    const msg = await postChannelMessage(
+      channelId,
+      resultPayload({ date, empty: true })
+    );
+    await saveDaily({
+      date,
+      code: "",
+      prompt: "",
+      picks: [],
+      enabledListIds: [],
+      submissions: [],
+      resultMessageId: msg.id,
+    });
+    return;
+  }
+  if (!rec.submissions.length) {
     const msg = await postChannelMessage(
       channelId,
       resultPayload({ date, empty: true })

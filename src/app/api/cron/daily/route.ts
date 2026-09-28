@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { claimMidnight } from "@/lib/discord/botStore";
 import { runMidnightJob } from "@/lib/discord/daily";
+import { hktDate } from "@/lib/inspire";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +33,15 @@ export async function GET(req: NextRequest) {
     const force =
       req.nextUrl.searchParams.get("force") === "1" ||
       req.nextUrl.searchParams.get("force") === "true";
+    if (!force) {
+      const claimed = await claimMidnight(hktDate());
+      if (!claimed) {
+        return NextResponse.json(
+          { ok: false, skipped: "in-progress" },
+          { status: 409 }
+        );
+      }
+    }
     const result = await runMidnightJob({
       forceAnnounce: force,
       forcePost: force,

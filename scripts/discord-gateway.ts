@@ -4,6 +4,9 @@
  *
  * Required env: DISCORD_BOT_TOKEN, DISCORD_WATCH_CHANNEL_IDS,
  * INGEST_URL, CRON_SECRET
+ *
+ * Also POSTs /api/cron/daily at 00:00 Asia/Hong_Kong (and once after boot
+ * if that day's job has not succeeded yet). Vercel cron stays as a backup.
  */
 const TOKEN = process.env.DISCORD_BOT_TOKEN || "";
 const INGEST = (process.env.INGEST_URL || "").replace(/\/$/, "");
@@ -36,6 +39,72 @@ type Payload = {
   s: number | null;
   t: string | null;
 };
+
+function hktDate(d = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Hong_Kong",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function cronUrl(): string {
+  return INGEST.replace(/\/api\/discord\/ingest\/?$/, "/api/cron/daily");
+}
+
+let dailyFiredFor = "";
+let dailyInflight = false;
+let dailyNextTry = 0;
+
+async function fireDaily(reason: string) {
+  const today = hktDate();
+  if (dailyFiredFor === today || dailyInflight) return;
+  if (Date.now() < dailyNextTry) return;
+  const url = cronUrl();
+  if (url === INGEST) {
+    log("daily cron skipped, INGEST_URL is not /api/discord/ingest");
+    dailyNextTry = Date.now() + 30 * 60 * 1000;
+    return;
+  }
+  if (!SECRET) {
+    log("daily cron skipped, CRON_SECRET missing");
+    dailyNextTry = Date.now() + 30 * 60 * 1000;
+    return;
+  }
+  dailyInflight = true;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SECRET}` },
+    });
+    const body = await res.text();
+    if (res.status === 409) {
+      dailyNextTry = Date.now() + 60 * 1000;
+      log("daily cron busy", reason);
+      return;
+    }
+    if (!res.ok) {
+      dailyNextTry = Date.now() + 5 * 60 * 1000;
+      log("daily cron", reason, res.status, body.slice(0, 300));
+      return;
+    }
+    dailyFiredFor = today;
+    log("daily cron ok", reason, body.slice(0, 300));
+  } catch (e) {
+    dailyNextTry = Date.now() + 5 * 60 * 1000;
+    log("daily cron error", reason, e);
+  } finally {
+    dailyInflight = false;
+  }
+}
+
+function watchMidnight() {
+  setInterval(() => {
+    if (dailyFiredFor !== hktDate()) void fireDaily("tick");
+  }, 20000);
+  setTimeout(() => void fireDaily("startup"), 8000);
+}
 
 async function run() {
   if (!TOKEN) throw new Error("DISCORD_BOT_TOKEN missing");
@@ -227,6 +296,7 @@ async function run() {
   };
 
   await connect();
+  watchMidnight();
   const expireUrl = INGEST.replace(/\/ingest\/?$/, "/expire-inspire");
   setInterval(() => {
     void fetch(expireUrl, {
