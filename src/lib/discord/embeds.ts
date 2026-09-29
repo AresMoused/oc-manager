@@ -126,7 +126,7 @@ export function dailyHowTo(code: string, emoji: string): string {
     `① 用提示词去外观生成器 / 抽卡姬出图或出片（也可以自己画）`,
     `② 把图或影片发到跑图频道，正文带上 \`#${code}\``,
     `③ 机器人转到本频道后，点 ${emoji} 投票`,
-    `④ 当天 23:59 截止，次日 0:00 公布冠军`,
+    `④ 当天 23:59 截止，次日 0:00 公布冠军。票数相同则并列，平票的人都可以拿奖`,
   ].join("\n");
 }
 
@@ -207,21 +207,26 @@ export function bulletinPayload(opts: {
 
 export function resultPayload(opts: {
   date: string;
-  winnerJump?: string;
-  winnerName?: string;
-  votes?: number;
+  winners?: { name: string; jump: string; votes: number }[];
   empty?: boolean;
 }) {
   const ping = discordPingRoleMention();
+  const emoji = discordDailyEmoji();
   let desc: string;
+  const winners = opts.winners || [];
   if (opts.empty) desc = `**${opts.date}** 无人投稿。`;
-  else if (opts.winnerJump) {
-    desc = `**${opts.date}** 冠军：${opts.winnerName || "未知"}（${opts.votes ?? 0} ${discordDailyEmoji()}）\n${opts.winnerJump}`;
+  else if (winners.length > 1) {
+    const votes = winners[0]?.votes ?? 0;
+    const lines = winners.map((w) => `• ${w.name || "未知"}\n${w.jump}`);
+    desc = `**${opts.date}** 并列冠军（${votes} ${emoji}），平票都可以拿奖\n${lines.join("\n")}`;
+  } else if (winners.length === 1) {
+    const w = winners[0]!;
+    desc = `**${opts.date}** 冠军：${w.name || "未知"}（${w.votes} ${emoji}）\n${w.jump}`;
   } else desc = `**${opts.date}** 未能决出冠军。`;
   return {
     content: ping ? `${ping} 昨日每日主题结果` : "昨日每日主题结果",
     allowed_mentions: allowedMentionsForPing(),
-    embeds: [{ title: "每日投票结果", description: desc, color: 0xe8b86d }],
+    embeds: [{ title: "每日投票结果", description: desc.slice(0, 4000), color: 0xe8b86d }],
   };
 }
 

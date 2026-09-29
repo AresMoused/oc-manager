@@ -125,7 +125,7 @@ export async function announceResults(date: string): Promise<void> {
   }
   const emoji = await votingEmoji();
   const board = discordBulletinChannelId();
-  let best: { sub: DailySubmission; votes: number } | null = null;
+  const scored: { sub: DailySubmission; votes: number }[] = [];
   for (const sub of rec.submissions) {
     let votes = 0;
     try {
@@ -134,20 +134,20 @@ export async function announceResults(date: string): Promise<void> {
     } catch (e) {
       console.error("reaction count", sub.boardMessageId, e);
     }
-    if (!best || votes > best.votes) best = { sub, votes };
+    scored.push({ sub, votes });
   }
+  const top = scored.reduce((max, row) => Math.max(max, row.votes), 0);
   const guildId = rec.submissions[0]?.sourceGuildId || process.env.DISCORD_GUILD_ID || "@me";
-  const winnerJump = best
-    ? jumpUrl(guildId, board, best.sub.boardMessageId)
-    : undefined;
+  const winners = scored
+    .filter((row) => row.votes === top)
+    .map((row) => ({
+      name: row.sub.authorName,
+      jump: jumpUrl(guildId, board, row.sub.boardMessageId),
+      votes: row.votes,
+    }));
   const msg = await postChannelMessage(
     channelId,
-    resultPayload({
-      date,
-      winnerJump,
-      winnerName: best ? best.sub.authorName : undefined,
-      votes: best?.votes,
-    })
+    resultPayload({ date, winners })
   );
   rec.resultMessageId = msg.id;
   await saveDaily(rec);
