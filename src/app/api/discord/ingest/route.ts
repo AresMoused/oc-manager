@@ -13,6 +13,11 @@ export async function POST(req: NextRequest) {
   if (!secret || token !== secret) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  // Cutover: the Odysseia-Guidance bot now owns bulletin/voting forwarding.
+  // Returns 200 so the Railway sidecar does not retry. Rollback: OLD_DAILY_ENABLED=1.
+  if (process.env.OLD_DAILY_ENABLED !== "1") {
+    return NextResponse.json({ ok: true, skipped: "disabled-cutover" });
+  }
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
