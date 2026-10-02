@@ -29,6 +29,11 @@ export async function GET(req: NextRequest) {
     });
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  // Cutover: the Odysseia-Guidance bot now owns the daily bulletin/voting.
+  // The old job stays disabled unless OLD_DAILY_ENABLED=1 is set (rollback switch).
+  if (process.env.OLD_DAILY_ENABLED !== "1") {
+    return NextResponse.json({ ok: true, skipped: "disabled-cutover" });
+  }
   try {
     const force =
       req.nextUrl.searchParams.get("force") === "1" ||
