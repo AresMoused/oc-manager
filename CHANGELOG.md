@@ -2,6 +2,12 @@
 
 All notable changes to OC Manager are documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Gallery thumbnails** — uploads keep the original CDN URL and also store a ~720px WebP/JPEG `thumbUrl`; grid loads the thumb, lightbox opens the original. In-UI “为旧图生成缩图” plus `scripts/backfill-gallery-thumbs.mjs` for R2 backfill.
+- **Avatar upload compression** — avatars are resized (~512px) before PUT to cut upload size.
+
 ## [0.2.0] - 2026-08-13
 
 ### Added

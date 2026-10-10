@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { GalleryImage } from "@/lib/types";
-import { uploadImage } from "@/lib/apiClient";
+import { uploadImage, uploadImageWithThumb } from "@/lib/apiClient";
 import SectionHeader from "./SectionHeader";
 
 interface Props {
@@ -17,14 +17,16 @@ export default function Gallery({ images, onChange, editable = true }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const pushImage = (imageUrl: string) => {
+  const pushImage = (imageUrl: string, thumbUrl?: string) => {
     onChange([
       ...images,
       {
         id: crypto.randomUUID(),
         url: imageUrl,
+        thumbUrl: thumbUrl || undefined,
         caption: caption.trim() || undefined,
       },
     ]);
@@ -44,8 +46,8 @@ export default function Gallery({ images, onChange, editable = true }: Props) {
     if (!file) return;
     setUploading(true);
     try {
-      const cdnUrl = await uploadImage(file);
-      pushImage(cdnUrl);
+      const { url: cdnUrl, thumbUrl } = await uploadImageWithThumb(file);
+      pushImage(cdnUrl, thumbUrl);
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : "上传失败");
@@ -59,6 +61,42 @@ export default function Gallery({ images, onChange, editable = true }: Props) {
     onChange(images.filter((img) => img.id !== id));
   };
 
+  const backfillMissingThumbs = async () => {
+    const missing = images.filter((img) => img.url && !img.thumbUrl);
+    if (!missing.length) {
+      alert("当前画廊图片都已有缩图。");
+      return;
+    }
+    if (
+      !window.confirm(
+        `将为 ${missing.length} 张缺少缩图的图片从原图生成预览（需原图允许 CORS）。继续？`
+      )
+    ) {
+      return;
+    }
+    setBackfilling(true);
+    try {
+      const { makeThumbnailFile } = await import("@/lib/imageThumb");
+      const next = [...images];
+      for (let i = 0; i < next.length; i += 1) {
+        const img = next[i];
+        if (!img.url || img.thumbUrl) continue;
+        try {
+          const thumbFile = await makeThumbnailFile(img.url, {
+            nameHint: img.id || "gallery",
+          });
+          const thumbUrl = await uploadImage(thumbFile);
+          next[i] = { ...img, thumbUrl };
+        } catch (error) {
+          console.error("thumb backfill failed", img.id, error);
+        }
+      }
+      onChange(next);
+    } finally {
+      setBackfilling(false);
+    }
+  };
+
   return (
     <div>
       <SectionHeader
@@ -69,7 +107,7 @@ export default function Gallery({ images, onChange, editable = true }: Props) {
         {showForm && (
           <div className="mb-3 p-3 bg-[#0a0a0a] border border-purple-800/50 rounded-lg space-y-2">
             <p className="text-[11px] text-neutral-500 leading-relaxed">
-              只接受图片，最大 10MB。原图直传 CDN，不压缩、不转 webp。
+              原图直传 CDN；同时生成约 720px WebP/JPEG 缩图供画廊网格加载。点击缩图仍打开原图。
             </p>
             <div className="flex flex-wrap gap-2">
               <button
@@ -132,6 +170,19 @@ export default function Gallery({ images, onChange, editable = true }: Props) {
           </div>
         )}
 
+        {editable && images.some((img) => img.url && !img.thumbUrl) && (
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              disabled={backfilling}
+              onClick={backfillMissingThumbs}
+              className="px-2.5 py-1 text-[11px] rounded border border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500 disabled:opacity-40"
+            >
+              {backfilling ? "生成缩图中…" : "为旧图生成缩图"}
+            </button>
+          </div>
+        )}
+
         {images.length === 0 ? (
           <p className="text-neutral-500 text-sm text-center py-6">
             暂无图片。点 + 可上传到 CDN，或粘贴公开图片链接。
@@ -145,7 +196,7 @@ export default function Gallery({ images, onChange, editable = true }: Props) {
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={img.url}
+                  src={img.thumbUrl || img.url}
                   alt={img.caption || ""}
                   className="w-full h-full object-cover cursor-pointer"
                   referrerPolicy="no-referrer"

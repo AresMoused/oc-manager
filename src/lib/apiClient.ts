@@ -2,6 +2,7 @@ import type { Character } from "./types";
 import type { WorldMeta } from "./worlds";
 import type { WorldCatalog } from "./worldCatalog";
 import type { LoreMap } from "./worldLore";
+import { makeThumbnailFile } from "./imageThumb";
 
 export interface AppData {
   characters: Character[];
@@ -99,4 +100,19 @@ export async function uploadImage(file: File): Promise<string> {
   }
   const data = await res.json();
   return data.url as string;
+}
+
+export async function uploadImageWithThumb(
+  file: File
+): Promise<{ url: string; thumbUrl: string }> {
+  assertImageFile(file);
+  const url = await uploadImage(file);
+  try {
+    const thumbFile = await makeThumbnailFile(file, { nameHint: file.name || "image" });
+    const thumbUrl = await uploadImage(thumbFile);
+    return { url, thumbUrl };
+  } catch (error) {
+    console.warn("thumbnail upload failed, falling back to original", error);
+    return { url, thumbUrl: url };
+  }
 }
