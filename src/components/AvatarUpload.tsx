@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { uploadImage } from "@/lib/apiClient";
+import { compressImageFile } from "@/lib/imageThumb";
 
 interface Props {
   src: string;
@@ -29,7 +30,8 @@ export default function AvatarUpload({
     if (!file || !onChange) return;
     setUploading(true);
     try {
-      const url = await uploadImage(file);
+      const compressed = await compressImageFile(file);
+      const url = await uploadImage(compressed);
       onChange(url);
     } catch (err) {
       console.error(err);
@@ -139,7 +141,7 @@ export default function AvatarUpload({
             </div>
           )}
           <p className="text-[10px] text-neutral-500 text-center leading-tight">
-            只接受图片，最大 10MB。原图直传，不压缩、不转 webp。也可粘贴链接。
+            只接受图片，最大 10MB。上传前会压到约 512px WebP/JPEG（头像无需原图）。也可粘贴链接。
           </p>
         </div>
       )}

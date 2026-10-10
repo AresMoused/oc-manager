@@ -57,3 +57,16 @@ https://你的域名/api/auth/callback
 - Vercel Serverless **无持久磁盘**，生产必须配置 R2
 - JSON 为读-改-写，高并发同时保存可能互相覆盖（小群场景一般够用）
 - 首次部署后数据为空；可从旧 `data/` 手动上传到 R2 同名路径迁移
+
+## Gallery thumbnails
+
+New gallery uploads store `url` (original) and `thumbUrl` (compressed). The gallery grid uses `thumbUrl`; clicking opens the original in the lightbox.
+
+Backfill existing R2 character data (requires sharp + R2 env):
+
+```bash
+npm i sharp
+node scripts/backfill-gallery-thumbs.mjs
+```
+
+Or use the per-character “为旧图生成缩图” button in the gallery UI (browser CORS must allow reading the original image).

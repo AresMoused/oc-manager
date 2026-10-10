@@ -23,6 +23,8 @@ export interface PreferenceItem {
 export interface GalleryImage {
   id: string;
   url: string;
+  /** Compressed gallery preview; lightbox still uses `url`. */
+  thumbUrl?: string;
   caption?: string;
 }
 
