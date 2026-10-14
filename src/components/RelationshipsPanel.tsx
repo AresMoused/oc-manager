@@ -40,19 +40,53 @@ export default function RelationshipsPanel({
 }: Props) {
   const router = useRouter();
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [showGraph, setShowGraph] = useState(true);
   const [form, setForm] = useState({
     targetId: "",
     type: "friend" as Relationship["type"],
-    strength: 3,
+    strength: 50,
     note: "",
   });
 
-  const handleSubmit = () => {
-    if (!form.targetId || form.targetId === character.id) return;
-    onAdd(form);
-    setForm({ targetId: "", type: "friend", strength: 3, note: "" });
+  const resetForm = () => {
+    setForm({ targetId: "", type: "friend", strength: 50, note: "" });
+    setEditingId(null);
     setShowForm(false);
+  };
+
+  const openCreate = () => {
+    setEditingId(null);
+    setForm({ targetId: "", type: "friend", strength: 50, note: "" });
+    setShowForm(true);
+  };
+
+  const openEdit = (rel: Relationship) => {
+    setEditingId(rel.id);
+    setForm({
+      targetId: rel.targetId,
+      type: rel.type,
+      strength: Math.min(100, Math.max(1, Math.round(rel.strength) || 50)),
+      note: rel.note || "",
+    });
+    setShowForm(true);
+  };
+
+  const handleSubmit = () => {
+    const strength = Math.min(100, Math.max(1, Math.round(Number(form.strength)) || 1));
+    if (editingId) {
+      onUpdate(editingId, {
+        type: form.type,
+        strength,
+        strengthScale: 100,
+        note: form.note,
+      });
+      resetForm();
+      return;
+    }
+    if (!form.targetId || form.targetId === character.id) return;
+    onAdd({ ...form, strength, strengthScale: 100 });
+    resetForm();
   };
 
   const others = useMemo(
@@ -111,7 +145,7 @@ export default function RelationshipsPanel({
     <div>
       <SectionHeader
         title="人际关系 / Relationships"
-        onAdd={editable ? () => setShowForm(true) : undefined}
+        onAdd={editable ? openCreate : undefined}
       />
       <div className="bg-[#111] border border-neutral-800 border-t-0 rounded-b-md p-4 space-y-4">
         <div className="flex items-center justify-between gap-2">
@@ -140,8 +174,9 @@ export default function RelationshipsPanel({
         {showForm && (
           <div className="p-3 bg-[#0a0a0a] border border-purple-800/50 rounded-lg space-y-2">
             <select
-              className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-sm outline-none focus:border-purple-500"
+              className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-sm outline-none focus:border-purple-500 disabled:opacity-60"
               value={form.targetId}
+              disabled={!!editingId}
               onChange={(e) => setForm({ ...form, targetId: e.target.value })}
             >
               <option value="">Select character...</option>
@@ -172,18 +207,30 @@ export default function RelationshipsPanel({
                 )}
               </select>
               <div className="flex items-center gap-1 px-2">
-                <span className="text-xs text-neutral-500">强度</span>
+                <span className="text-xs text-neutral-500 shrink-0">等级</span>
                 <input
                   type="range"
                   min={1}
-                  max={5}
+                  max={100}
                   value={form.strength}
                   onChange={(e) =>
                     setForm({ ...form, strength: Number(e.target.value) })
                   }
-                  className="w-20 accent-purple-500"
+                  className="w-28 accent-purple-500"
                 />
-                <span className="text-xs text-purple-300 w-3">{form.strength}</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={form.strength}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      strength: Math.min(100, Math.max(1, Number(e.target.value) || 1)),
+                    })
+                  }
+                  className="w-14 bg-neutral-900 border border-neutral-700 rounded px-1 py-1 text-xs text-purple-300 outline-none focus:border-purple-500"
+                />
               </div>
             </div>
             <input
@@ -195,7 +242,7 @@ export default function RelationshipsPanel({
             <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={resetForm}
                 className="px-3 py-1 text-xs text-neutral-400"
               >
                 取消
@@ -205,7 +252,7 @@ export default function RelationshipsPanel({
                 onClick={handleSubmit}
                 className="px-3 py-1 text-xs rounded bg-purple-600 text-white"
               >
-                添加（双向同步）
+                {editingId ? "保存（双向同步）" : "添加（双向同步）"}
               </button>
             </div>
           </div>
@@ -277,16 +324,19 @@ export default function RelationshipsPanel({
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <div
-                        key={i}
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          i < rel.strength ? "bg-purple-400" : "bg-neutral-700"
-                        }`}
-                      />
-                    ))}
+                  <div className="text-xs text-purple-300 tabular-nums w-10 text-right">
+                    {Math.min(100, Math.max(1, Math.round(rel.strength) || 1))}
                   </div>
+                  {editable && (
+                    <button
+                      type="button"
+                      onClick={() => openEdit(rel)}
+                      className="text-neutral-500 hover:text-purple-300 text-xs"
+                      title="编辑关系"
+                    >
+                      编辑
+                    </button>
+                  )}
                   {editable && (
                     <button
                       type="button"

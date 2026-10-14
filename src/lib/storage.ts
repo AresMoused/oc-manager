@@ -1,5 +1,6 @@
 import {
   Character,
+  Relationship,
   migratePreferences,
   migrateTraits,
   migrateEmotions,
@@ -10,6 +11,15 @@ import {
 } from "./types";
 
 const STORAGE_KEY = "oc-manager-characters-v1";
+
+function relationLevel(raw: Partial<Relationship> | undefined): number {
+  let strength = Number(raw?.strength);
+  if (!Number.isFinite(strength)) strength = 50;
+  if (raw?.strengthScale !== 100 && strength <= 5) {
+    strength = 1 + ((strength - 1) / 4) * 99;
+  }
+  return Math.min(100, Math.max(1, Math.round(strength)));
+}
 
 export function normalizeCharacter(c: Character): Character {
   const traits = migrateTraits(c.traits);
@@ -45,6 +55,14 @@ export function normalizeCharacter(c: Character): Character {
     happiness: migrateHappiness(c.happiness),
     outward: migrateOutward(c.outward),
     modules,
+    timeline: c.timeline ?? [],
+    relationships: (Array.isArray(c.relationships) ? c.relationships : []).map(
+      (r) => ({
+        ...r,
+        strength: relationLevel(r),
+        strengthScale: 100 as const,
+      })
+    ),
     story: c.story ?? "",
   };
 }

@@ -163,7 +163,8 @@ export function useCharacters() {
                     ? {
                         ...r,
                         type: rel.type,
-                        strength: rel.strength,
+                        strength: Math.min(100, Math.max(1, Math.round(rel.strength) || 1)),
+                        strengthScale: 100,
                         note: rel.note,
                       }
                     : r
@@ -187,7 +188,8 @@ export function useCharacters() {
                     ? {
                         ...r,
                         type: rel.type,
-                        strength: rel.strength,
+                        strength: Math.min(100, Math.max(1, Math.round(rel.strength) || 1)),
+                        strengthScale: 100,
                         note: rel.note,
                       }
                     : r
@@ -203,7 +205,8 @@ export function useCharacters() {
                   id: createId(),
                   targetId: charId,
                   type: rel.type,
-                  strength: rel.strength,
+                  strength: Math.min(100, Math.max(1, Math.round(rel.strength) || 1)),
+                  strengthScale: 100,
                   note: rel.note,
                 },
               ],
@@ -227,8 +230,15 @@ export function useCharacters() {
         if (!source || !rel) return prev;
         const targetId = updates.targetId ?? rel.targetId;
         const nextType = updates.type ?? rel.type;
-        const nextStrength =
-          updates.strength !== undefined ? updates.strength : rel.strength;
+        const nextStrength = Math.min(
+          100,
+          Math.max(
+            1,
+            Math.round(
+              updates.strength !== undefined ? updates.strength : rel.strength
+            ) || 1
+          )
+        );
         const nextNote = updates.note !== undefined ? updates.note : rel.note;
 
         return prev.map((c) => {
@@ -241,6 +251,10 @@ export function useCharacters() {
                       ...r,
                       ...updates,
                       targetId,
+                      type: nextType,
+                      strength: nextStrength,
+                      strengthScale: 100,
+                      note: nextNote,
                     }
                   : r
               ),
@@ -256,6 +270,7 @@ export function useCharacters() {
                       ...r,
                       type: nextType,
                       strength: nextStrength,
+                      strengthScale: 100,
                       note: nextNote,
                     }
                   : r

@@ -25,6 +25,13 @@ export const REL_TYPE_LABELS: Record<Relationship["type"], string> = {
   other: "Other 其他",
 };
 
+/** Map level 1–100 onto the old strength 1–5 stroke widths. */
+export function relationStrokeWidth(level: number, active: boolean): number {
+  const lv = Math.min(100, Math.max(1, Number(level) || 1));
+  const legacy = 1 + ((lv - 1) / 99) * 4;
+  return active ? 2 + legacy : 1 + legacy * 0.7;
+}
+
 interface Edge {
   from: string;
   to: string;
@@ -228,7 +235,7 @@ export default function RelationshipGraph({
     const lines = [
       `${edge.fromName}  ↔  ${edge.toName}`,
       REL_TYPE_LABELS[edge.type],
-      `强度 ${edge.strength}/5`,
+      `等级 ${Math.min(100, Math.max(1, Math.round(edge.strength)))}/100`,
     ];
     if (edge.note) lines.push(edge.note);
     setTooltip({
@@ -305,7 +312,7 @@ export default function RelationshipGraph({
                 x2={to.x}
                 y2={to.y}
                 stroke={REL_TYPE_COLORS[e.type]}
-                strokeWidth={active ? 2 + e.strength : 1 + e.strength * 0.7}
+                strokeWidth={relationStrokeWidth(e.strength, !!active)}
                 strokeOpacity={active ? 0.95 : 0.55}
               />
               <line

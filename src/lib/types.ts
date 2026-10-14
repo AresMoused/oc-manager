@@ -10,7 +10,10 @@ export interface Relationship {
   id: string;
   targetId: string;
   type: "friend" | "family" | "ally" | "enemy" | "rival" | "lover" | "mentor" | "other";
+  /** 1–100. Older cards stored 1–5; normalizeCharacter migrates those. */
   strength: number;
+  /** 100 after the level scale migration. Missing means strength may still be 1–5. */
+  strengthScale?: 100;
   note: string;
 }
 
