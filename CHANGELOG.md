@@ -5,6 +5,7 @@ All notable changes to OC Manager are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **漫画分镜 / Manga storyboard editor** (`/storyboard`) — one-page name/rough storyboard: staggered panel auto-layout from quick specs, red featured centre panel + title box, draggable/resizable dialogue boxes (rectangle narration, speech bubble with draggable tail, thought bubble; vertical right-to-left or horizontal CJK), stick figures with pose presets (standing/pointing/waving/walking/sitting/handshake/hug) and draggable joints, SVG/PNG export, optional AI draft via the existing AI config. Saved per user alongside other app data (`storyboards`). Model/UX ideas inspired by [OpenKoma](https://github.com/Reuben-Sun/OpenKoma) (Apache-2.0; no code copied).
 - **Gallery thumbnails** — uploads keep the original CDN URL and also store a ~720px WebP/JPEG `thumbUrl`; grid loads the thumb, lightbox opens the original. In-UI “为旧图生成缩图” plus `scripts/backfill-gallery-thumbs.mjs` for R2 backfill.
 - **Avatar upload compression** — avatars are resized (~512px) before PUT to cut upload size.
 

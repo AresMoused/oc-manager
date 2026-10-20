@@ -15,6 +15,8 @@ import { normalizeWorld } from "@/lib/worlds";
 import type { WorldCatalog } from "@/lib/worldCatalog";
 import type { LoreMap } from "@/lib/worldLore";
 import { normalizeLoreMap } from "@/lib/worldLore";
+import type { Storyboard } from "@/lib/storyboard";
+import { normalizeStoryboardList } from "@/lib/storyboard";
 import { fetchAppData } from "@/lib/apiClient";
 import { normalizeCharacterList } from "@/lib/storage";
 
@@ -23,6 +25,7 @@ interface AppDataState {
   worlds: WorldMeta[];
   catalog: WorldCatalog;
   lore: LoreMap;
+  storyboards: Storyboard[];
   loaded: boolean;
   syncError: string | null;
   setCharacters: (
@@ -33,12 +36,16 @@ interface AppDataState {
     next: WorldCatalog | ((prev: WorldCatalog) => WorldCatalog)
   ) => void;
   setLore: (next: LoreMap | ((prev: LoreMap) => LoreMap)) => void;
+  setStoryboards: (
+    next: Storyboard[] | ((prev: Storyboard[]) => Storyboard[])
+  ) => void;
   /** Immediate save of current snapshot (create/delete) */
   flush: (patch?: {
     characters?: Character[];
     worlds?: WorldMeta[];
     catalog?: WorldCatalog;
     lore?: LoreMap;
+    storyboards?: Storyboard[];
   }) => Promise<void>;
   reload: () => Promise<void>;
 }
@@ -50,6 +57,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [worlds, setWorldsState] = useState<WorldMeta[]>([]);
   const [catalog, setCatalogState] = useState<WorldCatalog>({});
   const [lore, setLoreState] = useState<LoreMap>({});
+  const [storyboards, setStoryboardsState] = useState<Storyboard[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
@@ -57,6 +65,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const worldsRef = useRef<WorldMeta[]>([]);
   const catalogRef = useRef<WorldCatalog>({});
   const loreRef = useRef<LoreMap>({});
+  const storyboardsRef = useRef<Storyboard[]>([]);
   const skipSave = useRef(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Serialize concurrent persists so older responses cannot overwrite newer local state */
@@ -74,6 +83,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     loreRef.current = lore;
   }, [lore]);
+  useEffect(() => {
+    storyboardsRef.current = storyboards;
+  }, [storyboards]);
 
   const reload = useCallback(async () => {
     try {
@@ -89,6 +101,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setWorldsState(worldsNorm);
       setCatalogState(data.catalog || {});
       setLoreState(loreNorm);
+      const sbNorm = normalizeStoryboardList(data.storyboards);
+      storyboardsRef.current = sbNorm;
+      setStoryboardsState(sbNorm);
       setSyncError(null);
       skipSave.current = true;
     } catch (e) {
@@ -108,6 +123,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       worlds?: WorldMeta[];
       catalog?: WorldCatalog;
       lore?: LoreMap;
+      storyboards?: Storyboard[];
     }) => {
       const run = async () => {
         // Always read latest refs at the moment this slot in the chain runs
@@ -124,6 +140,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
               : catalogRef.current,
           lore:
             patch && "lore" in patch ? patch.lore ?? {} : loreRef.current,
+          storyboards:
+            patch && "storyboards" in patch
+              ? patch.storyboards ?? []
+              : storyboardsRef.current,
         };
 
         try {
@@ -171,7 +191,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [characters, worlds, catalog, lore, loaded, persist]);
+  }, [characters, worlds, catalog, lore, storyboards, loaded, persist]);
 
   const setCharacters = useCallback(
     (next: Character[] | ((prev: Character[]) => Character[])) => {
@@ -217,12 +237,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const setStoryboards = useCallback(
+    (next: Storyboard[] | ((prev: Storyboard[]) => Storyboard[])) => {
+      setStoryboardsState((prev) => {
+        const value = typeof next === "function" ? next(prev) : next;
+        storyboardsRef.current = value;
+        return value;
+      });
+    },
+    []
+  );
+
   const flush = useCallback(
     async (patch?: {
       characters?: Character[];
       worlds?: WorldMeta[];
       catalog?: WorldCatalog;
       lore?: LoreMap;
+      storyboards?: Storyboard[];
     }) => {
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
@@ -248,6 +280,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         loreRef.current = l;
         setLoreState(l);
       }
+      if (patch && "storyboards" in patch) {
+        const sb = patch.storyboards ?? [];
+        storyboardsRef.current = sb;
+        setStoryboardsState(sb);
+      }
       await persist(patch);
     },
     [persist]
@@ -260,12 +297,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         worlds,
         catalog,
         lore,
+        storyboards,
         loaded,
         syncError,
         setCharacters,
         setWorlds,
         setCatalog,
         setLore,
+        setStoryboards,
         flush,
         reload,
       }}

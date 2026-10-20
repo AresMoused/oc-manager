@@ -46,6 +46,7 @@ export async function PUT(req: NextRequest) {
         worlds: body.worlds || [],
         catalog: body.catalog || {},
         lore: body.lore || {},
+        storyboards: body.storyboards || [],
         updatedAt: new Date().toISOString(),
       });
       return NextResponse.json(data);
@@ -55,6 +56,7 @@ export async function PUT(req: NextRequest) {
     if ("worlds" in body) partial.worlds = body.worlds;
     if ("catalog" in body) partial.catalog = body.catalog;
     if ("lore" in body) partial.lore = body.lore;
+    if ("storyboards" in body) partial.storyboards = body.storyboards;
     const data = await patchUserAppData(userId, partial);
     return NextResponse.json(data);
   } catch (e) {
