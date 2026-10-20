@@ -204,7 +204,16 @@ export const BUBBLE_STYLE_OPTIONS: { value: BubbleStyle; label: string }[] = [
 const BUBBLE_STYLES = BUBBLE_STYLE_OPTIONS.map((o) => o.value);
 export type TextDirection = "vertical" | "horizontal";
 
-export interface Bubble extends LayerProps {
+/** Membership of a text box / figure in a panel group */
+export interface GroupMember {
+  /**
+   * Id of the panel (frame) this element belongs to; "" = ungrouped (未分格).
+   * Missing in older documents → assigned by polygon containment on load.
+   */
+  frameId?: string;
+}
+
+export interface Bubble extends LayerProps, GroupMember {
   id: string;
   x: number;
   y: number;
@@ -240,7 +249,7 @@ export type FigurePose =
   | "handshake" | "hug" | "waving";
 export type FigureStyle = "stick" | "box" | "bust" | "rough";
 
-export interface Figure extends LayerProps {
+export interface Figure extends LayerProps, GroupMember {
   id: string;
   /** Foot centre on the page */
   x: number;
@@ -487,7 +496,7 @@ export function normalizeStoryboard(raw: unknown): Storyboard {
   const s = (raw && typeof raw === "object" ? raw : {}) as Partial<Storyboard>;
   const now = new Date().toISOString();
   const arr = (v: unknown) => (Array.isArray(v) ? v : []);
-  return {
+  const out: Storyboard = {
     id: str(s.id) || rid(), title: str(s.title), caption: str(s.caption),
     monologue: str(s.monologue),
     panels: arr(s.panels).slice(0, MAX_SIDE_PANELS).map(normalizePanel),
@@ -496,6 +505,15 @@ export function normalizeStoryboard(raw: unknown): Storyboard {
     figures: arr(s.figures).map(normalizeFigure),
     createdAt: str(s.createdAt, now), updatedAt: str(s.updatedAt, now),
   };
+  // explicit membership if valid, else containment (backward compatible with docs lacking frameId)
+  const rawB = arr(s.bubbles) as { frameId?: unknown }[];
+  const rawF = arr(s.figures) as { frameId?: unknown }[];
+  const ids = new Set(out.frames.filter((f) => f.kind !== "title").map((f) => f.id));
+  const pick = (raw: unknown, auto: () => string) =>
+    typeof raw === "string" ? (raw === "" || ids.has(raw) ? raw : auto()) : auto();
+  out.bubbles = out.bubbles.map((b, i) => ({ ...b, frameId: pick(rawB[i]?.frameId, () => containingFrameId(out.frames, "bubble", b)) }));
+  out.figures = out.figures.map((f, i) => ({ ...f, frameId: pick(rawF[i]?.frameId, () => containingFrameId(out.frames, "figure", f)) }));
+  return out;
 }
 
 export function normalizeStoryboardList(raw: unknown): Storyboard[] {
@@ -857,8 +875,8 @@ export function renderStoryboardSvg(input: Storyboard): string {
   const board: Storyboard = {
     ...input,
     frames: input.frames.filter((x) => !x.hidden),
-    bubbles: input.bubbles.filter((x) => !x.hidden),
-    figures: input.figures.filter((x) => !x.hidden),
+    bubbles: input.bubbles.filter((x) => !isEffectivelyHidden(input, x)),
+    figures: input.figures.filter((x) => !isEffectivelyHidden(input, x)),
   };
   const out: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${PAGE_H}" viewBox="0 0 ${PAGE_W} ${PAGE_H}" font-family="${esc(FONT)}">`,
@@ -871,6 +889,8 @@ export function renderStoryboardSvg(input: Storyboard): string {
   /** Panel a figure belongs to: the one containing its foot, else its bbox centre; -1 = unclipped */
   const clipFor = (f: Figure) => {
     if (f.breakFrame) return -1;
+    // explicit group membership wins; "" = ungrouped → unclipped
+    if (f.frameId !== undefined) return f.frameId ? frames.findIndex((fr) => fr.id === f.frameId) : -1;
     const byFoot = inFrame(f.x, f.y - 4);
     if (byFoot >= 0) return byFoot;
     const bb = figureBounds(f);
@@ -968,7 +988,10 @@ export function autoLayout(board: Storyboard): Pick<Storyboard, "frames" | "bubb
   const rects = sidePanelRects(board.panels.length);
   board.panels.slice(0, rects.length).forEach((p, i) => {
     const r = rects[i];
-    frames.push(newFrame({ kind: "panel", ...r }));
+    const frame = newFrame({ kind: "panel", ...r });
+    frames.push(frame);
+    const nb = bubbles.length;
+    const nf = figures.length;
     const lines = p.text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
     let right = r.x + r.w - 10;
     const maxH = r.h * 0.6;
@@ -984,15 +1007,19 @@ export function autoLayout(board: Storyboard): Pick<Storyboard, "frames" | "bubb
     const free = right - r.x;
     const fr = free >= r.w * 0.45 ? { ...r, w: free } : { ...r, y: r.y + r.h * 0.3, h: r.h * 0.7 };
     figures.push(...panelFigures(p, p.pose === "closeup" ? r : fr));
+    for (let k = nb; k < bubbles.length; k++) bubbles[k].frameId = frame.id;
+    for (let k = nf; k < figures.length; k++) figures[k].frameId = frame.id;
   });
   const fx = 245, fy = 126, fw = 185, fh = 872;
-  frames.push(newFrame({ kind: "featured", x: fx, y: fy, w: fw, h: fh }));
-  figures.push(newFigure({ style: "rough", x: fx + fw / 2, y: fy + fh - 20, size: fh - 230, color: COLOR.featured }));
+  const featured = newFrame({ kind: "featured", x: fx, y: fy, w: fw, h: fh });
+  frames.push(featured);
+  figures.push(newFigure({ style: "rough", x: fx + fw / 2, y: fy + fh - 20, size: fh - 230, color: COLOR.featured, frameId: featured.id }));
   if (board.monologue.trim()) {
-    bubbles.push(fitBubble(board.monologue, fx + fw - 6, fy + 6, 13 * 15.7 + 10, { color: COLOR.featured, textColor: COLOR.featured, fontSize: 14 }));
+    bubbles.push(fitBubble(board.monologue, fx + fw - 6, fy + 6, 13 * 15.7 + 10, { color: COLOR.featured, textColor: COLOR.featured, fontSize: 14, frameId: featured.id }));
   }
   if (board.caption.trim()) {
-    bubbles.push(fitBubble(board.caption, fx - 3, fy + 555, 300, { color: COLOR.featured, textColor: COLOR.featured }));
+    // the caption hangs off the featured panel's left edge but belongs to it
+    bubbles.push(fitBubble(board.caption, fx - 3, fy + 555, 300, { color: COLOR.featured, textColor: COLOR.featured, frameId: featured.id }));
   }
   frames.push(newFrame({ kind: "title", x: 223, y: 18, w: 305, h: 86, color: COLOR.title, text: board.title }));
   return { frames, bubbles, figures };
@@ -1119,4 +1146,125 @@ export function importStoryboardJson(text: string): Storyboard {
   if (!looksLike) throw new Error("文件中没有分格、对话框或人物数据");
   const now = new Date().toISOString();
   return { ...normalizeStoryboard(raw), id: rid(), updatedAt: now };
+}
+
+// ================================================================ panel groups
+
+export type MemberKind = "bubble" | "figure";
+
+/** Id of the topmost non-title panel containing the element's anchor point, or "" */
+export function containingFrameId(frames: Frame[], kind: MemberKind, el: Bubble | Figure): string {
+  let pts: Pt[];
+  if (kind === "bubble") {
+    const b = el as Bubble;
+    pts = [[b.x + b.w / 2, b.y + b.h / 2]];
+  } else {
+    const f = el as Figure;
+    const bb = figureBounds(f);
+    pts = [[f.x, f.y - 4], [bb.x + bb.w / 2, bb.y + bb.h / 2]];
+  }
+  for (const [x, y] of pts) {
+    for (let i = frames.length - 1; i >= 0; i--) {
+      const fr = frames[i];
+      if (fr.kind !== "title" && pointInFrame(fr, x, y)) return fr.id;
+    }
+  }
+  return "";
+}
+
+/** The group frame of an element, if any */
+export function groupFrame(board: Storyboard, el: GroupMember): Frame | undefined {
+  return el.frameId ? board.frames.find((f) => f.id === el.frameId) : undefined;
+}
+
+/** Hidden by itself or by its group */
+export function isEffectivelyHidden(board: Storyboard, el: LayerProps & GroupMember): boolean {
+  return !!el.hidden || !!groupFrame(board, el)?.hidden;
+}
+
+/** Locked by itself or by its group */
+export function isEffectivelyLocked(board: Storyboard, el: LayerProps & GroupMember): boolean {
+  return !!el.locked || !!groupFrame(board, el)?.locked;
+}
+
+export interface LayerGroup {
+  /** Frame id, or "" for the ungrouped bucket */
+  id: string;
+  frame?: Frame;
+  bubbles: Bubble[];
+  figures: Figure[];
+}
+
+/**
+ * Groups for the layers panel: one per frame (front-most frame first), then
+ * 未分格. Members keep their paint order (front-most first).
+ */
+export function layerGroups(board: Storyboard): LayerGroup[] {
+  const ids = new Set(board.frames.map((f) => f.id));
+  const key = (el: GroupMember) => (el.frameId && ids.has(el.frameId) ? el.frameId : "");
+  const groups: LayerGroup[] = [...board.frames].reverse().map((frame) => ({
+    id: frame.id,
+    frame,
+    bubbles: [...board.bubbles].reverse().filter((b) => key(b) === frame.id),
+    figures: [...board.figures].reverse().filter((f) => key(f) === frame.id),
+  }));
+  groups.push({
+    id: "",
+    bubbles: [...board.bubbles].reverse().filter((b) => key(b) === ""),
+    figures: [...board.figures].reverse().filter((f) => key(f) === ""),
+  });
+  return groups;
+}
+
+/** Explicitly move an element into a panel group ("" = ungrouped) */
+export function setMemberGroup(board: Storyboard, kind: MemberKind, id: string, frameId: string): Storyboard {
+  if (frameId && !board.frames.some((f) => f.id === frameId && f.kind !== "title")) return board;
+  const key = LAYER_KEY[kind];
+  return {
+    ...board,
+    [key]: (board[key] as (Bubble | Figure)[]).map((x) => (x.id === id ? { ...x, frameId } : x)),
+  } as Storyboard;
+}
+
+/** After a canvas drop: re-assign membership by containment */
+export function regroupByPosition(board: Storyboard, kind: MemberKind, id: string): Storyboard {
+  const key = LAYER_KEY[kind];
+  const el = (board[key] as (Bubble | Figure)[]).find((x) => x.id === id);
+  if (!el) return board;
+  const next = containingFrameId(board.frames, kind, el);
+  return next === el.frameId ? board : setMemberGroup(board, kind, id, next);
+}
+
+/**
+ * Reorder an element within its own group (paint order): swaps with the
+ * nearest same-kind sibling of the same group. dir +1 = towards the front.
+ */
+export function moveInGroup(board: Storyboard, kind: MemberKind, id: string, dir: 1 | -1): Storyboard {
+  const key = LAYER_KEY[kind];
+  const list = [...(board[key] as (Bubble | Figure)[])];
+  const i = list.findIndex((x) => x.id === id);
+  if (i < 0) return board;
+  const g = list[i].frameId ?? "";
+  for (let j = i + dir; j >= 0 && j < list.length; j += dir) {
+    if ((list[j].frameId ?? "") === g) {
+      [list[i], list[j]] = [list[j], list[i]];
+      return { ...board, [key]: list } as Storyboard;
+    }
+  }
+  return board;
+}
+
+/** Ids of the members of a panel group */
+export function groupMembers(board: Storyboard, frameId: string): { bubbles: string[]; figures: string[] } {
+  return {
+    bubbles: board.bubbles.filter((b) => b.frameId === frameId).map((b) => b.id),
+    figures: board.figures.filter((f) => f.frameId === frameId).map((f) => f.id),
+  };
+}
+
+/** Split / delete keep membership valid: members of a removed frame become ungrouped */
+export function pruneMembership(board: Storyboard): Storyboard {
+  const ids = new Set(board.frames.filter((f) => f.kind !== "title").map((f) => f.id));
+  const fix = <T extends GroupMember>(x: T): T => (x.frameId && !ids.has(x.frameId) ? { ...x, frameId: "" } : x);
+  return { ...board, bubbles: board.bubbles.map(fix), figures: board.figures.map(fix) };
 }

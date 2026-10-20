@@ -27,6 +27,13 @@ import {
   splitFrameVertical,
   splitFrameHorizontal,
   normalizeFrame,
+  layerGroups,
+  setMemberGroup,
+  regroupByPosition,
+  moveInGroup,
+  groupMembers,
+  pruneMembership,
+  isEffectivelyHidden,
 } from "./storyboard";
 
 test("vertical text: right-to-left columns, no leading punctuation", () => {
@@ -201,4 +208,78 @@ test("rect panels from older documents load unchanged (no shape)", () => {
   assert.equal(old.shape, undefined);
   assert.ok(renderStoryboardSvg({ ...newStoryboard(), frames: [old], bubbles: [], figures: [] }).includes('<rect x="1.0" y="2.0"'));
   assert.equal(normalizeFrame({ shape: { tl: -5, tr: 9, br: "x", bl: 0 } }).shape, undefined, "garbage clamps to rect");
+});
+
+function groupedBoard() {
+  const b = newStoryboard();
+  const a = newFrame({ id: "A", x: 0, y: 0, w: 100, h: 100 });
+  const c = newFrame({ id: "B", x: 200, y: 0, w: 100, h: 100, shape: shapePreset("trapezoid", 0.3) });
+  b.frames = [a, c];
+  b.bubbles = [newBubble({ id: "b1", x: 10, y: 10, w: 20, h: 20 }), newBubble({ id: "b2", x: 400, y: 400, w: 20, h: 20 }), newBubble({ id: "b3", x: 20, y: 40, w: 20, h: 20 })];
+  b.figures = [newFigure({ id: "f1", x: 250, y: 95, size: 60 })];
+  return b;
+}
+
+test("membership: containment for legacy docs, explicit frameId is stable", () => {
+  const legacy = JSON.parse(JSON.stringify(groupedBoard()));
+  for (const x of [...legacy.bubbles, ...legacy.figures]) delete x.frameId;
+  const n = normalizeStoryboard(legacy);
+  assert.deepEqual(n.bubbles.map((b) => b.frameId), ["A", "", "A"]);
+  assert.equal(n.figures[0].frameId, "B");
+  // explicit membership survives even when the element sits elsewhere; unknown ids fall back to containment
+  legacy.bubbles[1].frameId = "B";
+  legacy.bubbles[0].frameId = "nope";
+  const m = normalizeStoryboard(legacy);
+  assert.equal(m.bubbles[1].frameId, "B");
+  assert.equal(m.bubbles[0].frameId, "A");
+  // JSON round trip keeps it
+  assert.equal(importStoryboardJson(exportStoryboardJson(m)).bubbles[1].frameId, "B");
+});
+
+test("layer groups: one per panel + 未分格, move between groups, regroup on drop", () => {
+  let b = normalizeStoryboard(groupedBoard());
+  let g = layerGroups(b);
+  assert.deepEqual(g.map((x) => x.id), ["B", "A", ""]);
+  assert.deepEqual(g[1].bubbles.map((x) => x.id), ["b3", "b1"], "front-most first");
+  assert.deepEqual(g[2].bubbles.map((x) => x.id), ["b2"]);
+  b = setMemberGroup(b, "bubble", "b2", "A");
+  assert.equal(layerGroups(b)[1].bubbles.length, 3);
+  assert.equal(setMemberGroup(b, "bubble", "b2", "missing"), b, "invalid target ignored");
+  // drop b2 into panel B on the canvas
+  b = { ...b, bubbles: b.bubbles.map((x) => (x.id === "b2" ? { ...x, x: 240, y: 40 } : x)) };
+  b = regroupByPosition(b, "bubble", "b2");
+  assert.equal(b.bubbles.find((x) => x.id === "b2")!.frameId, "B");
+  // dropped outside → ungrouped
+  b = { ...b, bubbles: b.bubbles.map((x) => (x.id === "b2" ? { ...x, x: 600, y: 600 } : x)) };
+  assert.equal(regroupByPosition(b, "bubble", "b2").bubbles.find((x) => x.id === "b2")!.frameId, "");
+});
+
+test("reorder within group skips other groups; group hide; prune on delete", () => {
+  let b = normalizeStoryboard(groupedBoard());
+  b = setMemberGroup(b, "bubble", "b2", "B");
+  // order b1(A) b2(B) b3(A): moving b1 forward swaps with b3, not b2
+  assert.deepEqual(moveInGroup(b, "bubble", "b1", 1).bubbles.map((x) => x.id), ["b3", "b2", "b1"]);
+  assert.equal(moveInGroup(b, "bubble", "b3", 1), b, "already front-most in group");
+  assert.deepEqual(groupMembers(b, "A"), { bubbles: ["b1", "b3"], figures: [] });
+  const hidden = { ...b, frames: b.frames.map((f) => (f.id === "A" ? { ...f, hidden: true } : f)) };
+  assert.ok(isEffectivelyHidden(hidden, hidden.bubbles[0]));
+  assert.ok(!renderStoryboardSvg(hidden).includes('data-bubble="b1"'));
+  assert.ok(renderStoryboardSvg(hidden).includes('data-bubble="b2"'));
+  const pruned = pruneMembership({ ...b, frames: b.frames.filter((f) => f.id !== "A") });
+  assert.deepEqual(pruned.bubbles.map((x) => x.frameId), ["", "B", ""]);
+});
+
+test("figure clipping follows explicit group", () => {
+  const b = normalizeStoryboard(groupedBoard());
+  assert.match(renderStoryboardSvg(b), /<g clip-path="url\(#fc1\)"><g data-figure="f1">/);
+  const ungrouped = setMemberGroup(b, "figure", "f1", "");
+  assert.ok(!/clip-path="url\(#fc\d\)"><g data-figure="f1"/.test(renderStoryboardSvg(ungrouped)));
+});
+
+test("autoLayout assigns every element to its panel (caption stays with featured)", () => {
+  const b = sampleStoryboard();
+  const featured = b.frames.find((f) => f.kind === "featured")!;
+  assert.ok(b.bubbles.every((x) => x.frameId));
+  assert.ok(b.figures.every((x) => x.frameId));
+  assert.equal(b.bubbles.find((x) => x.text.includes("玛莉卡"))!.frameId, featured.id);
 });
