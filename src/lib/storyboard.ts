@@ -38,6 +38,156 @@ export interface Frame extends LayerProps {
   color: string;
   /** Title box only: the displayed title text */
   text?: string;
+  /**
+   * Corner positions as ratios of the bounding box width (OpenKoma-style
+   * `PanelShape`): top edge runs tl→tr at y, bottom edge bl→br at y+h.
+   * Omitted = rectangle (backward compatible with older documents).
+   */
+  shape?: PanelShape;
+}
+
+/** Ratios 0..1 of the frame width for each corner's x; y is fixed by the top/bottom edge */
+export interface PanelShape {
+  tl: number;
+  tr: number;
+  br: number;
+  bl: number;
+}
+
+export const RECT_SHAPE: PanelShape = { tl: 0, tr: 1, br: 1, bl: 0 };
+/** Minimum edge length as a ratio of width, so a panel can't collapse */
+const MIN_EDGE = 0.08;
+
+export type ShapePreset = "rect" | "trapezoid" | "trapezoidInv" | "slantLeft" | "slantRight";
+export const SHAPE_PRESET_OPTIONS: { value: ShapePreset; label: string }[] = [
+  { value: "rect", label: "矩形" },
+  { value: "trapezoid", label: "梯形（上窄）" },
+  { value: "trapezoidInv", label: "梯形（下窄）" },
+  { value: "slantLeft", label: "左斜（平行四边形）" },
+  { value: "slantRight", label: "右斜（平行四边形）" },
+];
+
+export function shapePreset(p: ShapePreset, k = 0.14): PanelShape {
+  switch (p) {
+    case "trapezoid": return { tl: k, tr: 1 - k, br: 1, bl: 0 };
+    case "trapezoidInv": return { tl: 0, tr: 1, br: 1 - k, bl: k };
+    case "slantLeft": return { tl: 0, tr: 1 - k, br: 1, bl: k };
+    case "slantRight": return { tl: k, tr: 1, br: 1 - k, bl: 0 };
+    default: return { ...RECT_SHAPE };
+  }
+}
+
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+/** Clamp ratios to [0,1] and keep each edge at least MIN_EDGE long and ordered */
+export function normalizeShape(raw: unknown): PanelShape | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Partial<Record<keyof PanelShape, unknown>>;
+  const g = (v: unknown, d: number) => (Number.isFinite(Number(v)) ? clamp01(Number(v)) : d);
+  let tl = g(r.tl, 0), tr = g(r.tr, 1), bl = g(r.bl, 0), br = g(r.br, 1);
+  const fix = (a: number, b: number): [number, number] => {
+    if (b - a >= MIN_EDGE) return [a, b];
+    const c = Math.min(1 - MIN_EDGE / 2, Math.max(MIN_EDGE / 2, (a + b) / 2));
+    return [c - MIN_EDGE / 2, c + MIN_EDGE / 2];
+  };
+  [tl, tr] = fix(tl, tr);
+  [bl, br] = fix(bl, br);
+  const out = { tl, tr, br, bl };
+  return isRectShape(out) ? undefined : out;
+}
+
+export function isRectShape(s: PanelShape | undefined): boolean {
+  return !s || (Math.abs(s.tl) < 1e-6 && Math.abs(s.tr - 1) < 1e-6 && Math.abs(s.br - 1) < 1e-6 && Math.abs(s.bl) < 1e-6);
+}
+
+export type Pt = [number, number];
+export type Corner = keyof PanelShape;
+export const CORNERS: Corner[] = ["tl", "tr", "br", "bl"];
+
+/** Page-space polygon of a frame, clockwise tl→tr→br→bl */
+export function framePolygon(f: Pick<Frame, "x" | "y" | "w" | "h" | "shape">): Pt[] {
+  const s = f.shape ?? RECT_SHAPE;
+  return [
+    [f.x + f.w * s.tl, f.y],
+    [f.x + f.w * s.tr, f.y],
+    [f.x + f.w * s.br, f.y + f.h],
+    [f.x + f.w * s.bl, f.y + f.h],
+  ];
+}
+
+export function pointInPolygon(x: number, y: number, poly: Pt[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+export function pointInFrame(f: Frame, x: number, y: number): boolean {
+  if (y < f.y || y > f.y + f.h) return false;
+  return pointInPolygon(x, y, framePolygon(f));
+}
+
+/** Move one corner horizontally to page x (OpenKoma-style: corners slide along their edge) */
+export function setFrameCorner(f: Frame, corner: Corner, px: number): Frame {
+  const s = { ...(f.shape ?? RECT_SHAPE) };
+  let v = clamp01((px - f.x) / Math.max(1, f.w));
+  if (corner === "tl") v = Math.min(v, s.tr - MIN_EDGE);
+  if (corner === "tr") v = Math.max(v, s.tl + MIN_EDGE);
+  if (corner === "bl") v = Math.min(v, s.br - MIN_EDGE);
+  if (corner === "br") v = Math.max(v, s.bl + MIN_EDGE);
+  s[corner] = clamp01(v);
+  const shape = normalizeShape(s);
+  const next: Frame = { ...f };
+  if (shape) next.shape = shape;
+  else delete next.shape;
+  return next;
+}
+
+/** Intersect the frame's top and bottom edges at ratio t (0 = left edge, 1 = right edge) */
+function edgeAt(s: PanelShape, edge: "top" | "bottom", t: number): number {
+  return edge === "top" ? s.tl + (s.tr - s.tl) * t : s.bl + (s.br - s.bl) * t;
+}
+
+/**
+ * Split a frame left/right along a (possibly slanted) line. `top` / `bottom` are
+ * positions along the top and bottom edges (0..1 of that edge), `gutter` the gap
+ * in page px. Both halves keep the parent bounding box; their shapes encode the cut.
+ */
+export function splitFrameVertical(f: Frame, top = 0.55, bottom = 0.45, gutter = 12): [Frame, Frame] {
+  const s = f.shape ?? RECT_SHAPE;
+  const g = gutter / 2 / Math.max(1, f.w);
+  const tx = edgeAt(s, "top", clamp01(top));
+  const bx = edgeAt(s, "bottom", clamp01(bottom));
+  const mk = (shape: PanelShape, id?: string): Frame => {
+    const n = normalizeShape(shape);
+    const fr: Frame = { ...f, id: id ?? rid() };
+    if (n) fr.shape = n;
+    else delete fr.shape;
+    return fr;
+  };
+  return [
+    mk({ tl: s.tl, tr: tx - g, br: bx - g, bl: s.bl }, f.id),
+    mk({ tl: tx + g, tr: s.tr, br: s.br, bl: bx + g }),
+  ];
+}
+
+/** Split a frame top/bottom with a horizontal gutter (edges stay straight in this model) */
+export function splitFrameHorizontal(f: Frame, at = 0.5, gutter = 12): [Frame, Frame] {
+  const s = f.shape ?? RECT_SHAPE;
+  const hTop = Math.max(10, f.h * clamp01(at) - gutter / 2);
+  const yBot = f.y + f.h * clamp01(at) + gutter / 2;
+  const t1 = hTop / f.h;
+  const t2 = (yBot - f.y) / f.h;
+  // corner x on the slanted side edges at the cut heights
+  const lx = (t: number) => s.tl + (s.bl - s.tl) * t;
+  const rx = (t: number) => s.tr + (s.br - s.tr) * t;
+  const up: Frame = { ...f, h: hTop, shape: normalizeShape({ tl: s.tl, tr: s.tr, br: rx(t1), bl: lx(t1) }) };
+  const down: Frame = { ...f, id: rid(), y: yBot, h: f.y + f.h - yBot, shape: normalizeShape({ tl: lx(t2), tr: rx(t2), br: s.br, bl: s.bl }) };
+  for (const fr of [up, down]) if (!fr.shape) delete fr.shape;
+  return [up, down];
 }
 
 export type BubbleStyle = "narration" | "rounded" | "speech" | "thought" | "shout" | "wavy";
@@ -319,6 +469,7 @@ export function normalizeFrame(raw: unknown): Frame {
     w: Math.max(10, num(f.w, 200)), h: Math.max(10, num(f.h, 200)),
     color: str(f.color, kind === "panel" ? COLOR.panel : COLOR.featured),
     ...(typeof f.text === "string" ? { text: f.text } : {}),
+    ...(normalizeShape(f.shape) ? { shape: normalizeShape(f.shape) } : {}),
     ...layerProps(f),
   };
 }
@@ -677,9 +828,15 @@ export function renderFigure(f: Figure): string {
   return `<g data-figure="${esc(f.id)}">${body}</g>`;
 }
 
+function polyAttr(pts: Pt[]): string {
+  return pts.map(([x, y]) => `${f1(x)},${f1(y)}`).join(" ");
+}
+
 function renderFrame(fr: Frame): string {
   const sw = fr.kind === "panel" ? 2 : 2.4;
-  let s = `<rect x="${f1(fr.x)}" y="${f1(fr.y)}" width="${f1(fr.w)}" height="${f1(fr.h)}" fill="#fff" stroke="${esc(fr.color)}" stroke-width="${sw}"/>`;
+  let s = isRectShape(fr.shape)
+    ? `<rect x="${f1(fr.x)}" y="${f1(fr.y)}" width="${f1(fr.w)}" height="${f1(fr.h)}" fill="#fff" stroke="${esc(fr.color)}" stroke-width="${sw}"/>`
+    : `<polygon points="${polyAttr(framePolygon(fr))}" fill="#fff" stroke="${esc(fr.color)}" stroke-width="${sw}" stroke-linejoin="miter"/>`;
   if (fr.kind === "title") {
     const raw = (fr.text ?? "").trim();
     const title = raw ? `《${raw.replace(/^《|》$/g, "")}》` : "《未命名》";
@@ -710,7 +867,7 @@ export function renderStoryboardSvg(input: Storyboard): string {
   const frames = board.frames;
   const order: FrameKind[] = ["panel", "featured", "title"];
   const inFrame = (x: number, y: number) =>
-    frames.findIndex((fr) => fr.kind !== "title" && x >= fr.x && x <= fr.x + fr.w && y >= fr.y && y <= fr.y + fr.h);
+    frames.findIndex((fr) => fr.kind !== "title" && pointInFrame(fr, x, y));
   /** Panel a figure belongs to: the one containing its foot, else its bbox centre; -1 = unclipped */
   const clipFor = (f: Figure) => {
     if (f.breakFrame) return -1;
@@ -724,7 +881,7 @@ export function renderStoryboardSvg(input: Storyboard): string {
       if (fr.kind !== kind) return;
       out.push(renderFrame(fr));
       if (kind === "title") return;
-      out.push(`<clipPath id="fc${i}"><rect x="${f1(fr.x)}" y="${f1(fr.y)}" width="${f1(fr.w)}" height="${f1(fr.h)}"/></clipPath>`);
+      out.push(`<clipPath id="fc${i}"><polygon points="${polyAttr(framePolygon(fr))}"/></clipPath>`);
       const figs = board.figures.filter((f) => clipFor(f) === i);
       if (figs.length) out.push(`<g clip-path="url(#fc${i})">${figs.map(renderFigure).join("")}</g>`);
     });

@@ -18,6 +18,12 @@ import {
   POSE_PRESETS,
   STORYBOARD_AI_SYSTEM,
   autoLayout,
+  SHAPE_PRESET_OPTIONS,
+  isRectShape,
+  shapePreset,
+  splitFrameHorizontal,
+  splitFrameVertical,
+  type ShapePreset,
   exportStoryboardJson,
   importStoryboardJson,
   layerLabel,
@@ -245,6 +251,27 @@ export default function StoryboardView() {
     const right = selBubble.x + selBubble.w;
     if (selBubble.direction === "vertical") patchBubble(selBubble.id, { w: t.w, h: t.h, x: right - t.w });
     else patchBubble(selBubble.id, { h: t.h });
+  };
+
+  const setFrameShape = (fr: Frame, preset: ShapePreset) => {
+    const shape = shapePreset(preset);
+    const next: Frame = { ...fr };
+    if (isRectShape(shape)) delete next.shape;
+    else next.shape = shape;
+    if (board) update({ frames: board.frames.map((f) => (f.id === fr.id ? next : f)) });
+  };
+  const splitFrame = (fr: Frame, how: "slash" | "backslash" | "vertical" | "horizontal") => {
+    if (!board) return;
+    const parts =
+      how === "horizontal" ? splitFrameHorizontal(fr)
+      : how === "vertical" ? splitFrameVertical(fr, 0.5, 0.5)
+      : how === "slash" ? splitFrameVertical(fr, 0.62, 0.38)
+      : splitFrameVertical(fr, 0.38, 0.62);
+    const i = board.frames.findIndex((f) => f.id === fr.id);
+    const frames = [...board.frames];
+    frames.splice(i, 1, ...parts);
+    update({ frames });
+    setSelection({ kind: "frame", id: parts[1].id });
   };
 
   // ---------------------------------------------------------- page-level actions
@@ -568,6 +595,24 @@ export default function StoryboardView() {
                     <input className={inputCls} value={selFrame.text ?? ""} onChange={(e) => setTitle(e.target.value)} />
                   )}
                   <div className="space-y-1"><div>边框颜色</div><Swatches value={selFrame.color} onChange={(c) => patchFrame(selFrame.id, { color: c })} /></div>
+                  {selFrame.kind !== "title" && (
+                    <div className="space-y-2">
+                      <div>形状（预设 / 拖动青色角点斜切）</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {SHAPE_PRESET_OPTIONS.map((o) => (
+                          <button key={o.value} className={chipCls} onClick={() => setFrameShape(selFrame, o.value)}>{o.label}</button>
+                        ))}
+                      </div>
+                      <div>分割</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button className={chipCls} onClick={() => splitFrame(selFrame, "slash")}>斜线分割 ／</button>
+                        <button className={chipCls} onClick={() => splitFrame(selFrame, "backslash")}>斜线分割 ＼</button>
+                        <button className={chipCls} onClick={() => splitFrame(selFrame, "vertical")}>竖直分割 ｜</button>
+                        <button className={chipCls} onClick={() => splitFrame(selFrame, "horizontal")}>水平分割 —</button>
+                      </div>
+                      {!isRectShape(selFrame.shape) && <p className="text-neutral-500">当前为多边形分格；人物按多边形裁剪。</p>}
+                    </div>
+                  )}
                   <p className="text-neutral-500">拖动分格会带着其中的对话框与人物一起移动。</p>
                 </div>
               )}

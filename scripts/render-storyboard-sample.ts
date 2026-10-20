@@ -5,7 +5,7 @@
 import { writeFileSync, mkdirSync } from "fs";
 import {
   autoLayout, newBubble, newFigure, newFrame, newPanel, newStoryboard,
-  renderStoryboardSvg, sampleStoryboard,
+  renderStoryboardSvg, sampleStoryboard, shapePreset, splitFrameVertical,
 } from "../src/lib/storyboard";
 
 const dir = process.argv[2] || "docs/storyboard";
@@ -95,3 +95,22 @@ if (walker) walker.breakFrame = true;
 d.bubbles.push(newBubble({ text: "——埃尔达馆", style: "narration", direction: "vertical", fill: "transparent", border: false, x: 470, y: 215, w: 26, h: 130, textColor: "#555555" }));
 writeFileSync(`${dir}/sample2.svg`, renderStoryboardSvg(d));
 console.log("wrote", dir);
+
+// Polygon panels (trapezoid / slanted cuts) on the reference page
+const e = sampleStoryboard();
+const panels = e.frames.filter((f) => f.kind === "panel");
+// right column: panel 1 slanted at the bottom, panel 2 slanted at the top (shared diagonal gutter)
+panels[0].shape = { tl: 0, tr: 1, br: 1, bl: 0.18 };
+panels[1].shape = { tl: 0.18, tr: 1, br: 1, bl: 0 };
+// right bottom: trapezoid
+panels[2].shape = shapePreset("trapezoid", 0.1);
+// left column: parallelograms
+panels[3].shape = shapePreset("slantLeft", 0.1);
+panels[4].shape = shapePreset("slantRight", 0.1);
+// left bottom (close-up): split with a slanted line, figure breaks the frame
+const [l, r] = splitFrameVertical(panels[5], 0.7, 0.35, 10);
+e.frames.splice(e.frames.indexOf(panels[5]), 1, l, r);
+const bust = e.figures.find((f) => f.style === "bust");
+if (bust) bust.breakFrame = true;
+e.bubbles.push(newBubble({ text: "斜切分格", style: "shout", direction: "horizontal", x: 30, y: 958, w: 70, h: 24, fontSize: 14, color: "#222222" }));
+writeFileSync(`${dir}/sample3.svg`, renderStoryboardSvg(e));
