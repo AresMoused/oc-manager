@@ -18,7 +18,16 @@ export const PAGE_H = 1020;
 
 export type FrameKind = "panel" | "featured" | "title";
 
-export interface Frame {
+/** Layer state shared by every element */
+export interface LayerProps {
+  /** Optional user label shown in the layers panel */
+  name?: string;
+  hidden?: boolean;
+  /** Locked elements cannot be selected/dragged on the canvas (only via the layers panel) */
+  locked?: boolean;
+}
+
+export interface Frame extends LayerProps {
   id: string;
   kind: FrameKind;
   x: number;
@@ -31,10 +40,21 @@ export interface Frame {
   text?: string;
 }
 
-export type BubbleStyle = "narration" | "speech" | "thought";
+export type BubbleStyle = "narration" | "rounded" | "speech" | "thought" | "shout" | "wavy";
+export type BubbleFill = "opaque" | "transparent";
+
+export const BUBBLE_STYLE_OPTIONS: { value: BubbleStyle; label: string }[] = [
+  { value: "narration", label: "矩形框" },
+  { value: "rounded", label: "圆角框" },
+  { value: "speech", label: "椭圆气泡(带尾巴)" },
+  { value: "thought", label: "云朵/思考气泡" },
+  { value: "shout", label: "爆炸/呐喊气泡" },
+  { value: "wavy", label: "波浪旁白框" },
+];
+const BUBBLE_STYLES = BUBBLE_STYLE_OPTIONS.map((o) => o.value);
 export type TextDirection = "vertical" | "horizontal";
 
-export interface Bubble {
+export interface Bubble extends LayerProps {
   id: string;
   x: number;
   y: number;
@@ -42,6 +62,10 @@ export interface Bubble {
   h: number;
   text: string;
   style: BubbleStyle;
+  /** opaque = white fill hides art behind; transparent = text floats over art */
+  fill: BubbleFill;
+  /** Draw the outline (mainly for transparent boxes: thin border vs none) */
+  border: boolean;
   direction: TextDirection;
   fontSize: number;
   /** Border colour */
@@ -66,7 +90,7 @@ export type FigurePose =
   | "handshake" | "hug" | "waving";
 export type FigureStyle = "stick" | "box" | "bust" | "rough";
 
-export interface Figure {
+export interface Figure extends LayerProps {
   id: string;
   /** Foot centre on the page */
   x: number;
@@ -77,6 +101,8 @@ export interface Figure {
   pose: FigurePose;
   style: FigureStyle;
   color: string;
+  /** Break the frame: draw above panel borders, unclipped */
+  breakFrame: boolean;
   joints: Skeleton;
 }
 
@@ -152,6 +178,14 @@ const str = (v: unknown, d = "") => (typeof v === "string" ? v : d);
 const oneOf = <T extends string>(v: unknown, list: readonly T[], d: T): T =>
   list.includes(v as T) ? (v as T) : d;
 
+function layerProps(raw: Partial<LayerProps>): LayerProps {
+  const out: LayerProps = {};
+  if (typeof raw.name === "string" && raw.name.trim()) out.name = raw.name.slice(0, 60);
+  if (raw.hidden === true) out.hidden = true;
+  if (raw.locked === true) out.locked = true;
+  return out;
+}
+
 // ================================================================ skeleton presets
 
 const BASE: Skeleton = {
@@ -197,7 +231,7 @@ export function newFigure(p: Partial<Figure> = {}): Figure {
   const pose = p.pose ?? "standing";
   return {
     id: rid(), x: PAGE_W / 2, y: 500, size: 120, flip: false, pose,
-    style: "stick", color: COLOR.ink, ...p,
+    style: "stick", color: COLOR.ink, breakFrame: false, ...p,
     joints: p.joints ? cloneSkel(p.joints) : cloneSkel(POSE_PRESETS[pose]),
   };
 }
@@ -205,7 +239,7 @@ export function newFigure(p: Partial<Figure> = {}): Figure {
 export function newBubble(p: Partial<Bubble> = {}): Bubble {
   const b: Bubble = {
     id: rid(), x: 300, y: 300, w: 44, h: 150, text: "台词", style: "narration",
-    direction: "vertical", fontSize: 15, color: COLOR.text, textColor: COLOR.ink,
+    fill: "opaque", border: true, direction: "vertical", fontSize: 15, color: COLOR.text, textColor: COLOR.ink,
     tailX: 0, tailY: 0, ...p,
   };
   if (!p.tailX && !p.tailY) { b.tailX = b.x - 20; b.tailY = b.y + b.h + 30; }
@@ -255,7 +289,9 @@ export function normalizeFigure(raw: unknown): Figure {
     id: str(f.id) || rid(), x: num(f.x, PAGE_W / 2), y: num(f.y, 500),
     size: Math.min(1200, Math.max(10, num(f.size, 120))), flip: !!f.flip, pose,
     style: oneOf(f.style, FIGURE_STYLE_OPTIONS.map((o) => o.value), "stick"),
-    color: str(f.color, COLOR.ink), joints: normSkel(f.joints, pose),
+    color: str(f.color, COLOR.ink), breakFrame: f.breakFrame === true,
+    joints: normSkel(f.joints, pose),
+    ...layerProps(f),
   };
 }
 
@@ -264,11 +300,14 @@ export function normalizeBubble(raw: unknown): Bubble {
   return {
     id: str(b.id) || rid(), x: num(b.x, 300), y: num(b.y, 300),
     w: Math.max(16, num(b.w, 44)), h: Math.max(16, num(b.h, 150)), text: str(b.text),
-    style: oneOf(b.style, ["narration", "speech", "thought"] as const, "narration"),
+    style: oneOf(b.style, BUBBLE_STYLES, "narration"),
+    fill: oneOf(b.fill, ["opaque", "transparent"] as const, "opaque"),
+    border: b.border !== false,
     direction: oneOf(b.direction, ["vertical", "horizontal"] as const, "vertical"),
     fontSize: Math.min(72, Math.max(8, num(b.fontSize, 15))),
     color: str(b.color, COLOR.text), textColor: str(b.textColor, COLOR.ink),
     tailX: num(b.tailX, num(b.x, 300)), tailY: num(b.tailY, num(b.y, 300) + 180),
+    ...layerProps(b),
   };
 }
 
@@ -280,6 +319,7 @@ export function normalizeFrame(raw: unknown): Frame {
     w: Math.max(10, num(f.w, 200)), h: Math.max(10, num(f.h, 200)),
     color: str(f.color, kind === "panel" ? COLOR.panel : COLOR.featured),
     ...(typeof f.text === "string" ? { text: f.text } : {}),
+    ...layerProps(f),
   };
 }
 
@@ -406,42 +446,112 @@ function f1(n: number) {
   return n.toFixed(1);
 }
 
+/** Closed path tracing an ellipse with outward scallops (cloud) */
+function cloudPath(cx: number, cy: number, rx: number, ry: number): string {
+  const n = Math.max(8, Math.round((rx + ry) / 9));
+  const pt = (a: number, k = 1) => [cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k];
+  let d = "";
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * Math.PI * 2;
+    const a1 = ((i + 1) / n) * Math.PI * 2;
+    const [x0, y0] = pt(a0);
+    const [x1, y1] = pt(a1);
+    const [qx, qy] = pt((a0 + a1) / 2, 1.28);
+    d += (i === 0 ? `M${f1(x0)} ${f1(y0)}` : "") + ` Q${f1(qx)} ${f1(qy)} ${f1(x1)} ${f1(y1)}`;
+  }
+  return d + "Z";
+}
+
+/** Spiky burst polygon around an ellipse (deterministic jitter) */
+function burstPoints(cx: number, cy: number, rx: number, ry: number): string {
+  const n = Math.max(12, Math.round((rx + ry) / 7));
+  const pts: string[] = [];
+  for (let i = 0; i < n * 2; i++) {
+    const a = (i / (n * 2)) * Math.PI * 2;
+    const jitter = 1 + 0.12 * Math.sin(i * 2.7);
+    const k = i % 2 ? 0.92 : 1.32 * jitter;
+    pts.push(`${f1(cx + Math.cos(a) * rx * k)},${f1(cy + Math.sin(a) * ry * k)}`);
+  }
+  return pts.join(" ");
+}
+
+/** Rectangle whose edges are drawn as small waves */
+function wavyRectPath(x: number, y: number, w: number, h: number): string {
+  const amp = 3.5;
+  const seg = (x0: number, y0: number, x1: number, y1: number) => {
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    const n = Math.max(2, Math.round(len / 14));
+    const nx = -(y1 - y0) / len;
+    const ny = (x1 - x0) / len;
+    let d = "";
+    for (let i = 0; i < n; i++) {
+      const t0 = i / n;
+      const t1 = (i + 1) / n;
+      const tm = (t0 + t1) / 2;
+      const s = i % 2 ? 1 : -1;
+      d += ` Q${f1(x0 + (x1 - x0) * tm + nx * amp * s)} ${f1(y0 + (y1 - y0) * tm + ny * amp * s)} ${f1(x0 + (x1 - x0) * t1)} ${f1(y0 + (y1 - y0) * t1)}`;
+    }
+    return d;
+  };
+  return `M${f1(x)} ${f1(y)}` + seg(x, y, x + w, y) + seg(x + w, y, x + w, y + h) + seg(x + w, y + h, x, y + h) + seg(x, y + h, x, y) + "Z";
+}
+
 export function renderBubble(b: Bubble): string {
-  const stroke = `stroke="${esc(b.color)}" stroke-width="1.6"`;
+  const opaque = b.fill === "opaque";
+  const fill = opaque ? "#fff" : "none";
+  const stroke = b.border ? `stroke="${esc(b.color)}" stroke-width="${opaque ? 1.6 : 1}"` : `stroke="none"`;
+  const cx = b.x + b.w / 2;
+  const cy = b.y + b.h / 2;
+  const rx = b.w / 2 + 8;
+  const ry = b.h / 2 + 8;
   let shape = "";
-  if (b.style === "narration") {
-    shape = `<rect x="${f1(b.x)}" y="${f1(b.y)}" width="${f1(b.w)}" height="${f1(b.h)}" fill="#fff" ${stroke}/>`;
-  } else {
-    const cx = b.x + b.w / 2;
-    const cy = b.y + b.h / 2;
-    const rx = b.w / 2 + 8;
-    const ry = b.h / 2 + 8;
-    if (b.style === "speech") {
-      // tail: triangle from two points on the ellipse toward the tip; drawn under the ellipse fill
+  switch (b.style) {
+    case "narration":
+      shape = `<rect x="${f1(b.x)}" y="${f1(b.y)}" width="${f1(b.w)}" height="${f1(b.h)}" fill="${fill}" ${stroke}/>`;
+      break;
+    case "rounded": {
+      const r = Math.min(b.w, b.h) * 0.3;
+      shape = `<rect x="${f1(b.x - 3)}" y="${f1(b.y - 3)}" width="${f1(b.w + 6)}" height="${f1(b.h + 6)}" rx="${f1(r)}" fill="${fill}" ${stroke}/>`;
+      break;
+    }
+    case "wavy":
+      shape = `<path d="${wavyRectPath(b.x - 3, b.y - 3, b.w + 6, b.h + 6)}" fill="${fill}" ${stroke}/>`;
+      break;
+    case "shout":
+      shape = `<polygon points="${burstPoints(cx, cy, rx, ry)}" fill="${fill}" ${stroke} stroke-linejoin="miter"/>`;
+      break;
+    case "speech": {
+      // tail: triangle from two points on the ellipse toward the tip; drawn under the ellipse
       const ang = Math.atan2(b.tailY - cy, b.tailX - cx);
       const spread = 0.22;
       const p = (a: number) => `${f1(cx + Math.cos(a) * rx * 0.9)},${f1(cy + Math.sin(a) * ry * 0.9)}`;
       shape =
-        `<polygon points="${p(ang - spread)} ${f1(b.tailX)},${f1(b.tailY)} ${p(ang + spread)}" fill="#fff" ${stroke} stroke-linejoin="round"/>` +
-        `<ellipse cx="${f1(cx)}" cy="${f1(cy)}" rx="${f1(rx)}" ry="${f1(ry)}" fill="#fff" ${stroke}/>` +
-        // hide the tail's base line inside the bubble
-        `<polygon points="${p(ang - spread)} ${f1(cx + Math.cos(ang) * rx * 0.75)},${f1(cy + Math.sin(ang) * ry * 0.75)} ${p(ang + spread)}" fill="#fff" stroke="none"/>`;
-    } else {
-      // thought: cloud-ish dashed ellipse + trailing circles toward the tip
+        `<polygon points="${p(ang - spread)} ${f1(b.tailX)},${f1(b.tailY)} ${p(ang + spread)}" fill="${fill}" ${stroke} stroke-linejoin="round"/>` +
+        `<ellipse cx="${f1(cx)}" cy="${f1(cy)}" rx="${f1(rx)}" ry="${f1(ry)}" fill="${fill}" ${stroke}/>` +
+        (opaque
+          ? `<polygon points="${p(ang - spread)} ${f1(cx + Math.cos(ang) * rx * 0.75)},${f1(cy + Math.sin(ang) * ry * 0.75)} ${p(ang + spread)}" fill="#fff" stroke="none"/>`
+          : "");
+      break;
+    }
+    case "thought": {
       const dots = [0.75, 0.5, 0.28].map((t, i) => {
-        const dx = cx + (b.tailX - cx) * (1 - t * 0.55) ;
+        const dx = cx + (b.tailX - cx) * (1 - t * 0.55);
         const dy = cy + (b.tailY - cy) * (1 - t * 0.55);
-        return `<circle cx="${f1(dx)}" cy="${f1(dy)}" r="${3 + (2 - i) * 2}" fill="#fff" ${stroke}/>`;
+        return `<circle cx="${f1(dx)}" cy="${f1(dy)}" r="${3 + (2 - i) * 2}" fill="${fill}" ${stroke}/>`;
       });
-      shape =
-        dots.join("") +
-        `<ellipse cx="${f1(cx)}" cy="${f1(cy)}" rx="${f1(rx)}" ry="${f1(ry)}" fill="#fff" ${stroke} stroke-dasharray="7 3"/>`;
+      shape = dots.join("") + `<path d="${cloudPath(cx, cy, rx * 0.92, ry * 0.92)}" fill="${fill}" ${stroke}/>`;
+      break;
     }
   }
   const t = layoutText(b.text, b.x, b.y, b.w, b.h, {
     direction: b.direction, fontSize: b.fontSize, color: b.textColor,
   });
-  return `<g data-bubble="${esc(b.id)}">${shape}${t.svg}</g>`;
+  return `<g data-bubble="${esc(b.id)}" data-fill="${b.fill}">${shape}${t.svg}</g>`;
+}
+
+/** Bubble styles that have a draggable tail */
+export function bubbleHasTail(style: BubbleStyle): boolean {
+  return style === "speech" || style === "thought";
 }
 
 /** Map a local skeleton point to page coords */
@@ -586,17 +696,29 @@ function renderFrame(fr: Frame): string {
  * Render the page. Paint order: panels → their figures (clipped to the panel
  * containing the figure's foot) → featured / title → bubbles on top.
  */
-export function renderStoryboardSvg(board: Storyboard): string {
+export function renderStoryboardSvg(input: Storyboard): string {
+  const board: Storyboard = {
+    ...input,
+    frames: input.frames.filter((x) => !x.hidden),
+    bubbles: input.bubbles.filter((x) => !x.hidden),
+    figures: input.figures.filter((x) => !x.hidden),
+  };
   const out: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${PAGE_H}" viewBox="0 0 ${PAGE_W} ${PAGE_H}" font-family="${esc(FONT)}">`,
     `<rect width="${PAGE_W}" height="${PAGE_H}" fill="#fff"/>`,
   ];
   const frames = board.frames;
   const order: FrameKind[] = ["panel", "featured", "title"];
-  const clipFor = (f: Figure) =>
-    frames.findIndex(
-      (fr) => fr.kind !== "title" && f.x >= fr.x && f.x <= fr.x + fr.w && f.y - 4 >= fr.y && f.y - 4 <= fr.y + fr.h
-    );
+  const inFrame = (x: number, y: number) =>
+    frames.findIndex((fr) => fr.kind !== "title" && x >= fr.x && x <= fr.x + fr.w && y >= fr.y && y <= fr.y + fr.h);
+  /** Panel a figure belongs to: the one containing its foot, else its bbox centre; -1 = unclipped */
+  const clipFor = (f: Figure) => {
+    if (f.breakFrame) return -1;
+    const byFoot = inFrame(f.x, f.y - 4);
+    if (byFoot >= 0) return byFoot;
+    const bb = figureBounds(f);
+    return inFrame(bb.x + bb.w / 2, bb.y + bb.h / 2);
+  };
   for (const kind of order) {
     frames.forEach((fr, i) => {
       if (fr.kind !== kind) return;
@@ -607,7 +729,7 @@ export function renderStoryboardSvg(board: Storyboard): string {
       if (figs.length) out.push(`<g clip-path="url(#fc${i})">${figs.map(renderFigure).join("")}</g>`);
     });
   }
-  // figures outside every frame are drawn unclipped
+  // figures outside every frame, and "break the frame" figures, are drawn unclipped above all borders
   out.push(board.figures.filter((f) => clipFor(f) < 0).map(renderFigure).join(""));
   out.push(board.bubbles.map(renderBubble).join(""));
   out.push(`</svg>`);
@@ -750,4 +872,94 @@ export function sampleStoryboard(): Storyboard {
     newPanel({ text: "从今天开始我要在新天地努力了！", figures: 1, pose: "closeup" }),
   ];
   return { ...b, ...autoLayout(b) };
+}
+
+// ================================================================ layers
+
+export type LayerKind = "frame" | "bubble" | "figure";
+export const LAYER_KEY = { frame: "frames", bubble: "bubbles", figure: "figures" } as const;
+
+/** Default label for an element in the layers panel */
+export function layerLabel(kind: LayerKind, el: Frame | Bubble | Figure): string {
+  if (el.name) return el.name;
+  if (kind === "frame") {
+    const f = el as Frame;
+    return f.kind === "title" ? `标题框 ${f.text ?? ""}`.trim() : f.kind === "featured" ? "中央大格" : "分格";
+  }
+  if (kind === "bubble") {
+    const t = (el as Bubble).text.replace(/\s+/g, "");
+    return `对话框「${Array.from(t).slice(0, 8).join("")}${Array.from(t).length > 8 ? "…" : ""}」`;
+  }
+  const g = el as Figure;
+  const pose = FIGURE_POSE_OPTIONS.find((o) => o.value === g.pose)?.label ?? g.pose;
+  const style = FIGURE_STYLE_OPTIONS.find((o) => o.value === g.style)?.label ?? g.style;
+  return `${style}·${pose}`;
+}
+
+/**
+ * Move an element one step within its kind's paint order. dir +1 = towards the front
+ * (later in the array = painted on top), -1 = towards the back. Returns a new board.
+ */
+export function moveLayer(board: Storyboard, kind: LayerKind, id: string, dir: 1 | -1): Storyboard {
+  const key = LAYER_KEY[kind];
+  const list = [...(board[key] as { id: string }[])];
+  const i = list.findIndex((x) => x.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return board;
+  [list[i], list[j]] = [list[j], list[i]];
+  return { ...board, [key]: list } as Storyboard;
+}
+
+/** Move an element to an absolute index inside its kind (used by drag-reorder) */
+export function moveLayerTo(board: Storyboard, kind: LayerKind, id: string, index: number): Storyboard {
+  const key = LAYER_KEY[kind];
+  const list = [...(board[key] as { id: string }[])];
+  const i = list.findIndex((x) => x.id === id);
+  if (i < 0) return board;
+  const [it] = list.splice(i, 1);
+  list.splice(Math.max(0, Math.min(list.length, index)), 0, it);
+  return { ...board, [key]: list } as Storyboard;
+}
+
+// ================================================================ JSON document
+
+export const STORYBOARD_FORMAT = "oc-manager-storyboard";
+export const STORYBOARD_FORMAT_VERSION = 1;
+
+export function exportStoryboardJson(board: Storyboard): string {
+  return JSON.stringify(
+    { format: STORYBOARD_FORMAT, version: STORYBOARD_FORMAT_VERSION, exportedAt: new Date().toISOString(), storyboard: board },
+    null,
+    2
+  );
+}
+
+/**
+ * Validate and load a storyboard JSON document. Accepts the wrapped export format
+ * or a bare storyboard object. The result gets a fresh id so importing never
+ * overwrites an existing page. Throws a user-facing Error on invalid input.
+ */
+export function importStoryboardJson(text: string): Storyboard {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error("不是有效的 JSON 文件");
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("JSON 顶层必须是对象");
+  const d = data as { format?: unknown; version?: unknown; storyboard?: unknown };
+  let raw: unknown = data;
+  if ("format" in d) {
+    if (d.format !== STORYBOARD_FORMAT) throw new Error(`不支持的格式：${String(d.format)}`);
+    if (typeof d.version !== "number" || d.version > STORYBOARD_FORMAT_VERSION) {
+      throw new Error(`不支持的版本：${String(d.version)}`);
+    }
+    raw = d.storyboard;
+  }
+  if (!raw || typeof raw !== "object") throw new Error("缺少 storyboard 数据");
+  const r = raw as Partial<Storyboard>;
+  const looksLike = ["frames", "bubbles", "figures", "panels"].some((k) => Array.isArray((r as Record<string, unknown>)[k]));
+  if (!looksLike) throw new Error("文件中没有分格、对话框或人物数据");
+  const now = new Date().toISOString();
+  return { ...normalizeStoryboard(raw), id: rid(), updatedAt: now };
 }

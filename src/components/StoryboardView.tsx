@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StoryboardCanvas, { type Selection } from "@/components/StoryboardCanvas";
 import { useAppData } from "@/context/AppDataContext";
 import { completeChat, loadApiConfig, loadModelParams } from "@/lib/aiConfig";
 import {
+  BUBBLE_STYLE_OPTIONS,
   COLOR,
   FIGURE_POSE_OPTIONS,
   FIGURE_STYLE_OPTIONS,
@@ -17,6 +18,13 @@ import {
   POSE_PRESETS,
   STORYBOARD_AI_SYSTEM,
   autoLayout,
+  exportStoryboardJson,
+  importStoryboardJson,
+  layerLabel,
+  moveLayer,
+  moveLayerTo,
+  LAYER_KEY,
+  type LayerKind,
   layoutText,
   newBubble,
   newFigure,
@@ -27,6 +35,7 @@ import {
   renderStoryboardSvg,
   sampleStoryboard,
   type Bubble,
+  type BubbleFill,
   type BubbleStyle,
   type Figure,
   type FigurePose,
@@ -47,7 +56,7 @@ function download(name: string, blob: Blob) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function svgToPng(svg: string, scale = 2): Promise<Blob> {
+async function svgToImage(svg: string, type: "image/png" | "image/jpeg", scale = 2): Promise<Blob> {
   const img = new Image();
   const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
   try {
@@ -65,7 +74,7 @@ async function svgToPng(svg: string, scale = 2): Promise<Blob> {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     return await new Promise<Blob>((res, rej) =>
-      canvas.toBlob((b) => (b ? res(b) : rej(new Error("导出失败"))), "image/png")
+      canvas.toBlob((b) => (b ? res(b) : rej(new Error("导出失败"))), type, 0.92)
     );
   } finally {
     URL.revokeObjectURL(url);
@@ -110,6 +119,10 @@ export default function StoryboardView() {
   const [aiBusy, setAiBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [hasAi, setHasAi] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [dragLayer, setDragLayer] = useState<{ kind: LayerKind; id: string } | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setHasAi(!!loadApiConfig().apiKey.trim());
@@ -183,16 +196,16 @@ export default function StoryboardView() {
     return fr ? [fr.x + fr.w / 2, fr.y + fr.h / 2] : [PAGE_W / 2, PAGE_H / 2];
   };
 
-  const addBubble = (style: BubbleStyle, direction: TextDirection) => {
+  const addBubble = (style: BubbleStyle, direction: TextDirection, fill: BubbleFill = "opaque") => {
     if (!board) return;
     const [cx, cy] = dropPoint();
     const vertical = direction === "vertical";
     const w = vertical ? 44 : 120;
     const h = vertical ? 130 : 50;
     const b = newBubble({
-      style, direction, w, h, x: cx - w / 2, y: cy - h / 2,
-      text: style === "narration" ? "旁白" : style === "thought" ? "（心想……）" : "台词！",
-      color: style === "narration" ? COLOR.text : COLOR.ink,
+      style, direction, fill, border: fill === "opaque", w, h, x: cx - w / 2, y: cy - h / 2,
+      text: style === "narration" ? "旁白" : style === "thought" ? "（心想……）" : style === "shout" ? "什么！？" : "台词！",
+      color: style === "narration" || style === "wavy" ? COLOR.text : COLOR.ink,
       tailX: cx - w / 2 - 15, tailY: cy + h / 2 + 35,
     });
     update({ bubbles: [...board.bubbles, b] });
@@ -273,13 +286,42 @@ export default function StoryboardView() {
 
   const fileBase = (board?.title || "storyboard").replace(/[\\/:*?"<>|]/g, "_");
   const exportSvg = () => download(`${fileBase}.svg`, new Blob([svg], { type: "image/svg+xml" }));
-  const exportPng = async () => {
+  const exportRaster = async (type: "image/png" | "image/jpeg") => {
+    setExportOpen(false);
     try {
-      download(`${fileBase}.png`, await svgToPng(svg));
+      download(`${fileBase}.${type === "image/png" ? "png" : "jpg"}`, await svgToImage(svg, type));
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "导出失败");
     }
   };
+  const exportJson = () => {
+    if (!board) return;
+    setExportOpen(false);
+    download(`${fileBase}.storyboard.json`, new Blob([exportStoryboardJson(board)], { type: "application/json" }));
+  };
+  const importJson = async (file: File) => {
+    try {
+      const sb = importStoryboardJson(await file.text());
+      setActiveId(sb.id);
+      setSelection(null);
+      await flush({ storyboards: [sb, ...storyboards] });
+      setMsg(`已导入「${sb.title || "未命名"}」`);
+    } catch (e) {
+      setMsg(e instanceof Error ? `导入失败：${e.message}` : "导入失败");
+    }
+  };
+
+  // ---------------------------------------------------------- layers
+  const patchLayer = (kind: LayerKind, id: string, p: { hidden?: boolean; locked?: boolean; name?: string }) => {
+    if (!board) return;
+    const key = LAYER_KEY[kind];
+    update({ [key]: (board[key] as { id: string }[]).map((x) => (x.id === id ? { ...x, ...p } : x)) } as Partial<Storyboard>);
+  };
+  const layerGroups: { kind: LayerKind; title: string }[] = [
+    { kind: "bubble", title: "对话框" },
+    { kind: "figure", title: "人物" },
+    { kind: "frame", title: "分格" },
+  ];
 
   const aiDraft = async () => {
     if (!board || !aiPrompt.trim()) return;
@@ -334,12 +376,24 @@ export default function StoryboardView() {
           <button className={btnCls} onClick={() => create(false)}>+ 新建</button>
           <button className={btnCls} onClick={() => create(true)}>示例页</button>
           {board && <button className={btnCls + " hover:!border-red-500"} onClick={remove}>删除</button>}
+          <span className="flex-1" />
+          <button className={btnCls} onClick={() => importRef.current?.click()}>导入 JSON</button>
+          <input ref={importRef} type="file" accept="application/json,.json" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) importJson(f); }} />
           {board && (
-            <>
-              <span className="flex-1" />
-              <button className={btnCls} onClick={exportPng}>导出 PNG</button>
-              <button className={btnCls} onClick={exportSvg}>导出 SVG</button>
-            </>
+            <div className="relative">
+              <button className={btnCls} onClick={() => setExportOpen((v) => !v)}>导出 ▾</button>
+              {exportOpen && (
+                <div className="absolute right-0 mt-1 z-30 w-56 rounded-xl border border-neutral-800 bg-[#111] p-1 shadow-xl text-sm">
+                  <div className="px-3 pt-1.5 pb-1 text-[11px] text-neutral-500">图片 Image</div>
+                  <button className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200" onClick={() => exportRaster("image/png")}>PNG（2×，白底）</button>
+                  <button className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200" onClick={() => exportRaster("image/jpeg")}>JPG（2×）</button>
+                  <button className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200" onClick={() => { setExportOpen(false); exportSvg(); }}>SVG（矢量）</button>
+                  <div className="px-3 pt-2 pb-1 text-[11px] text-neutral-500">文档 Document</div>
+                  <button className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200" onClick={exportJson}>JSON（可再导入编辑）</button>
+                </div>
+              )}
+            </div>
           )}
           {msg && <span className="text-xs text-purple-300 w-full">{msg}</span>}
         </div>
@@ -410,6 +464,8 @@ export default function StoryboardView() {
                 <button className={chipCls} onClick={() => addBubble("speech", "vertical")}>+ 竖排气泡</button>
                 <button className={chipCls} onClick={() => addBubble("speech", "horizontal")}>+ 横排气泡</button>
                 <button className={chipCls} onClick={() => addBubble("thought", "vertical")}>+ 思考气泡</button>
+                <button className={chipCls} onClick={() => addBubble("shout", "horizontal")}>+ 爆炸气泡</button>
+                <button className={chipCls} onClick={() => addBubble("narration", "vertical", "transparent")}>+ 透明文字</button>
                 <span className="w-px bg-neutral-800 mx-1" />
                 <select className={smallCls} value={newPose} onChange={(e) => setNewPose(e.target.value as FigurePose)}>
                   {FIGURE_POSE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -424,7 +480,7 @@ export default function StoryboardView() {
                 <StoryboardCanvas board={board} selection={selection} onSelect={setSelection} onChange={replace} />
               </div>
               <p className="text-[11px] text-neutral-500">
-                点选元素后可拖动；右下角方块调整大小，橙色圆点拖动气泡尾巴，绿色圆点拖动火柴人关节。Delete 删除，Esc 取消选择。新元素会放到选中分格的中央。
+                点选元素后可拖动；对话框可在右侧切换透明/不透明与形状，火柴人可勾选「出框」画到分格边框之外。右下角方块调整大小，橙色圆点拖动气泡尾巴，绿色圆点拖动火柴人关节。Delete 删除，Esc 取消选择。新元素会放到选中分格的中央。
               </p>
             </section>
 
@@ -445,10 +501,21 @@ export default function StoryboardView() {
                   <textarea className={inputCls + " min-h-[80px]"} value={selBubble.text} onChange={(e) => patchBubble(selBubble.id, { text: e.target.value })} />
                   <div className="flex flex-wrap gap-2">
                     <select className={smallCls} value={selBubble.style} onChange={(e) => patchBubble(selBubble.id, { style: e.target.value as BubbleStyle })}>
-                      <option value="narration">矩形旁白框</option>
-                      <option value="speech">对话气泡(带尾巴)</option>
-                      <option value="thought">思考气泡</option>
+                      {BUBBLE_STYLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
+                    <div className="flex rounded-lg overflow-hidden border border-neutral-700">
+                      {(["opaque", "transparent"] as BubbleFill[]).map((v) => (
+                        <button key={v} type="button"
+                          className={`px-2 py-1 ${selBubble.fill === v ? "bg-purple-600 text-white" : "text-neutral-300 hover:text-white"}`}
+                          onClick={() => patchBubble(selBubble.id, v === "transparent" ? { fill: v } : { fill: v, border: true })}>
+                          {v === "opaque" ? "不透明" : "透明"}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="flex items-center gap-1">
+                      <input type="checkbox" checked={selBubble.border} onChange={(e) => patchBubble(selBubble.id, { border: e.target.checked })} />
+                      边框
+                    </label>
                     <select className={smallCls} value={selBubble.direction} onChange={(e) => patchBubble(selBubble.id, { direction: e.target.value as TextDirection })}>
                       <option value="vertical">竖排</option>
                       <option value="horizontal">横排</option>
@@ -479,6 +546,10 @@ export default function StoryboardView() {
                       {FIGURE_STYLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                     <button className={chipCls} onClick={() => patchFigure(selFigure.id, { flip: !selFigure.flip })}>水平翻转</button>
+                    <label className="flex items-center gap-1" title="出框：画在分格边框之上且不被裁剪，可拖出分格">
+                      <input type="checkbox" checked={selFigure.breakFrame} onChange={(e) => patchFigure(selFigure.id, { breakFrame: e.target.checked })} />
+                      出框
+                    </label>
                     <button className={chipCls} onClick={() => patchFigure(selFigure.id, { joints: structuredClone(POSE_PRESETS[selFigure.pose]) })}>重置关节</button>
                   </div>
                   <label className="flex items-center gap-2">大小
@@ -500,6 +571,54 @@ export default function StoryboardView() {
                   <p className="text-neutral-500">拖动分格会带着其中的对话框与人物一起移动。</p>
                 </div>
               )}
+
+              <div className="border-t border-neutral-800 pt-3 space-y-2">
+                <div className="text-white text-sm">图层 Layers</div>
+                <p className="text-neutral-500 text-[11px]">每组内越靠上越在前（对话框始终在人物之上，人物在分格之上；「出框」人物画在所有边框之上）。可拖拽排序，双击重命名。</p>
+                {layerGroups.map(({ kind, title }) => {
+                  const list = board[LAYER_KEY[kind]] as (Frame | Bubble | Figure)[];
+                  // show front-most first
+                  const shown = [...list].reverse();
+                  return (
+                    <div key={kind} className="space-y-0.5">
+                      <div className="text-[11px] text-neutral-500">{title}（{list.length}）</div>
+                      {shown.map((el) => {
+                        const sel = selection?.kind === kind && selection.id === el.id;
+                        const idx = list.indexOf(el);
+                        return (
+                          <div
+                            key={el.id}
+                            draggable
+                            onDragStart={() => setDragLayer({ kind, id: el.id })}
+                            onDragOver={(e) => { if (dragLayer?.kind === kind) e.preventDefault(); }}
+                            onDrop={() => {
+                              if (dragLayer && dragLayer.kind === kind && dragLayer.id !== el.id) replace(moveLayerTo(board, kind, dragLayer.id, idx));
+                              setDragLayer(null);
+                            }}
+                            onClick={() => setSelection({ kind, id: el.id } as Selection)}
+                            className={`flex items-center gap-1 px-1.5 py-1 rounded-md cursor-pointer ${sel ? "bg-purple-900/50 text-white" : "hover:bg-neutral-800/70"} ${el.hidden ? "opacity-50" : ""}`}
+                          >
+                            <span className="cursor-grab text-neutral-600" title="拖拽排序">⋮⋮</span>
+                            {renaming === el.id ? (
+                              <input autoFocus className={smallCls + " flex-1 min-w-0"} defaultValue={el.name ?? ""}
+                                placeholder={layerLabel(kind, { ...el, name: undefined })}
+                                onClick={(e) => e.stopPropagation()}
+                                onBlur={(e) => { patchLayer(kind, el.id, { name: e.target.value.trim() || undefined }); setRenaming(null); }}
+                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }} />
+                            ) : (
+                              <span className="flex-1 truncate" onDoubleClick={() => setRenaming(el.id)}>{layerLabel(kind, el)}</span>
+                            )}
+                            <button title="上移（更靠前）" className="px-0.5 hover:text-white" onClick={(e) => { e.stopPropagation(); replace(moveLayer(board, kind, el.id, 1)); }}>↑</button>
+                            <button title="下移（更靠后）" className="px-0.5 hover:text-white" onClick={(e) => { e.stopPropagation(); replace(moveLayer(board, kind, el.id, -1)); }}>↓</button>
+                            <button title={el.hidden ? "显示" : "隐藏"} className="px-0.5 hover:text-white" onClick={(e) => { e.stopPropagation(); patchLayer(kind, el.id, { hidden: !el.hidden }); }}>{el.hidden ? "◌" : "👁"}</button>
+                            <button title={el.locked ? "解锁" : "锁定"} className="px-0.5 hover:text-white" onClick={(e) => { e.stopPropagation(); patchLayer(kind, el.id, { locked: !el.locked }); }}>{el.locked ? "🔒" : "🔓"}</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
             </section>
           </div>
         )}

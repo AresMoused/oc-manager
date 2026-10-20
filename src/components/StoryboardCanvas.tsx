@@ -5,6 +5,7 @@ import {
   JOINTS,
   PAGE_H,
   PAGE_W,
+  bubbleHasTail,
   figureBounds,
   jointToPage,
   pageToJoint,
@@ -153,44 +154,44 @@ export default function StoryboardCanvas({
         onPointerCancel={end}
         onPointerDown={() => onSelect(null)}
       >
-        {board.frames.map((f) => (
+        {board.frames.filter((f) => !f.hidden && !f.locked).map((f) => (
           <rect key={f.id} x={f.x} y={f.y} width={f.w} height={f.h} fill="transparent" stroke="transparent" strokeWidth={8}
             style={{ cursor: "move" }} onPointerDown={(e) => begin(e, { kind: "frame", id: f.id }, "move")} />
         ))}
-        {board.figures.map((f) => {
+        {board.figures.filter((f) => !f.hidden && !f.locked).map((f) => {
           const b = figureBounds(f);
           return (
             <rect key={f.id} x={b.x} y={b.y} width={b.w} height={b.h} fill="transparent"
               style={{ cursor: "move" }} onPointerDown={(e) => begin(e, { kind: "figure", id: f.id }, "move")} />
           );
         })}
-        {board.bubbles.map((b) => (
+        {board.bubbles.filter((b) => !b.hidden && !b.locked).map((b) => (
           <rect key={b.id} x={b.x} y={b.y} width={b.w} height={b.h} fill="transparent"
             style={{ cursor: "move" }} onPointerDown={(e) => begin(e, { kind: "bubble", id: b.id }, "move")} />
         ))}
 
         {/* selection chrome */}
-        {board.frames.filter((f) => isSel("frame", f.id)).map((f) => (
+        {board.frames.filter((f) => isSel("frame", f.id) && !f.hidden).map((f) => (
           <g key={f.id}>
             {outline(f.x, f.y, f.w, f.h)}
-            {handle(f.x + f.w, f.y + f.h, (e) => begin(e, { kind: "frame", id: f.id }, "resize"), "#a855f7", false, "调整大小")}
+            {!f.locked && handle(f.x + f.w, f.y + f.h, (e) => begin(e, { kind: "frame", id: f.id }, "resize"), "#a855f7", false, "调整大小")}
           </g>
         ))}
-        {board.bubbles.filter((b) => isSel("bubble", b.id)).map((b) => (
+        {board.bubbles.filter((b) => isSel("bubble", b.id) && !b.hidden).map((b) => (
           <g key={b.id}>
             {outline(b.x, b.y, b.w, b.h)}
-            {handle(b.x + b.w, b.y + b.h, (e) => begin(e, { kind: "bubble", id: b.id }, "resize"), "#a855f7", false, "调整大小")}
-            {b.style !== "narration" &&
+            {!b.locked && handle(b.x + b.w, b.y + b.h, (e) => begin(e, { kind: "bubble", id: b.id }, "resize"), "#a855f7", false, "调整大小")}
+            {!b.locked && bubbleHasTail(b.style) &&
               handle(b.tailX, b.tailY, (e) => begin(e, { kind: "bubble", id: b.id }, "tail"), "#f59e0b", true, "拖动尾巴")}
           </g>
         ))}
-        {board.figures.filter((f) => isSel("figure", f.id)).map((f) => {
+        {board.figures.filter((f) => isSel("figure", f.id) && !f.hidden).map((f) => {
           const bb = figureBounds(f);
-          const jointsEditable = f.style === "stick" || f.style === "box";
+          const jointsEditable = !f.locked && (f.style === "stick" || f.style === "box");
           return (
             <g key={f.id}>
               {outline(bb.x, bb.y, bb.w, bb.h)}
-              {handle(bb.x + bb.w, bb.y, (e) => begin(e, { kind: "figure", id: f.id }, "resize"), "#a855f7", false, "缩放")}
+              {!f.locked && handle(bb.x + bb.w, bb.y, (e) => begin(e, { kind: "figure", id: f.id }, "resize"), "#a855f7", false, "缩放")}
               {jointsEditable &&
                 JOINTS.map((j) => {
                   const [x, y] = jointToPage(f, j);

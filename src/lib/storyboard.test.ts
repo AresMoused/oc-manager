@@ -11,6 +11,15 @@ import {
   jointToPage,
   pageToJoint,
   newFigure,
+  newBubble,
+  newFrame,
+  newStoryboard,
+  renderBubble,
+  moveLayer,
+  moveLayerTo,
+  exportStoryboardJson,
+  importStoryboardJson,
+  BUBBLE_STYLE_OPTIONS,
 } from "./storyboard";
 
 test("vertical text: right-to-left columns, no leading punctuation", () => {
@@ -73,4 +82,68 @@ test("normalize + AI parse are tolerant", () => {
   const d = parseAiStoryboard('```json\n{"title":"T","panels":[{"text":"hi","figures":2,"pose":"handshake"}]}\n```');
   assert.equal(d.title, "T");
   assert.equal(d.panels[0].pose, "handshake");
+});
+
+test("bubble fill: opaque fills white, transparent has no fill; border toggle", () => {
+  for (const { value: style } of BUBBLE_STYLE_OPTIONS) {
+    const o = renderBubble(newBubble({ style, text: "啊", fill: "opaque" }));
+    const t = renderBubble(newBubble({ style, text: "啊", fill: "transparent", border: false }));
+    assert.ok(o.includes('fill="#fff"'), `${style} opaque`);
+    assert.ok(!t.includes('fill="#fff"'), `${style} transparent`);
+    assert.ok(!/stroke="#4ad66d"/.test(t), `${style} borderless`);
+  }
+  // each opaque shape is distinct
+  const shapes = new Set(BUBBLE_STYLE_OPTIONS.map(({ value }) => renderBubble(newBubble({ id: "x", style: value, text: "" })).replace(/data-bubble="[^"]*"/, "")));
+  assert.equal(shapes.size, BUBBLE_STYLE_OPTIONS.length);
+});
+
+function boardWithFigure(breakFrame: boolean) {
+  const b = newStoryboard();
+  b.frames = [newFrame({ id: "p", x: 0, y: 0, w: 200, h: 200 })];
+  b.bubbles = [];
+  b.figures = [newFigure({ id: "f1", x: 100, y: 190, size: 300, breakFrame })];
+  return b;
+}
+
+test("figures clip to their panel by default; breakFrame draws unclipped above borders", () => {
+  const clipped = renderStoryboardSvg(boardWithFigure(false));
+  assert.match(clipped, /<g clip-path="url\(#fc0\)"><g data-figure="f1">/);
+  const broken = renderStoryboardSvg(boardWithFigure(true));
+  assert.ok(!/clip-path="url\(#fc0\)"><g data-figure/.test(broken));
+  assert.ok(broken.indexOf('data-figure="f1"') > broken.lastIndexOf("<rect x=\"0.0\""), "drawn after the frame border");
+  assert.equal(normalizeStoryboard(JSON.parse(JSON.stringify(boardWithFigure(true)))).figures[0].breakFrame, true);
+});
+
+test("hidden layers are not rendered", () => {
+  const b = boardWithFigure(false);
+  b.figures[0].hidden = true;
+  assert.ok(!renderStoryboardSvg(b).includes("data-figure"));
+});
+
+test("layer reorder within kind", () => {
+  const b = newStoryboard();
+  b.bubbles = ["a", "b", "c"].map((id) => newBubble({ id }));
+  assert.deepEqual(moveLayer(b, "bubble", "a", 1).bubbles.map((x) => x.id), ["b", "a", "c"]);
+  assert.deepEqual(moveLayer(b, "bubble", "a", -1).bubbles.map((x) => x.id), ["a", "b", "c"]);
+  assert.deepEqual(moveLayerTo(b, "bubble", "c", 0).bubbles.map((x) => x.id), ["c", "a", "b"]);
+});
+
+test("JSON export/import round-trips and validates", () => {
+  const b = sampleStoryboard();
+  b.bubbles[0].locked = true;
+  b.bubbles[0].name = "第一句";
+  b.figures[0].breakFrame = true;
+  const back = importStoryboardJson(exportStoryboardJson(b));
+  assert.notEqual(back.id, b.id, "import gets a fresh id");
+  assert.equal(back.title, b.title);
+  assert.equal(back.bubbles.length, b.bubbles.length);
+  assert.equal(back.bubbles[0].locked, true);
+  assert.equal(back.bubbles[0].name, "第一句");
+  assert.equal(back.figures[0].breakFrame, true);
+  assert.deepEqual(back.figures[1].joints, b.figures[1].joints);
+  assert.throws(() => importStoryboardJson("not json"), /JSON/);
+  assert.throws(() => importStoryboardJson("[]"), /对象/);
+  assert.throws(() => importStoryboardJson('{"format":"other","version":1}'), /格式/);
+  assert.throws(() => importStoryboardJson('{"format":"oc-manager-storyboard","version":99,"storyboard":{}}'), /版本/);
+  assert.throws(() => importStoryboardJson('{"title":"x"}'), /没有/);
 });
