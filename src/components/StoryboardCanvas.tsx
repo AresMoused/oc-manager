@@ -5,7 +5,12 @@ import {
   JOINTS,
   PAGE_H,
   PAGE_W,
+  CORNERS,
   bubbleHasTail,
+  framePolygon,
+  pointInFrame,
+  setFrameCorner,
+  type Corner,
   figureBounds,
   jointToPage,
   pageToJoint,
@@ -20,7 +25,7 @@ export type Selection =
   | { kind: "figure"; id: string }
   | null;
 
-type DragMode = "move" | "resize" | "tail" | `joint:${JointName}`;
+type DragMode = "move" | "resize" | "tail" | `joint:${JointName}` | `corner:${Corner}`;
 
 interface Drag {
   mode: DragMode;
@@ -68,7 +73,7 @@ export default function StoryboardCanvas({
     if (sel.kind === "frame" && mode === "move") {
       const fr = board.frames.find((f) => f.id === sel.id);
       if (fr && fr.kind !== "title") {
-        const inside = (x: number, y: number) => x >= fr.x && x <= fr.x + fr.w && y >= fr.y && y <= fr.y + fr.h;
+        const inside = (x: number, y: number) => pointInFrame(fr, x, y);
         carry.bubbles = board.bubbles.filter((b) => inside(b.x + b.w / 2, b.y + b.h / 2)).map((b) => b.id);
         carry.figures = board.figures.filter((f) => inside(f.x, f.y - 4)).map((f) => f.id);
       }
@@ -87,6 +92,7 @@ export default function StoryboardCanvas({
     if (sel.kind === "frame") {
       next.frames = o.frames.map((f) => {
         if (f.id !== sel.id) return f;
+        if (mode.startsWith("corner:")) return setFrameCorner(f, mode.slice(7) as Corner, px);
         return mode === "resize"
           ? { ...f, w: Math.max(20, f.w + dx), h: Math.max(20, f.h + dy) }
           : { ...f, x: f.x + dx, y: f.y + dy };
@@ -155,7 +161,7 @@ export default function StoryboardCanvas({
         onPointerDown={() => onSelect(null)}
       >
         {board.frames.filter((f) => !f.hidden && !f.locked).map((f) => (
-          <rect key={f.id} x={f.x} y={f.y} width={f.w} height={f.h} fill="transparent" stroke="transparent" strokeWidth={8}
+          <polygon key={f.id} points={framePolygon(f).map((p) => p.join(",")).join(" ")} fill="transparent" stroke="transparent" strokeWidth={8}
             style={{ cursor: "move" }} onPointerDown={(e) => begin(e, { kind: "frame", id: f.id }, "move")} />
         ))}
         {board.figures.filter((f) => !f.hidden && !f.locked).map((f) => {
@@ -174,7 +180,14 @@ export default function StoryboardCanvas({
         {board.frames.filter((f) => isSel("frame", f.id) && !f.hidden).map((f) => (
           <g key={f.id}>
             {outline(f.x, f.y, f.w, f.h)}
-            {!f.locked && handle(f.x + f.w, f.y + f.h, (e) => begin(e, { kind: "frame", id: f.id }, "resize"), "#a855f7", false, "调整大小")}
+            <polygon points={framePolygon(f).map((p) => p.join(",")).join(" ")} fill="none" stroke="#a855f7" strokeWidth={1.5} pointerEvents="none" />
+            {!f.locked && handle(f.x + f.w, f.y + f.h, (e) => begin(e, { kind: "frame", id: f.id }, "resize"), "#a855f7", false, "调整外框大小")}
+            {!f.locked && f.kind !== "title" &&
+              framePolygon(f).map(([x, y], i) => (
+                <g key={CORNERS[i]}>
+                  {handle(x, y, (e) => begin(e, { kind: "frame", id: f.id }, `corner:${CORNERS[i]}`), "#06b6d4", true, "拖动角点（沿边水平滑动）斜切")}
+                </g>
+              ))}
           </g>
         ))}
         {board.bubbles.filter((b) => isSel("bubble", b.id) && !b.hidden).map((b) => (

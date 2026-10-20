@@ -20,6 +20,13 @@ import {
   exportStoryboardJson,
   importStoryboardJson,
   BUBBLE_STYLE_OPTIONS,
+  framePolygon,
+  pointInFrame,
+  setFrameCorner,
+  shapePreset,
+  splitFrameVertical,
+  splitFrameHorizontal,
+  normalizeFrame,
 } from "./storyboard";
 
 test("vertical text: right-to-left columns, no leading punctuation", () => {
@@ -146,4 +153,52 @@ test("JSON export/import round-trips and validates", () => {
   assert.throws(() => importStoryboardJson('{"format":"other","version":1}'), /格式/);
   assert.throws(() => importStoryboardJson('{"format":"oc-manager-storyboard","version":99,"storyboard":{}}'), /版本/);
   assert.throws(() => importStoryboardJson('{"title":"x"}'), /没有/);
+});
+
+test("polygon panels: presets, point-in-polygon, corner drag clamps", () => {
+  const f = newFrame({ x: 0, y: 0, w: 100, h: 100, shape: shapePreset("trapezoid", 0.2) });
+  assert.deepEqual(framePolygon(f), [[20, 0], [80, 0], [100, 100], [0, 100]]);
+  assert.ok(pointInFrame(f, 50, 50));
+  assert.ok(!pointInFrame(f, 5, 5), "outside the slanted corner");
+  // corner cannot cross the opposite corner of its edge
+  const g = setFrameCorner(f, "tl", 500);
+  assert.ok(g.shape!.tl < g.shape!.tr);
+  // dragging back to a rectangle drops the shape (rect = backward-compatible format)
+  let r = setFrameCorner(f, "tl", 0);
+  r = setFrameCorner(r, "tr", 100);
+  assert.equal(r.shape, undefined);
+});
+
+test("slanted split produces two non-overlapping polygons with a gutter", () => {
+  const f = newFrame({ x: 0, y: 0, w: 200, h: 100 });
+  const [a, b] = splitFrameVertical(f, 0.6, 0.4, 10);
+  assert.equal(a.id, f.id);
+  assert.notEqual(b.id, f.id);
+  assert.ok(pointInFrame(a, 10, 50) && !pointInFrame(b, 10, 50));
+  assert.ok(pointInFrame(b, 190, 50) && !pointInFrame(a, 190, 50));
+  assert.ok(!pointInFrame(a, 100, 50) && !pointInFrame(b, 100, 50), "gutter on the cut line");
+  const [u, d] = splitFrameHorizontal(newFrame({ x: 0, y: 0, w: 100, h: 200, shape: shapePreset("slantLeft") }), 0.5, 10);
+  assert.ok(u.y + u.h < d.y);
+  assert.ok(u.shape && d.shape);
+});
+
+test("figures clip to polygon panels; break-frame and JSON keep working", () => {
+  const b = newStoryboard();
+  b.frames = [newFrame({ id: "p", x: 0, y: 0, w: 200, h: 200, shape: shapePreset("slantRight") })];
+  b.bubbles = [];
+  b.figures = [newFigure({ id: "f1", x: 100, y: 190, size: 120 })];
+  const svg = renderStoryboardSvg(b);
+  assert.match(svg, /<clipPath id="fc0"><polygon points=/);
+  assert.match(svg, /<g clip-path="url\(#fc0\)"><g data-figure="f1">/);
+  b.figures[0].breakFrame = true;
+  assert.ok(!/clip-path="url\(#fc0\)"><g data-figure/.test(renderStoryboardSvg(b)));
+  const back = importStoryboardJson(exportStoryboardJson(b));
+  assert.deepEqual(back.frames[0].shape, b.frames[0].shape);
+});
+
+test("rect panels from older documents load unchanged (no shape)", () => {
+  const old = normalizeFrame({ id: "x", kind: "panel", x: 1, y: 2, w: 3, h: 4, color: "#000" });
+  assert.equal(old.shape, undefined);
+  assert.ok(renderStoryboardSvg({ ...newStoryboard(), frames: [old], bubbles: [], figures: [] }).includes('<rect x="1.0" y="2.0"'));
+  assert.equal(normalizeFrame({ shape: { tl: -5, tr: 9, br: "x", bl: 0 } }).shape, undefined, "garbage clamps to rect");
 });
