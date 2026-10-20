@@ -2,6 +2,7 @@ import type { Character } from "./types";
 import type { WorldMeta } from "./worlds";
 import type { WorldCatalog } from "./worldCatalog";
 import type { LoreMap } from "./worldLore";
+import type { Storyboard } from "./storyboard";
 import { makeThumbnailFile } from "./imageThumb";
 
 export interface AppData {
@@ -9,6 +10,7 @@ export interface AppData {
   worlds: WorldMeta[];
   catalog: WorldCatalog;
   lore?: LoreMap;
+  storyboards?: Storyboard[];
   updatedAt: string;
 }
 

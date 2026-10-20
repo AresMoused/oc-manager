@@ -9,6 +9,8 @@ import type { WorldMeta } from "./worlds";
 import type { WorldCatalog } from "./worldCatalog";
 import type { WorldLore, WorldLoreMap } from "./worldLore";
 import { getLore, normalizeLore, normalizeLoreMap } from "./worldLore";
+import type { Storyboard } from "./storyboard";
+import { normalizeStoryboardList } from "./storyboard";
 import type { AuthUser } from "./auth";
 import { avatarUrl } from "./auth";
 import {
@@ -34,6 +36,8 @@ export interface AppData {
   catalog: WorldCatalog;
   /** World lore keyed by world name (or legacy world id) */
   lore: WorldLoreMap;
+  /** Manga storyboard pages (漫画分镜) */
+  storyboards: Storyboard[];
   updatedAt: string;
 }
 
@@ -68,6 +72,7 @@ const DEFAULT: AppData = {
   worlds: [],
   catalog: {},
   lore: {},
+  storyboards: [],
   updatedAt: new Date(0).toISOString(),
 };
 
@@ -80,6 +85,7 @@ function normalizeAppData(parsed: Partial<AppData> | null | undefined): AppData 
         ? parsed.catalog
         : {},
     lore: normalizeLoreMap(parsed?.lore),
+    storyboards: normalizeStoryboardList(parsed?.storyboards),
     updatedAt: parsed?.updatedAt || new Date().toISOString(),
   };
 }
@@ -177,6 +183,7 @@ export async function writeUserAppData(
     worlds: data.worlds || [],
     catalog: data.catalog || {},
     lore: normalizeLoreMap(data.lore),
+    storyboards: normalizeStoryboardList(data.storyboards),
     updatedAt: new Date().toISOString(),
   };
   await writeJsonStore(
@@ -189,7 +196,7 @@ export async function writeUserAppData(
 
 export async function patchUserAppData(
   userId: string,
-  partial: Partial<Pick<AppData, "characters" | "worlds" | "catalog" | "lore">>
+  partial: Partial<Pick<AppData, "characters" | "worlds" | "catalog" | "lore" | "storyboards">>
 ): Promise<AppData> {
   const current = await readUserAppData(userId);
   return writeUserAppData(userId, {
@@ -211,6 +218,10 @@ export async function patchUserAppData(
       "lore" in partial && partial.lore && typeof partial.lore === "object"
         ? partial.lore
         : current.lore || {},
+    storyboards:
+      "storyboards" in partial && Array.isArray(partial.storyboards)
+        ? partial.storyboards
+        : current.storyboards || [],
     updatedAt: new Date().toISOString(),
   });
 }
@@ -226,7 +237,7 @@ export async function writeAppData(data: AppData): Promise<AppData> {
 }
 
 export async function patchAppData(
-  partial: Partial<Pick<AppData, "characters" | "worlds" | "catalog" | "lore">>
+  partial: Partial<Pick<AppData, "characters" | "worlds" | "catalog" | "lore" | "storyboards">>
 ): Promise<AppData> {
   const current = await readAppData();
   return writeAppData({
@@ -248,6 +259,10 @@ export async function patchAppData(
       "lore" in partial && partial.lore && typeof partial.lore === "object"
         ? partial.lore
         : current.lore || {},
+    storyboards:
+      "storyboards" in partial && Array.isArray(partial.storyboards)
+        ? partial.storyboards
+        : current.storyboards || [],
     updatedAt: new Date().toISOString(),
   });
 }
