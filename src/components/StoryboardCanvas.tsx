@@ -8,7 +8,10 @@ import {
   CORNERS,
   bubbleHasTail,
   framePolygon,
-  pointInFrame,
+  groupMembers,
+  isEffectivelyHidden,
+  isEffectivelyLocked,
+  regroupByPosition,
   setFrameCorner,
   type Corner,
   figureBounds,
@@ -71,12 +74,8 @@ export default function StoryboardCanvas({
     onSelect(sel);
     const carry = { bubbles: [] as string[], figures: [] as string[] };
     if (sel.kind === "frame" && mode === "move") {
-      const fr = board.frames.find((f) => f.id === sel.id);
-      if (fr && fr.kind !== "title") {
-        const inside = (x: number, y: number) => pointInFrame(fr, x, y);
-        carry.bubbles = board.bubbles.filter((b) => inside(b.x + b.w / 2, b.y + b.h / 2)).map((b) => b.id);
-        carry.figures = board.figures.filter((f) => inside(f.x, f.y - 4)).map((f) => f.id);
-      }
+      // dragging a panel moves every member of its group (text boxes and figures)
+      Object.assign(carry, groupMembers(board, sel.id));
     }
     setDrag({ mode, sel, start: toPage(e), orig: board, carry });
   };
@@ -128,7 +127,14 @@ export default function StoryboardCanvas({
     onChange(next);
   };
 
-  const end = () => setDrag(null);
+  const end = () => {
+    if (drag && drag.mode === "move" && drag.sel.kind !== "frame") {
+      // dropped onto a panel → join that panel's group (outside every panel → 未分格)
+      const next = regroupByPosition(board, drag.sel.kind, drag.sel.id);
+      if (next !== board) onChange(next);
+    }
+    setDrag(null);
+  };
 
   const isSel = (kind: string, id: string) => selection?.kind === kind && selection.id === id;
   const outline = (x: number, y: number, w: number, h: number) => (
@@ -164,14 +170,14 @@ export default function StoryboardCanvas({
           <polygon key={f.id} points={framePolygon(f).map((p) => p.join(",")).join(" ")} fill="transparent" stroke="transparent" strokeWidth={8}
             style={{ cursor: "move" }} onPointerDown={(e) => begin(e, { kind: "frame", id: f.id }, "move")} />
         ))}
-        {board.figures.filter((f) => !f.hidden && !f.locked).map((f) => {
+        {board.figures.filter((f) => !isEffectivelyHidden(board, f) && !isEffectivelyLocked(board, f)).map((f) => {
           const b = figureBounds(f);
           return (
             <rect key={f.id} x={b.x} y={b.y} width={b.w} height={b.h} fill="transparent"
               style={{ cursor: "move" }} onPointerDown={(e) => begin(e, { kind: "figure", id: f.id }, "move")} />
           );
         })}
-        {board.bubbles.filter((b) => !b.hidden && !b.locked).map((b) => (
+        {board.bubbles.filter((b) => !isEffectivelyHidden(board, b) && !isEffectivelyLocked(board, b)).map((b) => (
           <rect key={b.id} x={b.x} y={b.y} width={b.w} height={b.h} fill="transparent"
             style={{ cursor: "move" }} onPointerDown={(e) => begin(e, { kind: "bubble", id: b.id }, "move")} />
         ))}

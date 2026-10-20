@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StoryboardCanvas, { type Selection } from "@/components/StoryboardCanvas";
+import StoryboardLayers from "@/components/StoryboardLayers";
 import { useAppData } from "@/context/AppDataContext";
 import { completeChat, loadApiConfig, loadModelParams } from "@/lib/aiConfig";
 import {
@@ -18,6 +19,8 @@ import {
   POSE_PRESETS,
   STORYBOARD_AI_SYSTEM,
   autoLayout,
+  containingFrameId,
+  pruneMembership,
   SHAPE_PRESET_OPTIONS,
   isRectShape,
   shapePreset,
@@ -26,11 +29,6 @@ import {
   type ShapePreset,
   exportStoryboardJson,
   importStoryboardJson,
-  layerLabel,
-  moveLayer,
-  moveLayerTo,
-  LAYER_KEY,
-  type LayerKind,
   layoutText,
   newBubble,
   newFigure,
@@ -126,8 +124,6 @@ export default function StoryboardView() {
   const [msg, setMsg] = useState("");
   const [hasAi, setHasAi] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [dragLayer, setDragLayer] = useState<{ kind: LayerKind; id: string } | null>(null);
-  const [renaming, setRenaming] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -163,7 +159,8 @@ export default function StoryboardView() {
   const deleteSelected = () => {
     if (!board || !selection) return;
     const key = selection.kind === "frame" ? "frames" : selection.kind === "bubble" ? "bubbles" : "figures";
-    update({ [key]: (board[key] as { id: string }[]).filter((x) => x.id !== selection.id) } as Partial<Storyboard>);
+    const next = { ...board, [key]: (board[key] as { id: string }[]).filter((x) => x.id !== selection.id) } as Storyboard;
+    replace(selection.kind === "frame" ? pruneMembership(next) : next);
     setSelection(null);
   };
   const duplicateSelected = () => {
@@ -214,6 +211,7 @@ export default function StoryboardView() {
       color: style === "narration" || style === "wavy" ? COLOR.text : COLOR.ink,
       tailX: cx - w / 2 - 15, tailY: cy + h / 2 + 35,
     });
+    b.frameId = selFrame && selFrame.kind !== "title" ? selFrame.id : containingFrameId(board.frames, "bubble", b);
     update({ bubbles: [...board.bubbles, b] });
     setSelection({ kind: "bubble", id: b.id });
   };
@@ -223,15 +221,17 @@ export default function StoryboardView() {
     const [cx, cy] = dropPoint();
     const size = selFrame ? Math.min(140, selFrame.h * 0.6) : 140;
     const foot = cy + size / 2;
+    const groupId =
+      selFrame && selFrame.kind !== "title" ? selFrame.id : containingFrameId(board.frames, "figure", newFigure({ x: cx, y: foot, size }));
     if (pose === "handshake" || pose === "hug") {
       const gap = size * (pose === "hug" ? 0.22 : 0.26);
-      const a = newFigure({ pose, x: cx - gap, y: foot, size });
-      const b = newFigure({ pose, x: cx + gap, y: foot, size, flip: true });
+      const a = newFigure({ pose, x: cx - gap, y: foot, size, frameId: groupId });
+      const b = newFigure({ pose, x: cx + gap, y: foot, size, flip: true, frameId: groupId });
       update({ figures: [...board.figures, a, b] });
       setSelection({ kind: "figure", id: a.id });
       return;
     }
-    const f = newFigure({ pose, x: cx, y: foot, size });
+    const f = newFigure({ pose, x: cx, y: foot, size, frameId: groupId });
     update({ figures: [...board.figures, f] });
     setSelection({ kind: "figure", id: f.id });
   };
@@ -337,18 +337,6 @@ export default function StoryboardView() {
       setMsg(e instanceof Error ? `导入失败：${e.message}` : "导入失败");
     }
   };
-
-  // ---------------------------------------------------------- layers
-  const patchLayer = (kind: LayerKind, id: string, p: { hidden?: boolean; locked?: boolean; name?: string }) => {
-    if (!board) return;
-    const key = LAYER_KEY[kind];
-    update({ [key]: (board[key] as { id: string }[]).map((x) => (x.id === id ? { ...x, ...p } : x)) } as Partial<Storyboard>);
-  };
-  const layerGroups: { kind: LayerKind; title: string }[] = [
-    { kind: "bubble", title: "对话框" },
-    { kind: "figure", title: "人物" },
-    { kind: "frame", title: "分格" },
-  ];
 
   const aiDraft = async () => {
     if (!board || !aiPrompt.trim()) return;
@@ -613,56 +601,12 @@ export default function StoryboardView() {
                       {!isRectShape(selFrame.shape) && <p className="text-neutral-500">当前为多边形分格；人物按多边形裁剪。</p>}
                     </div>
                   )}
-                  <p className="text-neutral-500">拖动分格会带着其中的对话框与人物一起移动。</p>
+                  <p className="text-neutral-500">拖动分格会带着该分格组内的对话框与人物一起移动。</p>
                 </div>
               )}
 
-              <div className="border-t border-neutral-800 pt-3 space-y-2">
-                <div className="text-white text-sm">图层 Layers</div>
-                <p className="text-neutral-500 text-[11px]">每组内越靠上越在前（对话框始终在人物之上，人物在分格之上；「出框」人物画在所有边框之上）。可拖拽排序，双击重命名。</p>
-                {layerGroups.map(({ kind, title }) => {
-                  const list = board[LAYER_KEY[kind]] as (Frame | Bubble | Figure)[];
-                  // show front-most first
-                  const shown = [...list].reverse();
-                  return (
-                    <div key={kind} className="space-y-0.5">
-                      <div className="text-[11px] text-neutral-500">{title}（{list.length}）</div>
-                      {shown.map((el) => {
-                        const sel = selection?.kind === kind && selection.id === el.id;
-                        const idx = list.indexOf(el);
-                        return (
-                          <div
-                            key={el.id}
-                            draggable
-                            onDragStart={() => setDragLayer({ kind, id: el.id })}
-                            onDragOver={(e) => { if (dragLayer?.kind === kind) e.preventDefault(); }}
-                            onDrop={() => {
-                              if (dragLayer && dragLayer.kind === kind && dragLayer.id !== el.id) replace(moveLayerTo(board, kind, dragLayer.id, idx));
-                              setDragLayer(null);
-                            }}
-                            onClick={() => setSelection({ kind, id: el.id } as Selection)}
-                            className={`flex items-center gap-1 px-1.5 py-1 rounded-md cursor-pointer ${sel ? "bg-purple-900/50 text-white" : "hover:bg-neutral-800/70"} ${el.hidden ? "opacity-50" : ""}`}
-                          >
-                            <span className="cursor-grab text-neutral-600" title="拖拽排序">⋮⋮</span>
-                            {renaming === el.id ? (
-                              <input autoFocus className={smallCls + " flex-1 min-w-0"} defaultValue={el.name ?? ""}
-                                placeholder={layerLabel(kind, { ...el, name: undefined })}
-                                onClick={(e) => e.stopPropagation()}
-                                onBlur={(e) => { patchLayer(kind, el.id, { name: e.target.value.trim() || undefined }); setRenaming(null); }}
-                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }} />
-                            ) : (
-                              <span className="flex-1 truncate" onDoubleClick={() => setRenaming(el.id)}>{layerLabel(kind, el)}</span>
-                            )}
-                            <button title="上移（更靠前）" className="px-0.5 hover:text-white" onClick={(e) => { e.stopPropagation(); replace(moveLayer(board, kind, el.id, 1)); }}>↑</button>
-                            <button title="下移（更靠后）" className="px-0.5 hover:text-white" onClick={(e) => { e.stopPropagation(); replace(moveLayer(board, kind, el.id, -1)); }}>↓</button>
-                            <button title={el.hidden ? "显示" : "隐藏"} className="px-0.5 hover:text-white" onClick={(e) => { e.stopPropagation(); patchLayer(kind, el.id, { hidden: !el.hidden }); }}>{el.hidden ? "◌" : "👁"}</button>
-                            <button title={el.locked ? "解锁" : "锁定"} className="px-0.5 hover:text-white" onClick={(e) => { e.stopPropagation(); patchLayer(kind, el.id, { locked: !el.locked }); }}>{el.locked ? "🔒" : "🔓"}</button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+              <div className="border-t border-neutral-800 pt-3">
+                <StoryboardLayers board={board} selection={selection} onSelect={setSelection} onChange={replace} />
               </div>
             </section>
           </div>
